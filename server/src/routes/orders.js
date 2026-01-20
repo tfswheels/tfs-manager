@@ -235,22 +235,13 @@ router.post('/sync', async (req, res) => {
       });
     }
 
-    // Create Shopify GraphQL client
-    const client = new shopify.clients.Graphql({
-      session: {
-        shop,
-        accessToken
-      }
-    });
-
-    // Fetch orders using GraphQL with cursor-based pagination
+    // Fetch orders using GraphQL with cursor-based pagination (raw fetch like license-manager)
     let allOrders = [];
-    let hasNextPage = true;
     let cursor = null;
     let pageCount = 0;
     const perPage = 250; // GraphQL max is 250
 
-    while (hasNextPage) {
+    while (true) {
       pageCount++;
       console.log(`  📄 Fetching page ${pageCount}...`);
 
@@ -304,14 +295,31 @@ router.post('/sync', async (req, res) => {
 
       const variables = {
         first: perPage,
-        after: cursor
+        after: cursor || null
       };
 
-      const response = await client.query({
-        data: { query, variables }
+      // Use raw fetch instead of Shopify client (like license-manager app)
+      const response = await fetch(`https://${shop}/admin/api/2024-01/graphql.json`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Shopify-Access-Token': accessToken
+        },
+        body: JSON.stringify({ query, variables })
       });
 
-      const ordersData = response.body.data.orders;
+      if (!response.ok) {
+        throw new Error(`Shopify API error: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (result.errors) {
+        console.error('GraphQL errors:', result.errors);
+        throw new Error('GraphQL query failed');
+      }
+
+      const ordersData = result.data.orders;
       const edges = ordersData.edges || [];
 
       if (edges.length === 0) {
@@ -357,14 +365,21 @@ router.post('/sync', async (req, res) => {
       allOrders = allOrders.concat(orders);
       console.log(`    ✓ Retrieved ${orders.length} orders (total: ${allOrders.length})`);
 
-      // Update pagination info
-      hasNextPage = ordersData.pageInfo.hasNextPage;
-      cursor = ordersData.pageInfo.endCursor;
+      // Update cursor for next page (like license-manager app)
+      const hasMore = ordersData.pageInfo.hasNextPage;
+      cursor = hasMore ? ordersData.pageInfo.endCursor : null;
 
-      console.log(`    🔗 hasNextPage: ${hasNextPage}, endCursor: ${cursor ? cursor.substring(0, 30) + '...' : 'null'}`);
+      console.log(`    🔗 hasMore: ${hasMore}, cursor: ${cursor ? 'YES' : 'NO'}`);
 
-      if (!hasNextPage) {
+      // Break if no more pages
+      if (!cursor) {
         console.log(`    ℹ️  No more pages available`);
+        break;
+      }
+
+      // Safety limit
+      if (allOrders.length >= 50000) {
+        console.log(`    ⚠️  Safety limit reached (50000 orders)`);
         break;
       }
     }
