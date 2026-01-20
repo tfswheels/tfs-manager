@@ -1,135 +1,145 @@
 import express from 'express';
+import { shopify } from '../config/shopify.js';
 import db from '../config/database.js';
-import shopifyConfig from '../config/shopify.js';
 
 const router = express.Router();
 
 /**
- * Installation endpoint
- * For custom apps, just redirects to frontend
+ * Installation endpoint - Initiates OAuth flow
  */
 router.get('/install', async (req, res) => {
   try {
     const { shop } = req.query;
 
     if (!shop) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Missing shop parameter'
-      });
+      return res.status(400).json({ error: 'Missing shop parameter' });
     }
 
-    console.log('📱 Installation request for shop:', shop);
+    const shopDomain = shop.includes('.myshopify.com')
+      ? shop
+      : `${shop}.myshopify.com`;
 
-    // For custom apps, we don't need OAuth flow
-    // The shop will use the custom app access token directly
-    const frontendUrl = process.env.FRONTEND_URL || 'https://tfs-manager.vercel.app';
-    res.redirect(`${frontendUrl}?shop=${shop}`);
+    console.log('🔵 Starting OAuth flow for:', shopDomain);
+
+    await shopify.auth.begin({
+      shop: shopDomain,
+      callbackPath: '/auth/callback',
+      isOnline: false, // Offline access token (permanent)
+      rawRequest: req,
+      rawResponse: res
+    });
 
   } catch (error) {
-    console.error('Installation error:', error);
+    console.error('OAuth begin error:', error);
     res.status(500).json({
-      error: 'Installation Failed',
+      error: 'Failed to start installation',
       message: error.message
     });
   }
 });
 
 /**
- * OAuth callback endpoint
- * For custom apps, this logs the connection
+ * OAuth callback endpoint - Receives access token
  */
 router.get('/callback', async (req, res) => {
   try {
-    const { shop, code } = req.query;
+    const callback = await shopify.auth.callback({
+      rawRequest: req,
+      rawResponse: res
+    });
 
-    if (!shop || !code) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Missing required parameters'
-      });
-    }
+    const { session } = callback;
+    const { shop, accessToken } = session;
 
-    console.log('🔐 OAuth callback received for shop:', shop);
-    console.log('📝 Authorization code:', code);
+    console.log('🎫 OAuth callback successful for:', shop);
+    console.log('🔑 Access Token received:', accessToken);
+    console.log('📋 Token preview: shpat_***' + accessToken.slice(-4));
 
-    // For custom apps, this endpoint might not be used
-    // Custom apps get a permanent access token from Shopify admin
-    const frontendUrl = process.env.FRONTEND_URL || 'https://tfs-manager.vercel.app';
-    res.redirect(`${frontendUrl}?shop=${shop}&installed=true`);
+    // Store shop credentials
+    await db.execute(
+      `INSERT INTO shops (shop_name, access_token, created_at, updated_at)
+       VALUES (?, ?, NOW(), NOW())
+       ON DUPLICATE KEY UPDATE
+       access_token = VALUES(access_token),
+       updated_at = NOW()`,
+      [shop, accessToken]
+    );
+
+    console.log(`✅ Shop installed and token stored: ${shop}`);
+
+    // Register webhooks
+    await registerWebhooks(shop, accessToken);
+
+    // Redirect to embedded app
+    const apiKey = process.env.SHOPIFY_API_KEY;
+    const redirectUrl = `https://${shop}/admin/apps/${apiKey}`;
+
+    console.log(`🔀 Redirecting to: ${redirectUrl}`);
+    res.redirect(redirectUrl);
 
   } catch (error) {
     console.error('OAuth callback error:', error);
-    res.status(500).json({
-      error: 'Authorization Failed',
-      message: error.message
-    });
+    res.status(500).send('Installation failed. Please try again.');
   }
 });
 
 /**
- * Shop configuration endpoint
- * Saves shop access token (for custom apps)
+ * Register webhooks for the shop
  */
-router.post('/configure', async (req, res) => {
+async function registerWebhooks(shop, accessToken) {
+  const client = new shopify.clients.Rest({
+    session: { shop, accessToken }
+  });
+
+  const appUrl = process.env.APP_URL || 'https://tfs-manager-server-production.up.railway.app';
+
+  const webhooks = [
+    {
+      topic: 'orders/create',
+      address: `${appUrl}/webhooks/orders/create`,
+      format: 'json'
+    },
+    {
+      topic: 'orders/updated',
+      address: `${appUrl}/webhooks/orders/updated`,
+      format: 'json'
+    },
+    {
+      topic: 'products/create',
+      address: `${appUrl}/webhooks/orders/products/create`,
+      format: 'json'
+    },
+    {
+      topic: 'products/update',
+      address: `${appUrl}/webhooks/orders/products/update`,
+      format: 'json'
+    }
+  ];
+
   try {
-    const { shop, accessToken } = req.body;
-
-    if (!shop || !accessToken) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Missing shop or accessToken'
-      });
+    for (const webhook of webhooks) {
+      try {
+        await client.post({
+          path: 'webhooks',
+          data: { webhook }
+        });
+        console.log(`✅ Registered webhook: ${webhook.topic}`);
+      } catch (webhookError) {
+        console.error(`⚠️ Failed to register webhook ${webhook.topic}:`, webhookError.message);
+      }
     }
-
-    console.log('🔑 Configuring shop:', shop);
-    console.log('🎫 Access Token received:', accessToken);
-    console.log('📋 Token preview: shpat_***' + accessToken.slice(-4));
-
-    // Check if shop already exists
-    const [existing] = await db.execute(
-      'SELECT id FROM shops WHERE shop_name = ?',
-      [shop]
-    );
-
-    if (existing.length > 0) {
-      // Update existing shop
-      await db.execute(
-        'UPDATE shops SET access_token = ?, updated_at = NOW() WHERE shop_name = ?',
-        [accessToken, shop]
-      );
-      console.log('✅ Updated existing shop configuration');
-    } else {
-      // Insert new shop
-      await db.execute(
-        'INSERT INTO shops (shop_name, access_token, created_at, updated_at) VALUES (?, ?, NOW(), NOW())',
-        [shop, accessToken]
-      );
-      console.log('✅ Created new shop configuration');
-    }
-
-    res.json({
-      success: true,
-      message: 'Shop configured successfully',
-      shop
-    });
-
+    console.log(`✅ Webhooks registered for ${shop}`);
   } catch (error) {
-    console.error('Configuration error:', error);
-    res.status(500).json({
-      error: 'Configuration Failed',
-      message: error.message
-    });
+    console.error('Webhook registration error:', error);
   }
-});
+}
 
 /**
  * Get shop info
- * Returns information about the configured shop
  */
 router.get('/shop', async (req, res) => {
   try {
-    const shop = req.query.shop || process.env.SHOPIFY_STORE_URL?.replace('https://', '');
+    const shop = req.query.shop || '2f3d7a-2.myshopify.com';
 
     if (!shop) {
       return res.status(400).json({
@@ -146,12 +156,13 @@ router.get('/shop', async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({
         error: 'Not Found',
-        message: 'Shop not configured'
+        message: 'Shop not installed. Please install the app.'
       });
     }
 
     res.json({
-      shop: rows[0]
+      shop: rows[0],
+      installed: true
     });
 
   } catch (error) {

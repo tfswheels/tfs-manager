@@ -15,6 +15,8 @@ venv/
 .env.local
 .env.*.local
 */.env
+RAILWAY_ENV.txt
+*/RAILWAY_ENV.txt
 
 # Logs
 *.log
