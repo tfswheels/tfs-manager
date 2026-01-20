@@ -9,9 +9,14 @@ import json
 import argparse
 from pathlib import Path
 
-# Add the SDW script directory to path
-sdw_script_path = Path("/Users/jeremiah/Desktop/TFS Wheels/TFS Wheels App/Order Processing/SDW Order Processing")
-sys.path.insert(0, str(sdw_script_path))
+# Import the non-interactive SDW automation library
+try:
+    from sdw_automation_lib import process_sdw_order_non_interactive
+except ImportError as e:
+    print(f"ERROR: Failed to import SDW automation library: {e}", file=sys.stderr)
+    print("Make sure sdw_automation_lib.py is in the same directory", file=sys.stderr)
+    sys.exit(1)
+
 
 def main():
     parser = argparse.ArgumentParser(description='Process order on SDW')
@@ -21,47 +26,70 @@ def main():
     parser.add_argument('--mode', required=True, choices=['quote', 'manual'], help='Processing mode')
     parser.add_argument('--quote-link', required=False, help='Quote link (required if mode=quote)')
     parser.add_argument('--selected-items', required=False, help='JSON array of line item IDs to process')
+    parser.add_argument('--headless', action='store_true', help='Run browser in headless mode')
 
     args = parser.parse_args()
 
     # Validate
     if args.mode == 'quote' and not args.quote_link:
-        print("ERROR: Quote link is required when mode=quote", file=sys.stderr)
+        error_result = {
+            "success": False,
+            "order_number": args.order_number,
+            "error": "Quote link is required when mode=quote",
+            "message": "Validation failed"
+        }
+        print(json.dumps(error_result, indent=2), file=sys.stderr)
         sys.exit(1)
 
     print(f"🚀 Starting SDW processing for order #{args.order_number}")
-    print(f"   Vehicle: {args.vehicle or 'Not provided'}")
+    print(f"   Vehicle: {args.vehicle or 'Will extract from order'}")
     print(f"   Card: {args.card}")
     print(f"   Mode: {args.mode}")
     if args.quote_link:
         print(f"   Quote: {args.quote_link}")
 
-    # TODO: Import and call the actual SDW automation functions
-    # For now, just simulate the process
-    print("\n⚠️  SDW AUTOMATION STUB")
-    print("This is a placeholder. Full integration requires:")
-    print("1. Refactoring sdw_order_automation.py to accept programmatic input")
-    print("2. Removing interactive prompts (input() calls)")
-    print("3. Accepting config via function parameters")
-    print("4. Returning structured results")
-    print("\n✅ Configuration validated successfully")
-    print("Next step: Modify sdw_order_automation.py to be importable and non-interactive")
+    # Parse selected items if provided
+    selected_items = None
+    if args.selected_items:
+        try:
+            selected_items = json.loads(args.selected_items)
+        except json.JSONDecodeError as e:
+            print(f"ERROR: Invalid JSON for selected-items: {e}", file=sys.stderr)
+            sys.exit(1)
 
-    # Return success for now
-    result = {
-        "success": True,
-        "order_number": args.order_number,
-        "message": "SDW processing stub completed. Full automation integration pending.",
-        "next_steps": [
-            "Refactor sdw_order_automation.py",
-            "Remove input() prompts",
-            "Make functions accept parameters",
-            "Add proper error handling"
-        ]
-    }
+    # Call the non-interactive SDW automation
+    try:
+        result = process_sdw_order_non_interactive(
+            order_number=args.order_number,
+            vehicle_info=args.vehicle,
+            card_id=args.card,
+            mode=args.mode,
+            quote_link=args.quote_link,
+            selected_line_items=selected_items,
+            headless=args.headless
+        )
 
-    print("\n" + json.dumps(result, indent=2))
-    return 0
+        # Output result as JSON for the Node.js backend to parse
+        print(f"\n{'='*60}")
+        print("FINAL RESULT:")
+        print(f"{'='*60}")
+        print(json.dumps(result, indent=2))
+
+        # Exit with appropriate code
+        return 0 if result['success'] else 1
+
+    except Exception as e:
+        error_result = {
+            "success": False,
+            "order_number": args.order_number,
+            "error": str(e),
+            "message": f"Fatal error: {str(e)}"
+        }
+        print(json.dumps(error_result, indent=2), file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())
