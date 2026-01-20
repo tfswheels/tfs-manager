@@ -251,32 +251,37 @@ router.post('/sync', async (req, res) => {
       }
     });
 
-    // Fetch orders with pagination
+    // Fetch orders with pagination using cursor-based pagination
     let allOrders = [];
     let pageCount = 0;
     const maxPages = Math.ceil(totalToFetch / perPage);
-    let lastOrderId = null;
+    let nextPageUrl = null;
 
     while (pageCount < maxPages) {
-      const queryParams = {
-        limit: perPage,
-        status: 'any',
-        order: 'created_at DESC'
-      };
-
-      // Use since_id for pagination (more reliable than Link header)
-      if (lastOrderId) {
-        queryParams.since_id = lastOrderId;
-      }
-
       console.log(`  📄 Fetching page ${pageCount + 1}/${maxPages}...`);
 
-      const response = await client.get({
-        path: 'orders',
-        query: queryParams
-      });
+      let response;
+
+      if (nextPageUrl) {
+        // Use the next page URL directly
+        console.log(`    🔗 Using next page URL`);
+        response = await client.get({ path: nextPageUrl });
+      } else {
+        // First page - use standard query
+        response = await client.get({
+          path: 'orders',
+          query: {
+            limit: perPage,
+            status: 'any',
+            order: 'created_at DESC'
+          }
+        });
+      }
 
       const orders = response.body.orders || [];
+
+      // Debug: Log response headers
+      console.log(`    📋 Response headers:`, JSON.stringify(response.headers, null, 2));
 
       // If we got no orders, we're done
       if (orders.length === 0) {
@@ -289,14 +294,46 @@ router.post('/sync', async (req, res) => {
 
       console.log(`    ✓ Retrieved ${orders.length} orders (total: ${allOrders.length})`);
 
+      // Debug: Log first and last order IDs
+      console.log(`    📊 Order range: ${orders[0].name} → ${orders[orders.length - 1].name}`);
+
       // If we got fewer than perPage orders, this is the last page
       if (orders.length < perPage) {
         console.log(`    ℹ️  Received ${orders.length} orders (less than ${perPage}), last page reached`);
         break;
       }
 
-      // Get the ID of the last order for next page
-      lastOrderId = orders[orders.length - 1].id;
+      // Extract next page URL from Link header
+      const linkHeader = response.headers['link'] || response.headers.Link;
+      console.log(`    🔗 Link header: ${linkHeader ? 'EXISTS' : 'MISSING'}`);
+
+      if (linkHeader) {
+        console.log(`    🔗 Link header content: ${linkHeader.substring(0, 200)}...`);
+
+        // Parse the Link header to get next page URL
+        const nextLinkMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+        if (nextLinkMatch) {
+          const fullNextUrl = nextLinkMatch[1];
+          console.log(`    ✅ Found next page URL: ${fullNextUrl.substring(0, 100)}...`);
+
+          // Extract just the path and query from the full URL
+          const urlObj = new URL(fullNextUrl);
+          nextPageUrl = urlObj.pathname + urlObj.search;
+          console.log(`    🔗 Next page path: ${nextPageUrl.substring(0, 100)}...`);
+        } else {
+          console.log(`    ⚠️  Link header exists but no rel="next" found`);
+          nextPageUrl = null;
+        }
+      } else {
+        console.log(`    ⚠️  No Link header - this might be the last page`);
+        nextPageUrl = null;
+      }
+
+      // If no next page URL, we're done
+      if (!nextPageUrl) {
+        console.log(`    ℹ️  No next page URL, stopping pagination`);
+        break;
+      }
 
       // Stop if we've reached the requested limit
       if (allOrders.length >= totalToFetch) {
