@@ -49,12 +49,12 @@ SDW_EMAIL = os.environ.get('SDW_EMAIL')
 SDW_PASS = os.environ.get('SDW_PASS')
 
 # Database configuration
-# Use DB_PRODUCT_NAME for product database (tfs-db) if set, otherwise fall back to DB_NAME
+# SDW automation always uses tfs-db database (where shopify_products table lives)
 DB_CONFIG = {
     'host': os.environ.get('DB_HOST'),
     'user': os.environ.get('DB_USER'),
     'password': os.environ.get('DB_PASSWORD'),
-    'database': os.environ.get('DB_PRODUCT_NAME', os.environ.get('DB_NAME'))
+    'database': 'tfs-db'  # Always use tfs-db for product data
 }
 
 # Clean up URL format
