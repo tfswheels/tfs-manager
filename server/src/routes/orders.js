@@ -214,7 +214,7 @@ router.post('/sync', async (req, res) => {
 
     // Get access token from database
     const [rows] = await db.execute(
-      'SELECT id, access_token, scopes, created_at FROM shops WHERE shop_name = ?',
+      'SELECT id, access_token, created_at FROM shops WHERE shop_name = ?',
       [shop]
     );
 
@@ -228,7 +228,6 @@ router.post('/sync', async (req, res) => {
     const shopId = rows[0].id;
     const accessToken = rows[0].access_token;
     const appInstalledDate = rows[0].created_at;
-    const scopes = rows[0].scopes;
 
     if (!accessToken) {
       return res.status(401).json({
@@ -238,7 +237,6 @@ router.post('/sync', async (req, res) => {
     }
 
     console.log(`🔐 App installed: ${appInstalledDate ? new Date(appInstalledDate).toISOString().split('T')[0] : 'unknown'}`);
-    console.log(`🔑 Scopes: ${scopes || 'unknown'}`);
 
     // First, get total order count from REST API to compare
     let restOrderCount = 0;
