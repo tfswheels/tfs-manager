@@ -6,7 +6,6 @@ import { AppProvider, Frame, Navigation } from '@shopify/polaris';
 import Orders from './pages/Orders';
 import Products from './pages/Products';
 import EmailTemplates from './pages/EmailTemplates';
-import Scraping from './pages/Scraping';
 import Settings from './pages/Settings';
 
 function AppContent() {
@@ -24,7 +23,7 @@ function AppContent() {
             selected: location.pathname === '/'
           },
           {
-            label: 'Products',
+            label: 'Products & Inventory',
             icon: () => '🛍️',
             onClick: () => navigate('/products'),
             selected: location.pathname === '/products'
@@ -34,12 +33,6 @@ function AppContent() {
             icon: () => '📧',
             onClick: () => navigate('/email'),
             selected: location.pathname === '/email'
-          },
-          {
-            label: 'Inventory Scraping',
-            icon: () => '🔧',
-            onClick: () => navigate('/scraping'),
-            selected: location.pathname === '/scraping'
           },
           {
             label: 'Settings',
@@ -58,7 +51,6 @@ function AppContent() {
         <Route path="/" element={<Orders />} />
         <Route path="/products" element={<Products />} />
         <Route path="/email" element={<EmailTemplates />} />
-        <Route path="/scraping" element={<Scraping />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </Frame>

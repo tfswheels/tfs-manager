@@ -9,6 +9,7 @@ import ordersRoutes from './routes/orders.js';
 import productsRoutes from './routes/products.js';
 import scrapingRoutes from './routes/scraping.js';
 import emailRoutes from './routes/email.js';
+import brandsRoutes from './routes/brands.js';
 import { applyAllSecurityHeaders } from './middleware/securityHeaders.js';
 import './config/database.js';
 
@@ -48,6 +49,7 @@ app.use('/api/orders', ordersRoutes);
 app.use('/api/products', productsRoutes);
 app.use('/api/scraping', scrapingRoutes);
 app.use('/api/email', emailRoutes);
+app.use('/api/brands', brandsRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

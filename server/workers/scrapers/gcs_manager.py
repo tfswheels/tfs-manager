@@ -46,14 +46,25 @@ class GCSManager:
         """Initialize or refresh GCS credentials."""
         async with self.token_lock:
             try:
+                import os
+                # Check if GCS_CREDENTIALS env var is set
+                if not os.environ.get('GCS_CREDENTIALS') and not os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):
+                    logger.warning("GCS credentials not found in environment - GCS features will be disabled")
+                    self.creds = None
+                    self.project = None
+                    self.token = None
+                    return
+
                 self.creds, self.project = google.auth.default()
                 self.creds.refresh(Request())
                 self.token = self.creds.token
                 self.token_expiry = datetime.now(timezone.utc) + timedelta(seconds=3600)
                 logger.info("Successfully refreshed GCS access token")
             except Exception as e:
-                logger.error(f"Failed to initialize GCS credentials: {e}")
-                raise
+                logger.warning(f"GCS credentials not available: {e} - GCS features will be disabled")
+                self.creds = None
+                self.project = None
+                self.token = None
 
     async def check_token_expiry(self):
         """Check if token needs refresh and refresh if needed."""
