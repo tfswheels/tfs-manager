@@ -27,26 +27,38 @@ async function runMigrations() {
     console.log('✅ Connected to database');
     console.log(`📊 Database: ${process.env.DB_NAME} @ ${process.env.DB_HOST}\n`);
 
-    // Read SQL file
-    const sqlFile = path.join(__dirname, 'create-tables.sql');
-    const sql = fs.readFileSync(sqlFile, 'utf8');
+    // Run create-tables.sql first
+    const createTablesFile = path.join(__dirname, 'create-tables.sql');
+    if (fs.existsSync(createTablesFile)) {
+      console.log('🚀 Running create-tables.sql...\n');
+      const sql = fs.readFileSync(createTablesFile, 'utf8');
+      await connection.query(sql);
+      console.log('✅ Base tables created\n');
+    }
 
-    console.log('🚀 Running migrations...\n');
+    // Run migrations from migrations folder
+    const migrationsDir = path.join(__dirname, 'migrations');
+    if (fs.existsSync(migrationsDir)) {
+      const migrationFiles = fs.readdirSync(migrationsDir)
+        .filter(file => file.endsWith('.sql'))
+        .sort(); // Run in alphabetical order
 
-    // Execute SQL
-    const [results] = await connection.query(sql);
+      if (migrationFiles.length > 0) {
+        console.log('🔄 Running migrations...\n');
 
-    console.log('✅ Migrations completed successfully!\n');
+        for (const file of migrationFiles) {
+          console.log(`  Running ${file}...`);
+          const migrationPath = path.join(migrationsDir, file);
+          const sql = fs.readFileSync(migrationPath, 'utf8');
+          await connection.query(sql);
+          console.log(`  ✅ ${file} completed`);
+        }
 
-    // Show results
-    if (Array.isArray(results)) {
-      const lastResult = results[results.length - 1];
-      if (lastResult && lastResult[0]) {
-        console.log(lastResult[0]);
+        console.log('\n✅ All migrations completed successfully!\n');
       }
     }
 
-    console.log('\n📋 Tables created:');
+    console.log('📋 Tables in database:');
     const [tables] = await connection.query('SHOW TABLES');
     tables.forEach(table => {
       console.log(`  ✓ ${Object.values(table)[0]}`);
@@ -54,6 +66,7 @@ async function runMigrations() {
 
   } catch (error) {
     console.error('❌ Migration failed:', error.message);
+    console.error(error);
     process.exit(1);
   } finally {
     if (connection) {

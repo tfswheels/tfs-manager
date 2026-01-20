@@ -4,11 +4,14 @@ import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
 import webhookRoutes from './routes/webhooks.js';
 import gdprWebhookRoutes from './routes/gdprWebhooks.js';
+import zohoWebhookRoutes from './routes/zohoWebhooks.js';
 import adminRoutes from './routes/admin.js';
 import ordersRoutes from './routes/orders.js';
 import productsRoutes from './routes/products.js';
 import scrapingRoutes from './routes/scraping.js';
 import emailRoutes from './routes/email.js';
+import emailTemplatesRoutes from './routes/email-templates.js';
+import customerEmailsRoutes from './routes/customer-emails.js';
 import brandsRoutes from './routes/brands.js';
 import { applyAllSecurityHeaders } from './middleware/securityHeaders.js';
 import './config/database.js';
@@ -35,6 +38,8 @@ app.use(cors({
 // Must be applied BEFORE express.json() middleware
 app.use('/webhooks/orders', express.raw({ type: 'application/json' }));
 app.use('/webhooks/gdpr', express.raw({ type: 'application/json' }));
+// Zoho webhooks can use JSON parsing
+app.use('/webhooks/zoho', express.json());
 
 // JSON parsing for all other routes (webhooks already handled above)
 app.use(express.json());
@@ -43,12 +48,15 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 app.use('/webhooks/orders', webhookRoutes);  // Shopify order webhooks
 app.use('/webhooks/gdpr', gdprWebhookRoutes);  // Shopify GDPR webhooks
+app.use('/webhooks/zoho', zohoWebhookRoutes);  // Zoho Mail webhooks
 app.use('/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/orders', ordersRoutes);
 app.use('/api/products', productsRoutes);
 app.use('/api/scraping', scrapingRoutes);
 app.use('/api/email', emailRoutes);
+app.use('/api/email-templates', emailTemplatesRoutes);
+app.use('/api/customer-emails', customerEmailsRoutes);
 app.use('/api/brands', brandsRoutes);
 
 // Health check endpoint

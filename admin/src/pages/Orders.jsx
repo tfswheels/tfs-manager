@@ -10,31 +10,62 @@ import {
   EmptyState,
   Button,
   Modal,
-  Layout,
-  ResourceList,
-  ResourceItem,
-  Thumbnail
+  TextField,
+  Select,
+  Checkbox,
+  InlineStack,
+  BlockStack,
+  Box,
+  Divider
 } from '@shopify/polaris';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://tfs-manager-server-production.up.railway.app';
-const BATCH_SIZE = 50;
 
 export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [hasMore, setHasMore] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [limit, setLimit] = useState('50');
   const [page, setPage] = useState(1);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [orderDetailsOpen, setOrderDetailsOpen] = useState(false);
-  const [processingOrder, setProcessingOrder] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+
+  // Bulk selection
+  const [selectedOrders, setSelectedOrders] = useState([]);
+  const [selectAll, setSelectAll] = useState(false);
+
+  // Send Email Modal
+  const [sendEmailModalOpen, setSendEmailModalOpen] = useState(false);
+  const [emailRecipients, setEmailRecipients] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [templates, setTemplates] = useState([]);
+  const [sendingEmail, setSendingEmail] = useState(false);
+
+  // Sync state
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
-    fetchOrders(1);
-  }, []);
+    fetchOrders();
+    fetchTemplates();
+  }, [limit, page]);
 
-  const fetchOrders = async (pageNum) => {
+  const fetchTemplates = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/email-templates`, {
+        params: {
+          shop: '2f3d7a-2.myshopify.com'
+        }
+      });
+
+      setTemplates(response.data.templates || []);
+    } catch (err) {
+      console.error('Error fetching templates:', err);
+    }
+  };
+
+  const fetchOrders = async () => {
     if (loading) return;
 
     try {
@@ -44,21 +75,17 @@ export default function Orders() {
       const response = await axios.get(`${API_URL}/api/orders`, {
         params: {
           shop: '2f3d7a-2.myshopify.com',
-          limit: BATCH_SIZE,
-          page: pageNum
+          limit: parseInt(limit),
+          page: page,
+          search: searchQuery
         }
       });
 
-      const newOrders = response.data.orders || [];
-
-      if (pageNum === 1) {
-        setOrders(newOrders);
-      } else {
-        setOrders(prev => [...prev, ...newOrders]);
-      }
-
-      setHasMore(newOrders.length === BATCH_SIZE);
-      setPage(pageNum);
+      setOrders(response.data.orders || []);
+      setTotal(response.data.total || 0);
+      setHasMore(response.data.hasMore || false);
+      setSelectedOrders([]);
+      setSelectAll(false);
     } catch (err) {
       console.error('Error fetching orders:', err);
       setError(err.response?.data?.message || 'Failed to load orders');
@@ -67,36 +94,122 @@ export default function Orders() {
     }
   };
 
-  const loadMore = () => {
-    if (!loading && hasMore) {
-      fetchOrders(page + 1);
+  const handleSearch = () => {
+    setPage(1);
+    fetchOrders();
+  };
+
+  const handleSearchClear = () => {
+    setSearchQuery('');
+    setPage(1);
+    setTimeout(() => fetchOrders(), 0);
+  };
+
+  const handleLimitChange = (value) => {
+    setLimit(value);
+    setPage(1);
+  };
+
+  const handleSelectAll = (checked) => {
+    setSelectAll(checked);
+    if (checked) {
+      setSelectedOrders(orders.map(o => o.id));
+    } else {
+      setSelectedOrders([]);
     }
   };
 
-  const handleOrderClick = (order) => {
-    setSelectedOrder(order);
-    setOrderDetailsOpen(true);
+  const handleSelectOrder = (orderId, checked) => {
+    if (checked) {
+      setSelectedOrders([...selectedOrders, orderId]);
+    } else {
+      setSelectedOrders(selectedOrders.filter(id => id !== orderId));
+      setSelectAll(false);
+    }
   };
 
-  const getFinancialStatusBadge = (status) => {
-    const statusMap = {
-      paid: 'success',
-      pending: 'attention',
-      refunded: 'warning',
-      voided: 'critical'
-    };
-    return <Badge tone={statusMap[status] || 'info'}>{status || 'unknown'}</Badge>;
+  const openSendEmailModal = (orderIds) => {
+    const recipients = orders.filter(o => orderIds.includes(o.id));
+    setEmailRecipients(recipients);
+    setSelectedTemplate('');
+    setSendEmailModalOpen(true);
   };
 
-  const getFulfillmentStatusBadge = (status) => {
-    if (!status) return <Badge tone="info">unfulfilled</Badge>;
+  const handleSendEmail = async () => {
+    if (!selectedTemplate) {
+      alert('Please select an email template');
+      return;
+    }
 
-    const statusMap = {
-      fulfilled: 'success',
-      partial: 'attention',
-      unfulfilled: 'info'
-    };
-    return <Badge tone={statusMap[status] || 'info'}>{status}</Badge>;
+    if (emailRecipients.length === 0) {
+      alert('No recipients selected');
+      return;
+    }
+
+    try {
+      setSendingEmail(true);
+
+      const response = await axios.post(`${API_URL}/api/email/send`, {
+        templateId: parseInt(selectedTemplate),
+        orderIds: emailRecipients.map(r => r.id)
+      }, {
+        params: {
+          shop: '2f3d7a-2.myshopify.com'
+        }
+      });
+
+      const { sent, failed, errors } = response.data;
+
+      if (failed > 0) {
+        const errorMessages = errors.map(e => `${e.orderNumber}: ${e.error}`).join('\n');
+        alert(`Sent ${sent} email(s) successfully.\n\nFailed to send ${failed} email(s):\n${errorMessages}`);
+      } else {
+        alert(`Successfully sent ${sent} email(s)!`);
+      }
+
+      setSendEmailModalOpen(false);
+    } catch (err) {
+      console.error('Error sending emails:', err);
+      alert(err.response?.data?.message || 'Failed to send emails');
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  const handleSendEmailToSelected = () => {
+    if (selectedOrders.length === 0) {
+      alert('Please select at least one order');
+      return;
+    }
+    openSendEmailModal(selectedOrders);
+  };
+
+  const handleRowClick = (order) => {
+    openSendEmailModal([order.id]);
+  };
+
+  const handleSyncOrders = async () => {
+    if (syncing) return;
+
+    try {
+      setSyncing(true);
+      const response = await axios.post(`${API_URL}/api/orders/sync`, null, {
+        params: {
+          shop: '2f3d7a-2.myshopify.com',
+          limit: 250
+        }
+      });
+
+      if (response.data.success) {
+        alert(`Successfully synced ${response.data.synced} orders from Shopify`);
+        fetchOrders();
+      }
+    } catch (err) {
+      console.error('Error syncing orders:', err);
+      alert(err.response?.data?.message || 'Failed to sync orders');
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const formatCurrency = (amount) => {
@@ -110,32 +223,54 @@ export default function Orders() {
     return new Date(date).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      year: 'numeric'
     });
   };
 
-  const rows = orders.map((order) => [
-    <Button plain onClick={() => handleOrderClick(order)}>{order.order_number || order.name}</Button>,
-    formatDate(order.created_at),
-    order.customer?.default_address?.name || order.customer?.email || 'Guest',
-    order.customer?.email || '-',
-    formatCurrency(order.total_price),
-    getFinancialStatusBadge(order.financial_status),
-    getFulfillmentStatusBadge(order.fulfillment_status),
-    order.line_items?.length || 0
-  ]);
+  const formatVehicleInfo = (order) => {
+    const parts = [
+      order.vehicle_year,
+      order.vehicle_make,
+      order.vehicle_model,
+      order.vehicle_trim
+    ].filter(Boolean);
+
+    if (parts.length === 0) return '-';
+    return parts.join(' ');
+  };
+
+  const rows = orders.map((order) => {
+    const isSelected = selectedOrders.includes(order.id);
+
+    return [
+      <Checkbox
+        checked={isSelected}
+        onChange={(checked) => handleSelectOrder(order.id, checked)}
+      />,
+      <Button plain onClick={() => handleRowClick(order)}>
+        {order.order_number}
+      </Button>,
+      formatDate(order.created_at),
+      order.customer_name || 'Guest',
+      order.customer_email || '-',
+      formatVehicleInfo(order),
+      order.tags || '-',
+      formatCurrency(order.total_price)
+    ];
+  });
 
   const headings = [
-    'Order',
+    <Checkbox
+      checked={selectAll}
+      onChange={handleSelectAll}
+    />,
+    'Order #',
     'Date',
     'Customer',
     'Email',
-    'Total',
-    'Payment',
-    'Fulfillment',
-    'Items'
+    'Vehicle Info',
+    'Tags',
+    'Total'
   ];
 
   if (loading && orders.length === 0) {
@@ -157,14 +292,14 @@ export default function Orders() {
         <Banner tone="critical" title="Error loading orders">
           <p>{error}</p>
           <div style={{ marginTop: '16px' }}>
-            <Button onClick={() => fetchOrders(1)}>Retry</Button>
+            <Button onClick={() => fetchOrders()}>Retry</Button>
           </div>
         </Banner>
       </Page>
     );
   }
 
-  if (orders.length === 0 && !loading) {
+  if (orders.length === 0 && !loading && !searchQuery) {
     return (
       <Page title="Orders">
         <EmptyState
@@ -173,7 +308,7 @@ export default function Orders() {
         >
           <p>When you receive orders, they will appear here.</p>
           <div style={{ marginTop: '16px' }}>
-            <Button onClick={() => fetchOrders(1)}>Refresh</Button>
+            <Button onClick={() => fetchOrders()}>Refresh</Button>
           </div>
         </EmptyState>
       </Page>
@@ -183,167 +318,229 @@ export default function Orders() {
   return (
     <Page
       title="Orders"
-      subtitle={`${orders.length} order${orders.length !== 1 ? 's' : ''} loaded`}
+      subtitle={`${total} total order${total !== 1 ? 's' : ''}`}
       primaryAction={{
         content: 'Refresh',
-        onAction: () => fetchOrders(1)
+        onAction: () => fetchOrders()
       }}
+      secondaryActions={[
+        {
+          content: 'Sync from Shopify',
+          onAction: handleSyncOrders,
+          loading: syncing
+        },
+        ...(selectedOrders.length > 0
+          ? [
+              {
+                content: `Send Email to Selected (${selectedOrders.length})`,
+                onAction: handleSendEmailToSelected
+              }
+            ]
+          : [])
+      ]}
     >
-      <Card>
-        <DataTable
-          columnContentTypes={[
-            'text',
-            'text',
-            'text',
-            'text',
-            'numeric',
-            'text',
-            'text',
-            'numeric'
-          ]}
-          headings={headings}
-          rows={rows}
-          hoverable
-        />
+      <BlockStack gap="400">
+        {/* Search and Pagination Controls */}
+        <Card>
+          <BlockStack gap="400">
+            <InlineStack gap="400" align="space-between" blockAlign="center">
+              <div style={{ flex: 1, maxWidth: '500px' }}>
+                <TextField
+                  placeholder="Search by order #, customer name, or email..."
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  clearButton
+                  onClearButtonClick={handleSearchClear}
+                  autoComplete="off"
+                  connectedRight={
+                    <Button onClick={handleSearch} loading={loading}>
+                      Search
+                    </Button>
+                  }
+                />
+              </div>
+              <InlineStack gap="200" align="end">
+                <Text variant="bodyMd" as="span">
+                  Show:
+                </Text>
+                <div style={{ minWidth: '100px' }}>
+                  <Select
+                    options={[
+                      { label: '50', value: '50' },
+                      { label: '100', value: '100' },
+                      { label: '150', value: '150' },
+                      { label: '200', value: '200' },
+                      { label: '250', value: '250' },
+                      { label: '500', value: '500' }
+                    ]}
+                    value={limit}
+                    onChange={handleLimitChange}
+                  />
+                </div>
+              </InlineStack>
+            </InlineStack>
+          </BlockStack>
+        </Card>
 
-        {hasMore && (
-          <div style={{ padding: '16px', textAlign: 'center', borderTop: '1px solid #e1e3e5' }}>
-            <Button
-              onClick={loadMore}
-              loading={loading}
-              disabled={loading}
-            >
-              {loading ? `Loading more orders...` : `Load More (${orders.length} of many)`}
-            </Button>
-          </div>
-        )}
+        {/* Orders Table */}
+        <Card>
+          {orders.length === 0 && searchQuery ? (
+            <Box padding="800">
+              <EmptyState
+                heading="No orders found"
+                image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+              >
+                <p>Try adjusting your search query</p>
+                <div style={{ marginTop: '16px' }}>
+                  <Button onClick={handleSearchClear}>Clear Search</Button>
+                </div>
+              </EmptyState>
+            </Box>
+          ) : (
+            <>
+              <DataTable
+                columnContentTypes={[
+                  'text', // Checkbox
+                  'text', // Order #
+                  'text', // Date
+                  'text', // Customer
+                  'text', // Email
+                  'text', // Vehicle Info
+                  'text', // Tags
+                  'numeric' // Total
+                ]}
+                headings={headings}
+                rows={rows}
+                hoverable
+              />
 
-        {!hasMore && orders.length > 0 && (
-          <div style={{ padding: '16px', textAlign: 'center', borderTop: '1px solid #e1e3e5' }}>
-            <Text variant="bodyMd" as="p" tone="subdued">
-              All orders loaded ({orders.length} total)
-            </Text>
-          </div>
-        )}
-      </Card>
+              <Divider />
 
-      {/* Order Details Modal */}
+              {/* Pagination */}
+              <Box padding="400">
+                <InlineStack align="space-between" blockAlign="center">
+                  <Text variant="bodyMd" as="p" tone="subdued">
+                    Showing {orders.length} of {total} order{total !== 1 ? 's' : ''}
+                    {searchQuery && ` matching "${searchQuery}"`}
+                  </Text>
+                  <InlineStack gap="200">
+                    <Button
+                      onClick={() => setPage(page - 1)}
+                      disabled={page === 1 || loading}
+                    >
+                      Previous
+                    </Button>
+                    <Text variant="bodyMd" as="span">
+                      Page {page}
+                    </Text>
+                    <Button
+                      onClick={() => setPage(page + 1)}
+                      disabled={!hasMore || loading}
+                    >
+                      Next
+                    </Button>
+                  </InlineStack>
+                </InlineStack>
+              </Box>
+            </>
+          )}
+        </Card>
+      </BlockStack>
+
+      {/* Send Email Modal */}
       <Modal
-        open={orderDetailsOpen}
-        onClose={() => setOrderDetailsOpen(false)}
-        title={`Order ${selectedOrder?.name || ''}`}
-        large
+        open={sendEmailModalOpen}
+        onClose={() => setSendEmailModalOpen(false)}
+        title="Send Email"
         primaryAction={{
-          content: 'Close',
-          onAction: () => setOrderDetailsOpen(false)
+          content: 'Send Email',
+          onAction: handleSendEmail,
+          loading: sendingEmail,
+          disabled: !selectedTemplate || sendingEmail
         }}
         secondaryActions={[
           {
-            content: 'Process via SDW',
-            onAction: () => {
-              console.log('Process via SDW:', selectedOrder);
-              // TODO: Implement SDW processing
-            }
-          },
-          {
-            content: 'Print PDF',
-            onAction: () => {
-              console.log('Print PDF:', selectedOrder);
-              // TODO: Implement PDF generation
-            }
+            content: 'Cancel',
+            onAction: () => setSendEmailModalOpen(false)
           }
         ]}
+        large
       >
-        {selectedOrder && (
-          <Modal.Section>
-            <Layout>
-              <Layout.Section>
-                <Card>
-                  <div style={{ padding: '16px' }}>
-                    <Text variant="headingMd" as="h3">Customer Information</Text>
-                    <div style={{ marginTop: '12px' }}>
-                      <Text variant="bodyMd" as="p">
-                        <strong>Name:</strong> {selectedOrder.customer?.default_address?.name || selectedOrder.customer?.first_name + ' ' + selectedOrder.customer?.last_name || 'Guest'}
-                      </Text>
-                      <Text variant="bodyMd" as="p">
-                        <strong>Email:</strong> {selectedOrder.customer?.email || 'N/A'}
-                      </Text>
-                      <Text variant="bodyMd" as="p">
-                        <strong>Phone:</strong> {selectedOrder.customer?.phone || 'N/A'}
-                      </Text>
-                    </div>
-                  </div>
-                </Card>
-              </Layout.Section>
+        <Modal.Section>
+          <BlockStack gap="400">
+            <Text variant="headingMd" as="h3">
+              Recipients ({emailRecipients.length})
+            </Text>
+            <BlockStack gap="200">
+              {emailRecipients.map((order) => (
+                <div key={order.id} style={{ padding: '8px', background: '#f6f6f7', borderRadius: '8px' }}>
+                  <Text variant="bodyMd" as="p">
+                    <strong>{order.order_number}</strong> - {order.customer_name} ({order.customer_email})
+                  </Text>
+                  {formatVehicleInfo(order) !== '-' && (
+                    <Text variant="bodyMd" as="p" tone="subdued">
+                      Vehicle: {formatVehicleInfo(order)}
+                    </Text>
+                  )}
+                </div>
+              ))}
+            </BlockStack>
 
-              <Layout.Section>
-                <Card>
-                  <div style={{ padding: '16px' }}>
-                    <Text variant="headingMd" as="h3">Order Details</Text>
-                    <div style={{ marginTop: '12px' }}>
-                      <Text variant="bodyMd" as="p">
-                        <strong>Total:</strong> {formatCurrency(selectedOrder.total_price)}
-                      </Text>
-                      <Text variant="bodyMd" as="p">
-                        <strong>Payment:</strong> {getFinancialStatusBadge(selectedOrder.financial_status)}
-                      </Text>
-                      <Text variant="bodyMd" as="p">
-                        <strong>Fulfillment:</strong> {getFulfillmentStatusBadge(selectedOrder.fulfillment_status)}
-                      </Text>
-                      <Text variant="bodyMd" as="p">
-                        <strong>Date:</strong> {formatDate(selectedOrder.created_at)}
-                      </Text>
-                    </div>
-                  </div>
-                </Card>
-              </Layout.Section>
+            <Divider />
 
-              <Layout.Section>
-                <Card>
-                  <div style={{ padding: '16px' }}>
-                    <Text variant="headingMd" as="h3">Line Items ({selectedOrder.line_items?.length || 0})</Text>
-                    <div style={{ marginTop: '16px' }}>
-                      {selectedOrder.line_items?.map((item, index) => (
-                        <div
-                          key={index}
-                          style={{
-                            padding: '12px',
-                            borderBottom: index < selectedOrder.line_items.length - 1 ? '1px solid #e1e3e5' : 'none',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center'
-                          }}
-                        >
-                          <div style={{ flex: 1 }}>
-                            <Text variant="bodyMd" as="p" fontWeight="semibold">
-                              {item.title}
-                            </Text>
-                            {item.variant_title && (
-                              <Text variant="bodyMd" as="p" tone="subdued">
-                                {item.variant_title}
-                              </Text>
-                            )}
-                            <Text variant="bodyMd" as="p" tone="subdued">
-                              SKU: {item.sku || 'N/A'}
-                            </Text>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <Text variant="bodyMd" as="p">
-                              Qty: {item.quantity}
-                            </Text>
-                            <Text variant="bodyMd" as="p" fontWeight="semibold">
-                              {formatCurrency(item.price)}
-                            </Text>
-                          </div>
+            <Select
+              label="Email Template"
+              options={[
+                { label: 'Select a template...', value: '' },
+                ...templates.map(t => ({
+                  label: `${t.name} (${t.category || 'general'})`,
+                  value: t.id.toString()
+                }))
+              ]}
+              value={selectedTemplate}
+              onChange={setSelectedTemplate}
+              requiredIndicator
+            />
+
+            {selectedTemplate && (
+              <>
+                {(() => {
+                  const template = templates.find(t => t.id.toString() === selectedTemplate);
+                  if (!template) return null;
+
+                  return (
+                    <div style={{ padding: '16px', background: '#f6f6f7', borderRadius: '8px' }}>
+                      <Text variant="headingMd" as="h3">Template Preview</Text>
+                      <div style={{ marginTop: '12px' }}>
+                        <Text variant="bodyMd" as="p" fontWeight="semibold">Subject:</Text>
+                        <Text variant="bodyMd" as="p">{template.subject}</Text>
+                      </div>
+                      <div style={{ marginTop: '12px' }}>
+                        <Text variant="bodyMd" as="p" fontWeight="semibold">Body:</Text>
+                        <div style={{ marginTop: '8px', whiteSpace: 'pre-wrap', fontSize: '13px' }}>
+                          {template.body}
                         </div>
-                      ))}
+                      </div>
+                      {template.description && (
+                        <div style={{ marginTop: '12px' }}>
+                          <Text variant="bodyMd" as="p" tone="subdued">
+                            <em>{template.description}</em>
+                          </Text>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </Card>
-              </Layout.Section>
-            </Layout>
-          </Modal.Section>
-        )}
+                  );
+                })()}
+              </>
+            )}
+
+            {templates.length === 0 && (
+              <Banner tone="warning">
+                <p>No email templates found. Create an email template first in the Email Templates page.</p>
+              </Banner>
+            )}
+          </BlockStack>
+        </Modal.Section>
       </Modal>
     </Page>
   );
