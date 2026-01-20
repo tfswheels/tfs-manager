@@ -304,10 +304,15 @@ router.post('/sync', async (req, res) => {
       }
 
       // Extract next page URL from Link header
-      const linkHeader = response.headers['link'] || response.headers.Link;
+      const linkHeaderRaw = response.headers['link'] || response.headers.Link;
+      console.log(`    🔗 Link header type: ${typeof linkHeaderRaw}`);
+      console.log(`    🔗 Link header raw:`, linkHeaderRaw);
+
+      // Convert to string if it's not already
+      const linkHeader = linkHeaderRaw ? String(linkHeaderRaw) : null;
       console.log(`    🔗 Link header: ${linkHeader ? 'EXISTS' : 'MISSING'}`);
 
-      if (linkHeader) {
+      if (linkHeader && typeof linkHeader === 'string') {
         console.log(`    🔗 Link header content: ${linkHeader.substring(0, 200)}...`);
 
         // Parse the Link header to get next page URL
@@ -325,7 +330,7 @@ router.post('/sync', async (req, res) => {
           nextPageUrl = null;
         }
       } else {
-        console.log(`    ⚠️  No Link header - this might be the last page`);
+        console.log(`    ⚠️  No valid Link header - this might be the last page`);
         nextPageUrl = null;
       }
 
