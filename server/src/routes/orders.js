@@ -1,6 +1,12 @@
 import express from 'express';
 import { shopify } from '../config/shopify.js';
 import db from '../config/database.js';
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
@@ -609,20 +615,67 @@ router.post('/process-sdw', async (req, res) => {
       });
     }
 
-    // TODO: Spawn Python subprocess to run SDW automation
-    // For now, we'll just return a success message
-    // Next step: Modify the Python script to accept CLI arguments
+    // Spawn Python subprocess to run SDW automation
+    const pythonScript = path.join(__dirname, '../../workers/sdw_processor.py');
 
+    const args = [
+      '--order-number', orderNumber.replace('#', ''),
+      '--card', card,
+      '--mode', mode
+    ];
+
+    if (vehicleString) {
+      args.push('--vehicle', vehicleString);
+    }
+
+    if (mode === 'quote' && quoteLink) {
+      args.push('--quote-link', quoteLink);
+    }
+
+    if (selectedLineItems.length > 0) {
+      args.push('--selected-items', JSON.stringify(selectedLineItems));
+    }
+
+    console.log(`🐍 Spawning Python subprocess...`);
+    console.log(`   Script: ${pythonScript}`);
+    console.log(`   Args: ${JSON.stringify(args)}`);
+
+    const pythonProcess = spawn('python3', [pythonScript, ...args], {
+      cwd: path.join(__dirname, '../../workers')
+    });
+
+    let output = '';
+    let errorOutput = '';
+
+    pythonProcess.stdout.on('data', (data) => {
+      const text = data.toString();
+      output += text;
+      console.log(`[Python] ${text.trim()}`);
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      const text = data.toString();
+      errorOutput += text;
+      console.error(`[Python Error] ${text.trim()}`);
+    });
+
+    pythonProcess.on('close', (code) => {
+      console.log(`✅ Python process exited with code ${code}`);
+    });
+
+    // Return immediately - process runs in background
     res.json({
       success: true,
-      message: `SDW processing queued for order ${orderNumber}. This feature is still under development - Python script integration coming soon.`,
+      message: `SDW processing started for order ${orderNumber}. Check server logs for progress.`,
       details: {
         orderNumber,
         itemCount: selectedLineItems.length,
         vehicle: vehicleString,
         card,
-        mode
-      }
+        mode,
+        status: 'processing'
+      },
+      note: 'This is currently running a stub. Full SDW automation requires refactoring the Python script to be non-interactive.'
     });
 
   } catch (error) {
