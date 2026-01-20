@@ -251,37 +251,38 @@ router.post('/sync', async (req, res) => {
       }
     });
 
-    // Fetch orders with pagination using cursor-based pagination
+    // Fetch orders with pagination using Shopify's pageInfo
     let allOrders = [];
     let pageCount = 0;
     const maxPages = Math.ceil(totalToFetch / perPage);
-    let nextPageUrl = null;
+    let pageInfo = null;
 
     while (pageCount < maxPages) {
       console.log(`  📄 Fetching page ${pageCount + 1}/${maxPages}...`);
 
       let response;
 
-      if (nextPageUrl) {
-        // Use the next page URL directly
-        console.log(`    🔗 Using next page URL`);
-        response = await client.get({ path: nextPageUrl });
-      } else {
-        // First page - use standard query
-        response = await client.get({
-          path: 'orders',
-          query: {
-            limit: perPage,
-            status: 'any',
-            order: 'created_at DESC'
-          }
-        });
+      // Build query params
+      const queryParams = {
+        limit: perPage,
+        status: 'any',
+        order: 'created_at DESC'
+      };
+
+      // Add page_info if we have it (for subsequent pages)
+      if (pageInfo) {
+        queryParams.page_info = pageInfo;
+        // Remove 'order' param when using page_info (Shopify requirement)
+        delete queryParams.order;
+        console.log(`    🔗 Using page_info for pagination`);
       }
 
-      const orders = response.body.orders || [];
+      response = await client.get({
+        path: 'orders',
+        query: queryParams
+      });
 
-      // Debug: Log response headers
-      console.log(`    📋 Response headers:`, JSON.stringify(response.headers, null, 2));
+      const orders = response.body.orders || [];
 
       // If we got no orders, we're done
       if (orders.length === 0) {
@@ -293,8 +294,6 @@ router.post('/sync', async (req, res) => {
       pageCount++;
 
       console.log(`    ✓ Retrieved ${orders.length} orders (total: ${allOrders.length})`);
-
-      // Debug: Log first and last order IDs
       console.log(`    📊 Order range: ${orders[0].name} → ${orders[orders.length - 1].name}`);
 
       // If we got fewer than perPage orders, this is the last page
@@ -303,47 +302,31 @@ router.post('/sync', async (req, res) => {
         break;
       }
 
-      // Extract next page URL from Link header
-      const linkHeaderRaw = response.headers['link'] || response.headers.Link;
-      console.log(`    🔗 Link header type: ${typeof linkHeaderRaw}`);
-      console.log(`    🔗 Link header raw:`, linkHeaderRaw);
-
-      // Convert to string if it's not already
-      const linkHeader = linkHeaderRaw ? String(linkHeaderRaw) : null;
-      console.log(`    🔗 Link header: ${linkHeader ? 'EXISTS' : 'MISSING'}`);
-
-      if (linkHeader && typeof linkHeader === 'string') {
-        console.log(`    🔗 Link header content: ${linkHeader.substring(0, 200)}...`);
-
-        // Parse the Link header to get next page URL
-        const nextLinkMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-        if (nextLinkMatch) {
-          const fullNextUrl = nextLinkMatch[1];
-          console.log(`    ✅ Found next page URL: ${fullNextUrl.substring(0, 100)}...`);
-
-          // Extract just the path and query from the full URL without using URL constructor
-          // The URL format is: https://{shop}/admin/api/{version}/orders.json?page_info=...
-          // We need everything after the domain: /admin/api/{version}/orders.json?page_info=...
-          const pathMatch = fullNextUrl.match(/https?:\/\/[^\/]+(.+)/);
-          if (pathMatch) {
-            nextPageUrl = pathMatch[1];
-            console.log(`    🔗 Next page path: ${nextPageUrl.substring(0, 100)}...`);
+      // Check if there's a next page using the pageInfo from response
+      if (response.pageInfo && response.pageInfo.nextPage) {
+        pageInfo = response.pageInfo.nextPage.query.page_info;
+        console.log(`    ✅ Found next page_info`);
+      } else {
+        // Try to extract from Link header as fallback
+        const linkHeader = response.headers['link'] || response.headers.Link;
+        if (linkHeader && typeof linkHeader === 'string') {
+          const pageInfoMatch = linkHeader.match(/page_info=([^&>]+)/);
+          if (pageInfoMatch) {
+            pageInfo = decodeURIComponent(pageInfoMatch[1]);
+            console.log(`    ✅ Extracted page_info from Link header`);
           } else {
-            console.log(`    ⚠️  Could not extract path from URL`);
-            nextPageUrl = null;
+            console.log(`    ⚠️  No page_info found in Link header`);
+            pageInfo = null;
           }
         } else {
-          console.log(`    ⚠️  Link header exists but no rel="next" found`);
-          nextPageUrl = null;
+          console.log(`    ℹ️  No Link header, this is the last page`);
+          pageInfo = null;
         }
-      } else {
-        console.log(`    ⚠️  No valid Link header - this might be the last page`);
-        nextPageUrl = null;
       }
 
-      // If no next page URL, we're done
-      if (!nextPageUrl) {
-        console.log(`    ℹ️  No next page URL, stopping pagination`);
+      // If no next page info, we're done
+      if (!pageInfo) {
+        console.log(`    ℹ️  No next page info, stopping pagination`);
         break;
       }
 
