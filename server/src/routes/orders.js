@@ -903,16 +903,28 @@ router.post('/sdw-job/:jobId/confirm', async (req, res) => {
 
     job.setProcessing('purchase');
 
+    // Create signal file for Python process to read
+    const fs = await import('fs').then(m => m.promises);
+    const signalDir = '/tmp/sdw_signals';
+
+    try {
+      await fs.mkdir(signalDir, { recursive: true });
+
+      // Extract order number from job
+      const orderNumber = job.orderNumber;
+      const confirmFile = `${signalDir}/confirm_${orderNumber}.txt`;
+
+      await fs.writeFile(confirmFile, 'CONFIRMED');
+      console.log(`📝 Created signal file: ${confirmFile}`);
+
+    } catch (err) {
+      console.error('❌ Error creating signal file:', err);
+    }
+
     res.json({
       success: true,
       message: 'Purchase confirmation received. Completing order...'
     });
-
-    // TODO: Signal Python process to complete purchase
-    // For now, mark as completed
-    setTimeout(() => {
-      job.setCompleted({ message: 'Purchase completed successfully' });
-    }, 2000);
 
   } catch (error) {
     console.error('❌ Error confirming SDW purchase:', error);

@@ -1877,28 +1877,69 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
         print(f"TOTAL: {total}")
         print("="*60)
 
+        # Extract numeric values from shipping and total
+        shipping_value = "0.00"
+        total_value = "0.00"
+
+        try:
+            # Remove $ and convert to float
+            if shipping:
+                shipping_value = shipping.replace('$', '').replace(',', '').strip()
+            if total:
+                total_value = total.replace('$', '').replace(',', '').strip()
+        except:
+            pass
+
+        # Output shipping calculation for Node.js to parse
+        print(f"\nSHIPPING_CALCULATED:{shipping_value}:{total_value}")
+        sys.stdout.flush()  # Force flush to ensure Node.js sees it immediately
+
     except Exception as e:
         print(f"Could not extract order summary: {e}")
+        # Output with zeros if we couldn't extract
+        print(f"\nSHIPPING_CALCULATED:0.00:0.00")
+        sys.stdout.flush()
 
-    # Final confirmation before submission
+    # Wait for confirmation from Node.js backend via signal file
     print("\n" + "="*60)
-    print("⚠️  FINAL CONFIRMATION - READY TO SUBMIT ORDER")
+    print("⏸️  WAITING FOR USER CONFIRMATION")
     print("="*60)
-    print("Please review the order details in the browser window.")
-    print("All payment information has been filled.")
+    print("Waiting for user to confirm purchase in web interface...")
     print("")
 
-    while True:
-        try:
-            final_confirm = input("✅ Submit this order now? (y/n): ").strip().lower()
-            if final_confirm in ['y', 'yes']:
-                break
-            elif final_confirm in ['n', 'no']:
-                print("\n❌ Order cancelled by user")
-                return None
-        except KeyboardInterrupt:
-            print("\n\n❌ Order cancelled")
+    # Create a signal file path based on order number
+    signal_dir = Path("/tmp/sdw_signals")
+    signal_dir.mkdir(exist_ok=True)
+    order_num = order.get('name', '').replace('#', '')
+    confirm_file = signal_dir / f"confirm_{order_num}.txt"
+    cancel_file = signal_dir / f"cancel_{order_num}.txt"
+
+    # Clean up old signal files
+    if confirm_file.exists():
+        confirm_file.unlink()
+    if cancel_file.exists():
+        cancel_file.unlink()
+
+    # Wait for signal file (check every 2 seconds, timeout after 10 minutes)
+    max_wait = 600  # 10 minutes
+    elapsed = 0
+
+    while elapsed < max_wait:
+        if confirm_file.exists():
+            print("\n✅ User confirmed purchase")
+            confirm_file.unlink()  # Clean up
+            break
+        elif cancel_file.exists():
+            print("\n❌ User cancelled order")
+            cancel_file.unlink()  # Clean up
             return None
+
+        time.sleep(2)
+        elapsed += 2
+
+    if elapsed >= max_wait:
+        print("\n⏱️  Confirmation timeout - order cancelled")
+        return None
 
     # Submit the order
     print("\n🚀 Submitting order...")
