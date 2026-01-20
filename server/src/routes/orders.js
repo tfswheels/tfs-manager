@@ -774,7 +774,9 @@ async function processSDWInBackground(jobId, config) {
         if (parts.length === 3) {
           const shippingCost = parseFloat(parts[1]);
           const totalPrice = parseFloat(parts[2]);
+          console.log(`💰 Parsed shipping: $${shippingCost}, total: $${totalPrice}`);
           job.setCalculateComplete(totalPrice, shippingCost);
+          console.log(`✅ Job ${jobId} status set to: ${job.status}`);
         }
       }
     });
@@ -879,7 +881,10 @@ router.get('/sdw-job/:jobId', async (req, res) => {
     }
 
     const status = job.getStatus();
-    console.log(`📊 Job ${jobId} status: ${status.status}, progress items: ${status.progress.length}`);
+    // Only log when status changes to something important
+    if (status.status === 'awaiting_confirmation' || status.status === 'completed' || status.status === 'failed') {
+      console.log(`📊 Job ${jobId} status: ${status.status}`);
+    }
     res.json(status);
 
   } catch (error) {

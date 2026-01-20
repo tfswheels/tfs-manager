@@ -251,11 +251,13 @@ export default function Orders() {
       const response = await axios.get(`${API_URL}/api/orders/sdw-job/${jobId}`);
       const status = response.data;
 
+      console.log(`[Poll] Status: ${status.status}, Progress count: ${status.progress?.length || 0}`);
       setSdwJobStatus(status.status);
       setSdwProgress(status.progress || []);
 
       // If awaiting confirmation, update pricing (UI shows inline confirmation)
       if (status.status === 'awaiting_confirmation') {
+        console.log(`[Poll] Awaiting confirmation! Total: $${status.totalPrice}, Shipping: $${status.shippingCost}`);
         setCalculatedTotal(status.totalPrice);
         setCalculatedShipping(status.shippingCost);
         setProcessingSDW(false); // Stop spinner, show confirmation UI
