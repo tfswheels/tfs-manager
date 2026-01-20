@@ -123,34 +123,58 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * Get single order by ID with items
+ * Get single order by Shopify order ID
  */
-router.get('/:id', verifyShopInstalled, async (req, res) => {
+router.get('/:orderId', async (req, res) => {
   try {
-    const shopId = req.shop.id;
-    const { id } = req.params;
+    const shop = req.query.shop || '2f3d7a-2.myshopify.com';
+    const { orderId } = req.params;
 
-    const [orders] = await db.execute(
-      'SELECT * FROM orders WHERE id = ? AND shop_id = ?',
-      [id, shopId]
+    console.log(`📦 Fetching order ${orderId} for ${shop}...`);
+
+    // Get access token
+    const [rows] = await db.execute(
+      'SELECT id, access_token FROM shops WHERE shop_name = ?',
+      [shop]
     );
 
-    if (orders.length === 0) {
-      return res.status(404).json({ error: 'Order not found' });
+    if (rows.length === 0 || !rows[0].access_token) {
+      return res.status(404).json({ error: 'Shop not found or not authenticated' });
     }
 
+    const shopId = rows[0].id;
+    const accessToken = rows[0].access_token;
+
+    // Create Shopify REST client
+    const client = new shopify.clients.Rest({
+      session: { shop, accessToken }
+    });
+
+    // Fetch specific order from Shopify
+    const response = await client.get({
+      path: `orders/${orderId}`
+    });
+
+    console.log(`✅ Retrieved order ${orderId}`);
+
+    // Also get line items from database if available
     const [items] = await db.execute(
-      'SELECT * FROM order_items WHERE order_id = ?',
-      [id]
+      'SELECT * FROM order_items WHERE shopify_order_id = ? AND shop_id = ?',
+      [orderId, shopId]
     );
 
     res.json({
-      order: orders[0],
-      items
+      success: true,
+      order: response.body.order,
+      items: items
     });
+
   } catch (error) {
-    console.error('Get order error:', error);
-    res.status(500).json({ error: 'Failed to fetch order' });
+    console.error('❌ Error fetching order:', error);
+    res.status(500).json({
+      error: 'Failed to fetch order',
+      message: error.message
+    });
   }
 });
 
