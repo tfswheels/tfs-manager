@@ -47,19 +47,58 @@ class GCSManager:
         async with self.token_lock:
             try:
                 import os
-                # Check if GCS_CREDENTIALS env var is set
-                if not os.environ.get('GCS_CREDENTIALS') and not os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):
+                import json
+                from google.oauth2.credentials import Credentials as OAuthCredentials
+
+                # Try to load from GCS_CREDENTIALS env var first (Railway/production)
+                gcs_creds_json = os.environ.get('GCS_CREDENTIALS')
+                if gcs_creds_json:
+                    try:
+                        logger.info("Loading GCS credentials from GCS_CREDENTIALS env var")
+                        creds_data = json.loads(gcs_creds_json)
+
+                        # Check if it's OAuth user credentials or service account
+                        if creds_data.get('type') == 'authorized_user':
+                            # OAuth user credentials
+                            self.creds = OAuthCredentials(
+                                token=None,  # Will be refreshed
+                                refresh_token=creds_data.get('refresh_token'),
+                                token_uri='https://oauth2.googleapis.com/token',
+                                client_id=creds_data.get('client_id'),
+                                client_secret=creds_data.get('client_secret')
+                            )
+                            self.project = creds_data.get('quota_project_id')
+                        else:
+                            # Service account - use google.auth.default()
+                            logger.warning("Service account credentials in GCS_CREDENTIALS not yet supported, falling back to default")
+                            self.creds, self.project = google.auth.default()
+
+                        # Refresh to get access token
+                        self.creds.refresh(Request())
+                        self.token = self.creds.token
+                        self.token_expiry = datetime.now(timezone.utc) + timedelta(seconds=3600)
+                        logger.info("Successfully initialized GCS credentials from env var")
+                        return
+
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse GCS_CREDENTIALS JSON: {e}")
+                    except Exception as e:
+                        logger.error(f"Failed to create credentials from GCS_CREDENTIALS: {e}")
+
+                # Fallback to default credentials (local development)
+                if os.environ.get('GOOGLE_APPLICATION_CREDENTIALS') or os.path.exists(os.path.expanduser('~/.config/gcloud/application_default_credentials.json')):
+                    logger.info("Loading GCS credentials from default locations")
+                    self.creds, self.project = google.auth.default()
+                    self.creds.refresh(Request())
+                    self.token = self.creds.token
+                    self.token_expiry = datetime.now(timezone.utc) + timedelta(seconds=3600)
+                    logger.info("Successfully refreshed GCS access token from default credentials")
+                else:
                     logger.warning("GCS credentials not found in environment - GCS features will be disabled")
                     self.creds = None
                     self.project = None
                     self.token = None
-                    return
 
-                self.creds, self.project = google.auth.default()
-                self.creds.refresh(Request())
-                self.token = self.creds.token
-                self.token_expiry = datetime.now(timezone.utc) + timedelta(seconds=3600)
-                logger.info("Successfully refreshed GCS access token")
             except Exception as e:
                 logger.warning(f"GCS credentials not available: {e} - GCS features will be disabled")
                 self.creds = None
@@ -69,6 +108,10 @@ class GCSManager:
     async def check_token_expiry(self):
         """Check if token needs refresh and refresh if needed."""
         try:
+            # Skip if credentials not initialized
+            if not self.token or not self.token_expiry:
+                return
+
             if datetime.now(timezone.utc) + TOKEN_REFRESH_MARGIN >= self.token_expiry:
                 logger.debug("Refreshing GCS token...")
                 await self.initialize_credentials()
@@ -119,6 +162,11 @@ class GCSManager:
     async def upload_image(self, session: aiohttp.ClientSession, image_data: bytes, image_name: str) -> Optional[str]:
         """Upload image to GCS and return public URL."""
         try:
+            # Check if credentials are available
+            if not self.token:
+                logger.error("GCS credentials not available - cannot upload image")
+                return None
+
             async with self.upload_semaphore:
                 await self.check_token_expiry()
 
