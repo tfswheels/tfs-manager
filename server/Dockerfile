@@ -1,16 +1,25 @@
 # Multi-stage build for Node.js + Python support
 FROM node:22-bullseye
 
-# Install Python 3 and pip
+# Install Python 3.11, Chrome, and dependencies
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-dev \
     build-essential \
+    tesseract-ocr \
+    chromium \
+    chromium-driver \
+    wget \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
 
 # Create symlink for python3 -> python
 RUN ln -s /usr/bin/python3 /usr/bin/python
+
+# Set environment for Chrome/Chromium
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
 # Set working directory
 WORKDIR /app
