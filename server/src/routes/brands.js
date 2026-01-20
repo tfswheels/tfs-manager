@@ -14,10 +14,10 @@ router.get('/', async (req, res) => {
 
     // Query tfs-db database for brands from shopify_products table
     const [rows] = await db.execute(
-      `SELECT DISTINCT vendor as brand
+      `SELECT DISTINCT brand
        FROM \`tfs-db\`.shopify_products
-       WHERE vendor IS NOT NULL AND vendor != ''
-       ORDER BY vendor ASC`
+       WHERE brand IS NOT NULL AND brand != ''
+       ORDER BY brand ASC`
     );
 
     const brands = rows.map(row => row.brand);
