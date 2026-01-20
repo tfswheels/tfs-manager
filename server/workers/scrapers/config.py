@@ -53,7 +53,7 @@ SALE_ONLY = False
 
 ENABLE_PRODUCT_DISCOVERY = True  # Enable new product creation
 ENABLE_SHOPIFY_SYNC = True  # Sync Shopify tables before scraping
-MAX_PRODUCTS_PER_DAY = 1000  # Daily creation limit
+MAX_PRODUCTS_PER_DAY = int(os.environ.get('MAX_PRODUCTS_PER_DAY', '1000'))  # Daily creation limit (can be overridden via env var)
 RETRY_FAILED_PRODUCTS = True  # Retry products with product_sync='error'
 
 # =============================================================================
@@ -76,6 +76,11 @@ if '--no-discovery' in sys.argv:
     ENABLE_PRODUCT_DISCOVERY = False
 if '--no-shopify-sync' in sys.argv:
     ENABLE_SHOPIFY_SYNC = False
+
+# Override from environment variables (from Node.js backend)
+if os.environ.get('MAX_PRODUCTS_PER_DAY'):
+    MAX_PRODUCTS_PER_DAY = int(os.environ.get('MAX_PRODUCTS_PER_DAY'))
+    logger.info(f"📊 MAX_PRODUCTS_PER_DAY overridden from env var: {MAX_PRODUCTS_PER_DAY}")
 
 # =============================================================================
 # SCRAPING SETTINGS
@@ -160,6 +165,18 @@ SKIP_BRANDS = {
 }
 
 SKIP_BRANDS_NORMALIZED = {brand.lower() for brand in SKIP_BRANDS}
+
+# Override from environment variables (from Node.js backend)
+if os.environ.get('EXCLUDED_BRANDS'):
+    try:
+        import json
+        excluded_brands_from_env = json.loads(os.environ.get('EXCLUDED_BRANDS'))
+        if isinstance(excluded_brands_from_env, list):
+            SKIP_BRANDS = set(excluded_brands_from_env)
+            SKIP_BRANDS_NORMALIZED = {brand.lower() for brand in SKIP_BRANDS}
+            logger.info(f"🚫 EXCLUDED_BRANDS overridden from env var: {len(SKIP_BRANDS)} brands")
+    except Exception as e:
+        logger.warning(f"Failed to parse EXCLUDED_BRANDS from env var: {e}")
 
 # =============================================================================
 # CONSTRUCT BASE_URL

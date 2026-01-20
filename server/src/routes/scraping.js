@@ -54,9 +54,10 @@ router.get('/jobs', async (req, res) => {
  */
 router.post('/start', async (req, res) => {
   try {
-    const { shop = '2f3d7a-2.myshopify.com', scraperType } = req.body;
+    const { shop = '2f3d7a-2.myshopify.com', scraperType, config = {} } = req.body;
 
     console.log(`🚀 Starting scraping job for ${shop}, type: ${scraperType}...`);
+    console.log(`⚙️  Configuration:`, config);
 
     // Get shop ID
     const [rows] = await db.execute(
@@ -70,7 +71,7 @@ router.post('/start', async (req, res) => {
 
     const shopId = rows[0].id;
 
-    // Create scraping job
+    // Create scraping job with actual config
     const [result] = await db.execute(
       `INSERT INTO scraping_jobs (
         shop_id,
@@ -80,7 +81,7 @@ router.post('/start', async (req, res) => {
         started_at,
         created_at
       ) VALUES (?, ?, ?, 'running', NOW(), NOW())`,
-      [shopId, scraperType, JSON.stringify({ immediate: true })]
+      [shopId, scraperType, JSON.stringify(config)]
     );
 
     const jobId = result.insertId;
@@ -94,16 +95,30 @@ router.post('/start', async (req, res) => {
     console.log(`🐍 Launching Python scraper: ${pythonScript}`);
     console.log(`📂 Working directory: ${scraperPath}`);
 
-    const pythonProcess = spawn('python3', [
+    // Build command line arguments from config
+    const args = [
       pythonScript,
       `--job-id=${jobId}`,
       `--type=${scraperType}`
-    ], {
+    ];
+
+    // Add optional flags based on config
+    if (config.headless === false) args.push('--headed');
+    if (config.saleOnly) args.push('--sale-only');
+    if (!config.enableDiscovery) args.push('--no-discovery');
+    if (!config.enableShopifySync) args.push('--no-shopify-sync');
+
+    console.log(`🔧 Python args:`, args.join(' '));
+
+    const pythonProcess = spawn('python3', args, {
       cwd: scraperPath,
       env: {
         ...process.env,
         // Ensure the scraper uses tfs-db for product data
-        DB_NAME: 'tfs-db'  // Override to use product database
+        DB_NAME: 'tfs-db',  // Override to use product database
+        // Pass config via environment variables
+        MAX_PRODUCTS_PER_DAY: config.maxProductsPerDay?.toString() || '1000',
+        EXCLUDED_BRANDS: config.excludedBrands ? JSON.stringify(config.excludedBrands) : '[]'
       }
     });
 

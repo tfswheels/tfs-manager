@@ -7,17 +7,18 @@ import {
   Text,
   Badge,
   DataTable,
-  Select,
   TextField,
   Banner,
   Spinner,
   Modal,
   Checkbox,
-  ChoiceList,
-  Tabs,
+  Collapsible,
   BlockStack,
-  InlineStack
+  InlineStack,
+  Divider,
+  Icon
 } from '@shopify/polaris';
+import { ChevronDownIcon, ChevronUpIcon } from '@shopify/polaris-icons';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://tfs-manager-server-production.up.railway.app';
@@ -39,48 +40,39 @@ const SKIP_BRANDS_DEFAULT = [
 ];
 
 export default function Products() {
-  const [selectedTab, setSelectedTab] = useState(0);
   const [loading, setLoading] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [brands, setBrands] = useState([]);
   const [excludedBrands, setExcludedBrands] = useState(SKIP_BRANDS_DEFAULT);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [brandsOpen, setBrandsOpen] = useState(false);
 
-  // Scraper settings - Wheels
-  const [wheelsSettings, setWheelsSettings] = useState({
-    scraperType: 'wheels',
+  // Global configuration (applies to both wheels and tires)
+  const [config, setConfig] = useState({
     headless: true,
     enableDiscovery: true,
     enableShopifySync: true,
     maxProductsPerDay: 1000,
     retryFailed: true,
-    saleOnly: false,
-    scheduleEnabled: false,
-    scheduleInterval: '24'
-  });
-
-  // Scraper settings - Tires
-  const [tiresSettings, setTiresSettings] = useState({
-    scraperType: 'tires',
-    headless: true,
-    enableDiscovery: true,
-    enableShopifySync: true,
-    maxProductsPerDay: 1000,
-    retryFailed: true,
-    saleOnly: false,
-    scheduleEnabled: false,
-    scheduleInterval: '24'
+    saleOnly: false
   });
 
   const [selectedJob, setSelectedJob] = useState(null);
   const [jobLogsOpen, setJobLogsOpen] = useState(false);
   const [jobLogs, setJobLogs] = useState('');
 
+  // Get today's creation stats
+  const [todayStats, setTodayStats] = useState({ wheels: 0, tires: 0, total: 0, remaining: 1000 });
+
   useEffect(() => {
     fetchJobs();
     fetchBrands();
+    fetchTodayStats();
 
-    // Poll for job updates every 30 seconds (reduced from 5 to minimize log spam)
-    const interval = setInterval(fetchJobs, 30000);
+    const interval = setInterval(() => {
+      fetchJobs();
+      fetchTodayStats();
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -106,26 +98,42 @@ export default function Products() {
     }
   };
 
-  const startScraping = async (settings) => {
+  const fetchTodayStats = async () => {
+    try {
+      // This is a placeholder - you'll need to implement this endpoint
+      // For now, calculate from jobs
+      const today = new Date().toDateString();
+      const todayJobs = jobs.filter(job => new Date(job.created_at).toDateString() === today);
+      const wheelsCreated = todayJobs.filter(j => j.scraper_type === 'wheels').reduce((sum, j) => sum + (j.products_created || 0), 0);
+      const tiresCreated = todayJobs.filter(j => j.scraper_type === 'tires').reduce((sum, j) => sum + (j.products_created || 0), 0);
+      const total = wheelsCreated + tiresCreated;
+      setTodayStats({
+        wheels: wheelsCreated,
+        tires: tiresCreated,
+        total,
+        remaining: Math.max(0, config.maxProductsPerDay - total)
+      });
+    } catch (error) {
+      console.error('Failed to fetch today stats:', error);
+    }
+  };
+
+  const startScraping = async (scraperType) => {
     try {
       setLoading(true);
-      const response = await axios.post(`${API_URL}/api/scraping/start`, {
+      await axios.post(`${API_URL}/api/scraping/start`, {
         shop: '2f3d7a-2.myshopify.com',
-        scraperType: settings.scraperType,
+        scraperType,
         config: {
-          headless: settings.headless,
-          enableDiscovery: settings.enableDiscovery,
-          enableShopifySync: settings.enableShopifySync,
-          maxProductsPerDay: settings.maxProductsPerDay,
-          retryFailed: settings.retryFailed,
-          saleOnly: settings.saleOnly,
-          excludedBrands: excludedBrands
+          ...config,
+          excludedBrands
         }
       });
 
       await fetchJobs();
     } catch (error) {
       console.error('Failed to start scraping:', error);
+      alert(error.response?.data?.message || 'Failed to start scraping');
     } finally {
       setLoading(false);
     }
@@ -135,7 +143,6 @@ export default function Products() {
     setSelectedJob(job);
     setJobLogsOpen(true);
 
-    // Show instructions for viewing logs in Railway
     const railwayUrl = 'https://railway.app';
     setJobLogs(
 `Job #${job.id} - ${job.scraper_type}
@@ -170,27 +177,18 @@ Job Statistics:
   };
 
   const terminateJob = async (jobId) => {
-    if (!window.confirm(`Are you sure you want to terminate job #${jobId}? This cannot be undone.`)) {
+    if (!window.confirm(`Are you sure you want to terminate job #${jobId}?`)) {
       return;
     }
 
     try {
-      const response = await axios.post(`${API_URL}/api/scraping/terminate/${jobId}`, {}, {
+      await axios.post(`${API_URL}/api/scraping/terminate/${jobId}`, {}, {
         params: { shop: '2f3d7a-2.myshopify.com' }
       });
-
-      // Show success message
-      alert(response.data.message || `Job #${jobId} has been terminated`);
-
-      // Refresh jobs list
       await fetchJobs();
     } catch (error) {
       console.error('Failed to terminate job:', error);
-      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to terminate job';
-      alert(errorMessage);
-
-      // Refresh jobs list anyway to show updated status
-      await fetchJobs();
+      alert(error.response?.data?.message || 'Failed to terminate job');
     }
   };
 
@@ -205,331 +203,261 @@ Job Statistics:
     return <Badge tone={statusMap[status] || 'info'}>{status}</Badge>;
   };
 
-  const jobRows = jobs.map((job) => [
+  const runningJobs = jobs.filter(j => j.status === 'running');
+  const recentJobs = jobs.slice(0, 10);
+
+  const jobRows = recentJobs.map((job) => [
     <Button plain onClick={() => viewJobLogs(job)}>{job.id}</Button>,
     job.scraper_type,
     getStatusBadge(job.status),
     job.products_found || 0,
     job.products_created || 0,
     job.products_updated || 0,
-    new Date(job.created_at).toLocaleString(),
+    new Date(job.created_at).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }),
     job.status === 'running' ? (
       <InlineStack gap="200">
         <Spinner size="small" />
-        <Button
-          size="slim"
-          destructive
-          onClick={() => terminateJob(job.id)}
-        >
-          Terminate
+        <Button size="slim" destructive onClick={() => terminateJob(job.id)}>
+          Stop
         </Button>
       </InlineStack>
     ) : '-'
   ]);
 
-  const tabs = [
-    { id: 'wheels', content: 'Wheels', },
-    { id: 'tires', content: 'Tires' },
-    { id: 'brands', content: 'Brand Management' },
-    { id: 'jobs', content: `Jobs (${jobs.length})` }
-  ];
-
-  const renderWheelsTab = () => (
-    <Layout>
-      <Layout.Section>
-        <Card>
-          <BlockStack gap="400">
-            <Text variant="headingMd" as="h2">Wheels Scraping Configuration</Text>
-
-            <Checkbox
-              label="Headless mode (run browser in background)"
-              checked={wheelsSettings.headless}
-              onChange={(value) => setWheelsSettings({...wheelsSettings, headless: value})}
-            />
-
-            <Checkbox
-              label="Enable product discovery (find new products)"
-              checked={wheelsSettings.enableDiscovery}
-              onChange={(value) => setWheelsSettings({...wheelsSettings, enableDiscovery: value})}
-            />
-
-            <Checkbox
-              label="Enable Shopify sync (create products in Shopify)"
-              checked={wheelsSettings.enableShopifySync}
-              onChange={(value) => setWheelsSettings({...wheelsSettings, enableShopifySync: value})}
-            />
-
-            <Checkbox
-              label="Retry failed products"
-              checked={wheelsSettings.retryFailed}
-              onChange={(value) => setWheelsSettings({...wheelsSettings, retryFailed: value})}
-            />
-
-            <Checkbox
-              label="Sale items only"
-              checked={wheelsSettings.saleOnly}
-              onChange={(value) => setWheelsSettings({...wheelsSettings, saleOnly: value})}
-            />
-
-            <TextField
-              label="Max products per day"
-              type="number"
-              value={String(wheelsSettings.maxProductsPerDay)}
-              onChange={(value) => setWheelsSettings({...wheelsSettings, maxProductsPerDay: parseInt(value) || 1000})}
-              helpText="Daily limit for new product creation"
-            />
-
-            <InlineStack gap="300">
-              <Button
-                primary
-                onClick={() => startScraping(wheelsSettings)}
-                loading={loading}
-                disabled={loading}
-              >
-                Start Wheels Scraping Now
-              </Button>
-            </InlineStack>
-          </BlockStack>
-        </Card>
-      </Layout.Section>
-
-      <Layout.Section secondary>
-        <Card>
-          <BlockStack gap="400">
-            <Text variant="headingMd" as="h2">Schedule Recurring Scrape</Text>
-
-            <Checkbox
-              label="Enable scheduled scraping"
-              checked={wheelsSettings.scheduleEnabled}
-              onChange={(value) => setWheelsSettings({...wheelsSettings, scheduleEnabled: value})}
-            />
-
-            {wheelsSettings.scheduleEnabled && (
-              <>
-                <TextField
-                  label="Interval (hours)"
-                  type="number"
-                  value={wheelsSettings.scheduleInterval}
-                  onChange={(value) => setWheelsSettings({...wheelsSettings, scheduleInterval: value})}
-                  helpText="How often to run the scraper"
-                />
-
-                <Button onClick={() => console.log('Schedule wheels scraping')}>
-                  Save Schedule
-                </Button>
-              </>
-            )}
-          </BlockStack>
-        </Card>
-      </Layout.Section>
-    </Layout>
-  );
-
-  const renderTiresTab = () => (
-    <Layout>
-      <Layout.Section>
-        <Card>
-          <BlockStack gap="400">
-            <Text variant="headingMd" as="h2">Tires Scraping Configuration</Text>
-
-            <Checkbox
-              label="Headless mode (run browser in background)"
-              checked={tiresSettings.headless}
-              onChange={(value) => setTiresSettings({...tiresSettings, headless: value})}
-            />
-
-            <Checkbox
-              label="Enable product discovery (find new products)"
-              checked={tiresSettings.enableDiscovery}
-              onChange={(value) => setTiresSettings({...tiresSettings, enableDiscovery: value})}
-            />
-
-            <Checkbox
-              label="Enable Shopify sync (create products in Shopify)"
-              checked={tiresSettings.enableShopifySync}
-              onChange={(value) => setTiresSettings({...tiresSettings, enableShopifySync: value})}
-            />
-
-            <Checkbox
-              label="Retry failed products"
-              checked={tiresSettings.retryFailed}
-              onChange={(value) => setTiresSettings({...tiresSettings, retryFailed: value})}
-            />
-
-            <Checkbox
-              label="Sale items only"
-              checked={tiresSettings.saleOnly}
-              onChange={(value) => setTiresSettings({...tiresSettings, saleOnly: value})}
-            />
-
-            <TextField
-              label="Max products per day"
-              type="number"
-              value={String(tiresSettings.maxProductsPerDay)}
-              onChange={(value) => setTiresSettings({...tiresSettings, maxProductsPerDay: parseInt(value) || 1000})}
-              helpText="Daily limit for new product creation"
-            />
-
-            <InlineStack gap="300">
-              <Button
-                primary
-                onClick={() => startScraping(tiresSettings)}
-                loading={loading}
-                disabled={loading}
-              >
-                Start Tires Scraping Now
-              </Button>
-            </InlineStack>
-          </BlockStack>
-        </Card>
-      </Layout.Section>
-
-      <Layout.Section secondary>
-        <Card>
-          <BlockStack gap="400">
-            <Text variant="headingMd" as="h2">Schedule Recurring Scrape</Text>
-
-            <Checkbox
-              label="Enable scheduled scraping"
-              checked={tiresSettings.scheduleEnabled}
-              onChange={(value) => setTiresSettings({...tiresSettings, scheduleEnabled: value})}
-            />
-
-            {tiresSettings.scheduleEnabled && (
-              <>
-                <TextField
-                  label="Interval (hours)"
-                  type="number"
-                  value={tiresSettings.scheduleInterval}
-                  onChange={(value) => setTiresSettings({...tiresSettings, scheduleInterval: value})}
-                  helpText="How often to run the scraper"
-                />
-
-                <Button onClick={() => console.log('Schedule tires scraping')}>
-                  Save Schedule
-                </Button>
-              </>
-            )}
-          </BlockStack>
-        </Card>
-      </Layout.Section>
-    </Layout>
-  );
-
-  const renderBrandsTab = () => (
-    <Layout>
-      <Layout.Section>
-        <Card>
-          <BlockStack gap="400">
-            <Text variant="headingMd" as="h2">Excluded Brands</Text>
-            <Text variant="bodyMd" as="p" tone="subdued">
-              Products from these brands will be skipped during scraping ({excludedBrands.length} brands excluded)
-            </Text>
-
-            <div style={{
-              maxHeight: '400px',
-              overflowY: 'auto',
-              border: '1px solid #e1e3e5',
-              borderRadius: '8px',
-              padding: '16px'
-            }}>
-              {brands.map((brand) => (
-                <div key={brand} style={{ marginBottom: '8px' }}>
-                  <Checkbox
-                    label={brand}
-                    checked={excludedBrands.includes(brand)}
-                    onChange={(checked) => {
-                      if (checked) {
-                        setExcludedBrands([...excludedBrands, brand]);
-                      } else {
-                        setExcludedBrands(excludedBrands.filter(b => b !== brand));
-                      }
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-
-            <InlineStack gap="300">
-              <Button onClick={() => setExcludedBrands([])}>Clear All</Button>
-              <Button onClick={() => setExcludedBrands(SKIP_BRANDS_DEFAULT)}>Reset to Default</Button>
-            </InlineStack>
-          </BlockStack>
-        </Card>
-      </Layout.Section>
-
-      <Layout.Section secondary>
-        <Card>
-          <BlockStack gap="400">
-            <Text variant="headingMd" as="h2">Brand Statistics</Text>
-            <Text variant="bodyMd" as="p">
-              Total brands in database: {brands.length}
-            </Text>
-            <Text variant="bodyMd" as="p">
-              Excluded brands: {excludedBrands.length}
-            </Text>
-            <Text variant="bodyMd" as="p">
-              Active brands: {brands.length - excludedBrands.length}
-            </Text>
-          </BlockStack>
-        </Card>
-      </Layout.Section>
-    </Layout>
-  );
-
-  const renderJobsTab = () => (
-    <Card>
-      <BlockStack gap="400">
-        <Text variant="headingMd" as="h2">Scraping Jobs History</Text>
-
-        {jobs.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px' }}>
-            <Text variant="bodyMd" as="p" tone="subdued">
-              No scraping jobs yet. Start one from the Wheels or Tires tab!
-            </Text>
-          </div>
-        ) : (
-          <DataTable
-            columnContentTypes={[
-              'text',
-              'text',
-              'text',
-              'numeric',
-              'numeric',
-              'numeric',
-              'text',
-              'text'
-            ]}
-            headings={[
-              'ID',
-              'Type',
-              'Status',
-              'Found',
-              'Created',
-              'Updated',
-              'Started',
-              'Progress'
-            ]}
-            rows={jobRows}
-          />
-        )}
-      </BlockStack>
-    </Card>
-  );
-
   return (
     <Page
       title="Products & Inventory"
-      subtitle="Manage product scraping, brand exclusions, and inventory automation"
+      subtitle="Automated product scraping from CustomWheelOffset.com"
     >
-      <Tabs tabs={tabs} selected={selectedTab} onSelect={setSelectedTab}>
-        <div style={{ marginTop: '20px' }}>
-          {selectedTab === 0 && renderWheelsTab()}
-          {selectedTab === 1 && renderTiresTab()}
-          {selectedTab === 2 && renderBrandsTab()}
-          {selectedTab === 3 && renderJobsTab()}
-        </div>
-      </Tabs>
+      <Layout>
+        {/* Quick Actions */}
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="400">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text variant="headingMd" as="h2">Quick Start</Text>
+                <Button
+                  plain
+                  icon={configOpen ? ChevronUpIcon : ChevronDownIcon}
+                  onClick={() => setConfigOpen(!configOpen)}
+                >
+                  {configOpen ? 'Hide' : 'Show'} Configuration
+                </Button>
+              </div>
+
+              <InlineStack gap="300">
+                <Button
+                  primary
+                  size="large"
+                  onClick={() => startScraping('wheels')}
+                  loading={loading}
+                  disabled={loading || runningJobs.length > 0}
+                >
+                  Start Wheels Scraping
+                </Button>
+                <Button
+                  primary
+                  size="large"
+                  onClick={() => startScraping('tires')}
+                  loading={loading}
+                  disabled={loading || runningJobs.length > 0}
+                >
+                  Start Tires Scraping
+                </Button>
+              </InlineStack>
+
+              {runningJobs.length > 0 && (
+                <Banner tone="info">
+                  <InlineStack gap="200" blockAlign="center">
+                    <Spinner size="small" />
+                    <Text variant="bodyMd">
+                      {runningJobs.length} job{runningJobs.length > 1 ? 's' : ''} currently running
+                    </Text>
+                  </InlineStack>
+                </Banner>
+              )}
+
+              <Collapsible open={configOpen} id="config-collapsible">
+                <BlockStack gap="400">
+                  <Divider />
+                  <Text variant="headingSm" as="h3">Global Configuration</Text>
+                  <Text variant="bodySm" tone="subdued">
+                    These settings apply to both wheels and tires scraping
+                  </Text>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <Checkbox
+                      label="Headless mode"
+                      helpText="Run browser in background"
+                      checked={config.headless}
+                      onChange={(value) => setConfig({...config, headless: value})}
+                    />
+                    <Checkbox
+                      label="Product discovery"
+                      helpText="Find and create new products"
+                      checked={config.enableDiscovery}
+                      onChange={(value) => setConfig({...config, enableDiscovery: value})}
+                    />
+                    <Checkbox
+                      label="Shopify sync"
+                      helpText="Create products in Shopify"
+                      checked={config.enableShopifySync}
+                      onChange={(value) => setConfig({...config, enableShopifySync: value})}
+                    />
+                    <Checkbox
+                      label="Retry failed"
+                      helpText="Retry previously failed products"
+                      checked={config.retryFailed}
+                      onChange={(value) => setConfig({...config, retryFailed: value})}
+                    />
+                    <Checkbox
+                      label="Sale items only"
+                      helpText="Only scrape products on sale"
+                      checked={config.saleOnly}
+                      onChange={(value) => setConfig({...config, saleOnly: value})}
+                    />
+                  </div>
+
+                  <TextField
+                    label="Max products per day (cumulative)"
+                    type="number"
+                    value={String(config.maxProductsPerDay)}
+                    onChange={(value) => setConfig({...config, maxProductsPerDay: parseInt(value) || 1000})}
+                    helpText={`Combined limit for wheels AND tires. Today: ${todayStats.total}/${config.maxProductsPerDay} created, ${todayStats.remaining} remaining`}
+                    autoComplete="off"
+                  />
+
+                  <div>
+                    <Button
+                      plain
+                      icon={brandsOpen ? ChevronUpIcon : ChevronDownIcon}
+                      onClick={() => setBrandsOpen(!brandsOpen)}
+                    >
+                      {brandsOpen ? 'Hide' : 'Manage'} Excluded Brands ({excludedBrands.length} brands)
+                    </Button>
+
+                    <Collapsible open={brandsOpen} id="brands-collapsible">
+                      <div style={{
+                        marginTop: '16px',
+                        maxHeight: '300px',
+                        overflowY: 'auto',
+                        border: '1px solid #e1e3e5',
+                        borderRadius: '8px',
+                        padding: '12px'
+                      }}>
+                        {brands.length === 0 ? (
+                          <Text variant="bodyMd" tone="subdued">Loading brands...</Text>
+                        ) : (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                            {brands.map((brand) => (
+                              <Checkbox
+                                key={brand}
+                                label={brand}
+                                checked={excludedBrands.includes(brand)}
+                                onChange={(checked) => {
+                                  if (checked) {
+                                    setExcludedBrands([...excludedBrands, brand]);
+                                  } else {
+                                    setExcludedBrands(excludedBrands.filter(b => b !== brand));
+                                  }
+                                }}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ marginTop: '12px' }}>
+                        <InlineStack gap="200">
+                          <Button size="slim" onClick={() => setExcludedBrands([])}>Clear All</Button>
+                          <Button size="slim" onClick={() => setExcludedBrands(SKIP_BRANDS_DEFAULT)}>Reset to Default</Button>
+                        </InlineStack>
+                      </div>
+                    </Collapsible>
+                  </div>
+                </BlockStack>
+              </Collapsible>
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+
+        {/* Today's Stats */}
+        <Layout.Section secondary>
+          <Card>
+            <BlockStack gap="300">
+              <Text variant="headingMd" as="h2">Today's Activity</Text>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
+                <div style={{ padding: '12px', background: '#f6f6f7', borderRadius: '8px' }}>
+                  <Text variant="headingSm" as="p" fontWeight="semibold">Wheels Created</Text>
+                  <Text variant="heading2xl" as="p">{todayStats.wheels}</Text>
+                </div>
+                <div style={{ padding: '12px', background: '#f6f6f7', borderRadius: '8px' }}>
+                  <Text variant="headingSm" as="p" fontWeight="semibold">Tires Created</Text>
+                  <Text variant="heading2xl" as="p">{todayStats.tires}</Text>
+                </div>
+                <div style={{ padding: '12px', background: todayStats.remaining === 0 ? '#ffebee' : '#e8f5e9', borderRadius: '8px' }}>
+                  <Text variant="headingSm" as="p" fontWeight="semibold">Remaining Today</Text>
+                  <Text variant="heading2xl" as="p" tone={todayStats.remaining === 0 ? 'critical' : 'success'}>
+                    {todayStats.remaining}
+                  </Text>
+                  <Text variant="bodySm" tone="subdued">
+                    of {config.maxProductsPerDay}
+                  </Text>
+                </div>
+              </div>
+
+              {runningJobs.length > 0 && (
+                <>
+                  <Divider />
+                  <Text variant="headingSm" as="h3">Active Jobs</Text>
+                  {runningJobs.map(job => (
+                    <div key={job.id} style={{ padding: '12px', background: '#fffbea', borderRadius: '8px', border: '1px solid #ffd666' }}>
+                      <InlineStack gap="200" blockAlign="center">
+                        <Spinner size="small" />
+                        <div>
+                          <Text variant="bodyMd" fontWeight="semibold">Job #{job.id}</Text>
+                          <Text variant="bodySm" tone="subdued">{job.scraper_type}</Text>
+                        </div>
+                      </InlineStack>
+                    </div>
+                  ))}
+                </>
+              )}
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+
+        {/* Recent Jobs */}
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="400">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text variant="headingMd" as="h2">Recent Jobs</Text>
+                <Text variant="bodyMd" tone="subdued">{jobs.length} total jobs</Text>
+              </div>
+
+              {recentJobs.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px' }}>
+                  <Text variant="bodyMd" tone="subdued">
+                    No jobs yet. Click a button above to start scraping!
+                  </Text>
+                </div>
+              ) : (
+                <DataTable
+                  columnContentTypes={['text', 'text', 'text', 'numeric', 'numeric', 'numeric', 'text', 'text']}
+                  headings={['ID', 'Type', 'Status', 'Found', 'Created', 'Updated', 'Started', 'Actions']}
+                  rows={jobRows}
+                />
+              )}
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+      </Layout>
 
       {/* Job Logs Modal */}
       <Modal
