@@ -2519,8 +2519,15 @@ def process_custom_quote(driver, order, quote_link, card_info):
     return complete_checkout_and_submit(driver, order, quote_items, card_info)
 
 
-def process_manual_search(driver, order, card_info):
-    """Process order by manually searching for items on SDW"""
+def process_manual_search(driver, order, card_info, selected_line_items=None):
+    """Process order by manually searching for items on SDW
+
+    Args:
+        driver: Selenium WebDriver instance
+        order: Shopify order data
+        card_info: Payment card information
+        selected_line_items: Optional list of line item IDs to process (filters which items to process)
+    """
 
     # Login first and get cookies
     cookies = login_to_sdw(driver)
@@ -2546,33 +2553,41 @@ def process_manual_search(driver, order, card_info):
             vehicle_info = None
     else:
         print(f"   ⚠️  No vehicle information found")
-        # Ask if they want to enter manually
-        while True:
-            try:
-                response = input("\n   Enter vehicle info manually? (y/n): ").strip().lower()
-                if response in ['y', 'yes']:
-                    vehicle_input = input("   Vehicle (e.g., '2022 Honda Civic EX'): ").strip()
-                    if vehicle_input:
-                        vehicle_info = parse_vehicle_info(vehicle_input)
-                        if vehicle_info:
-                            print(f"   ✅ Vehicle info added")
-                            break
+        # Ask if they want to enter manually (only in interactive mode)
+        if is_interactive_mode():
+            while True:
+                try:
+                    response = input("\n   Enter vehicle info manually? (y/n): ").strip().lower()
+                    if response in ['y', 'yes']:
+                        vehicle_input = input("   Vehicle (e.g., '2022 Honda Civic EX'): ").strip()
+                        if vehicle_input:
+                            vehicle_info = parse_vehicle_info(vehicle_input)
+                            if vehicle_info:
+                                print(f"   ✅ Vehicle info added")
+                                break
+                            else:
+                                print(f"   ⚠️  Could not parse vehicle info, try again")
                         else:
-                            print(f"   ⚠️  Could not parse vehicle info, try again")
-                    else:
-                        vehicle_info = None
-                        break
-                elif response in ['n', 'no']:
-                    print(f"   ⚠️  Cannot proceed without vehicle info for wheels/tires")
+                            vehicle_info = None
+                            break
+                    elif response in ['n', 'no']:
+                        print(f"   ⚠️  Cannot proceed without vehicle info for wheels/tires")
+                        return None
+                except KeyboardInterrupt:
+                    print("\n\nOperation cancelled.")
                     return None
-            except KeyboardInterrupt:
-                print("\n\nOperation cancelled.")
-                return None
 
     # Collect items to process (wheels and tires only)
     items_to_process = []
     for edge in order['lineItems']['edges']:
         item = edge['node']
+
+        # If selected_line_items is provided, only process items in that list
+        if selected_line_items is not None:
+            item_id = item['id']
+            if item_id not in selected_line_items:
+                print(f"\n⏭️  Skipping (not selected): {item['name']}")
+                continue
 
         # Skip items that should be skipped
         if should_skip_item(item['name']):

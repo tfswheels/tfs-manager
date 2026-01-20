@@ -1048,28 +1048,28 @@ export default function Orders() {
                     {sdwOrderSummary && (
                       <div style={{ padding: '16px', background: '#f6f6f7', borderRadius: '8px' }}>
                         <Text variant="headingSm" as="h4" fontWeight="semibold">Order Summary:</Text>
-                        <BlockStack gap="200" style={{ marginTop: '12px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <div style={{ marginTop: '12px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                             <Text variant="bodyMd">Subtotal:</Text>
                             <Text variant="bodyMd">{sdwOrderSummary.subtotal || '$0.00'}</Text>
                           </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                             <Text variant="bodyMd">Shipping:</Text>
                             <Text variant="bodyMd">{sdwOrderSummary.shipping || '$0.00'}</Text>
                           </div>
                           {sdwOrderSummary.shipping_protection && sdwOrderSummary.shipping_protection !== '$0.00' && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                               <Text variant="bodyMd">Shipping Protection:</Text>
                               <Text variant="bodyMd">{sdwOrderSummary.shipping_protection}</Text>
                             </div>
                           )}
                           {sdwOrderSummary.mounting_balancing && sdwOrderSummary.mounting_balancing !== '$0.00' && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                               <Text variant="bodyMd">Mounting & Balancing:</Text>
                               <Text variant="bodyMd">{sdwOrderSummary.mounting_balancing}</Text>
                             </div>
                           )}
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                             <Text variant="bodyMd">Tax:</Text>
                             <Text variant="bodyMd">{sdwOrderSummary.tax || '$0.00'}</Text>
                           </div>
@@ -1078,7 +1078,7 @@ export default function Orders() {
                             <Text variant="bodyLg" fontWeight="bold">Total:</Text>
                             <Text variant="bodyLg" fontWeight="bold">{sdwOrderSummary.total || '$0.00'}</Text>
                           </div>
-                        </BlockStack>
+                        </div>
                       </div>
                     )}
 

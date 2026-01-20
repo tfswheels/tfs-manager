@@ -192,8 +192,13 @@ def process_sdw_order_non_interactive(
                     # For now, store it in order context
                     order['_override_vehicle'] = vehicle_info
 
-                # Call the original process_manual_search function
-                processing_result = sdw.process_manual_search(driver, order, card_info)
+                # Call the original process_manual_search function with selected items filter
+                processing_result = sdw.process_manual_search(
+                    driver,
+                    order,
+                    card_info,
+                    selected_line_items=selected_line_items
+                )
 
             if processing_result:
                 result['success'] = True
