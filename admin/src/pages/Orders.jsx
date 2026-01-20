@@ -319,7 +319,7 @@ export default function Orders() {
       const response = await axios.post(`${API_URL}/api/orders/sync`, null, {
         params: {
           shop: '2f3d7a-2.myshopify.com',
-          limit: 250
+          limit: 2000
         }
       });
 
