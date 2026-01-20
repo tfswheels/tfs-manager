@@ -145,15 +145,22 @@ export default function Products() {
     }
 
     try {
-      await axios.post(`${API_URL}/api/scraping/terminate/${jobId}`, {}, {
+      const response = await axios.post(`${API_URL}/api/scraping/terminate/${jobId}`, {}, {
         params: { shop: '2f3d7a-2.myshopify.com' }
       });
+
+      // Show success message
+      alert(response.data.message || `Job #${jobId} has been terminated`);
 
       // Refresh jobs list
       await fetchJobs();
     } catch (error) {
       console.error('Failed to terminate job:', error);
-      alert('Failed to terminate job. It may have already completed.');
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to terminate job';
+      alert(errorMessage);
+
+      // Refresh jobs list anyway to show updated status
+      await fetchJobs();
     }
   };
 

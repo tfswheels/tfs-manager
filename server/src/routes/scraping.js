@@ -159,36 +159,64 @@ router.post('/terminate/:jobId', async (req, res) => {
     const jobId = parseInt(req.params.jobId);
     const shop = req.query.shop || '2f3d7a-2.myshopify.com';
 
-    console.log(`🛑 Terminating scraping job #${jobId}...`);
+    console.log(`🛑 Attempting to terminate scraping job #${jobId}...`);
 
-    // Check if process is running
-    const process = runningProcesses.get(jobId);
-
-    if (!process) {
-      return res.status(404).json({
-        error: 'Job not found or not running',
-        message: 'This job may have already completed or was never started.'
-      });
-    }
-
-    // Kill the Python process
-    process.kill('SIGTERM');
-
-    // Update job status in database
-    await db.execute(
-      `UPDATE scraping_jobs
-       SET status = 'terminated',
-           completed_at = NOW()
-       WHERE id = ?`,
+    // Check current job status in database
+    const [jobs] = await db.execute(
+      'SELECT status FROM scraping_jobs WHERE id = ?',
       [jobId]
     );
 
-    console.log(`✅ Terminated scraping job #${jobId}`);
+    if (jobs.length === 0) {
+      return res.status(404).json({
+        error: 'Job not found',
+        message: 'This job does not exist in the database.'
+      });
+    }
+
+    const currentStatus = jobs[0].status;
+
+    // If job is not running, inform user
+    if (currentStatus !== 'running') {
+      return res.status(400).json({
+        error: 'Job not running',
+        message: `Job #${jobId} has status '${currentStatus}' and cannot be terminated.`
+      });
+    }
+
+    // Check if process is in memory (it should be for running jobs)
+    const process = runningProcesses.get(jobId);
+
+    if (process) {
+      // Process found - kill it
+      console.log(`✅ Found running process for job #${jobId}, sending SIGTERM...`);
+      process.kill('SIGTERM');
+    } else {
+      // Process not found - likely server restarted
+      console.log(`⚠️  Process for job #${jobId} not found in memory (server may have restarted)`);
+      console.log(`   Marking job as failed in database...`);
+    }
+
+    // Update job status in database regardless
+    await db.execute(
+      `UPDATE scraping_jobs
+       SET status = ?,
+           completed_at = NOW()
+       WHERE id = ?`,
+      [process ? 'terminated' : 'failed', jobId]
+    );
+
+    const statusMessage = process
+      ? 'terminated successfully'
+      : 'marked as failed (process was not found - server may have restarted)';
+
+    console.log(`✅ Job #${jobId} ${statusMessage}`);
 
     res.json({
       success: true,
-      message: `Scraping job #${jobId} has been terminated`,
-      jobId: jobId
+      message: `Scraping job #${jobId} has been ${statusMessage}`,
+      jobId: jobId,
+      wasProcessFound: !!process
     });
   } catch (error) {
     console.error('❌ Terminate scraping error:', error);
