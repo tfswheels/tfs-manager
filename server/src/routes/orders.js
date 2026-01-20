@@ -204,15 +204,12 @@ function parseVehicleInfo(vehicleStr) {
 }
 
 /**
- * Sync orders from Shopify to database
+ * Sync orders from Shopify to database using GraphQL
  */
 router.post('/sync', async (req, res) => {
   try {
     const shop = req.query.shop || '2f3d7a-2.myshopify.com';
-    const requestedLimit = parseInt(req.query.limit) || 1000; // Increased default to 1000
-
-    // Shopify API has a max limit of 250 per request, so we'll need to paginate
-    const perPage = 250;
+    const requestedLimit = parseInt(req.query.limit) || 1000;
     const totalToFetch = Math.min(requestedLimit, 2000); // Cap at 2000 total
 
     console.log(`🔄 Syncing up to ${totalToFetch} orders from Shopify for ${shop}...`);
@@ -240,99 +237,130 @@ router.post('/sync', async (req, res) => {
       });
     }
 
-    // Create Shopify REST client
-    const client = new shopify.clients.Rest({
+    // Create Shopify GraphQL client
+    const client = new shopify.clients.Graphql({
       session: {
         shop,
         accessToken
       }
     });
 
-    // Fetch orders with pagination using Shopify's pageInfo
+    // Fetch orders using GraphQL with cursor-based pagination
     let allOrders = [];
+    let hasNextPage = true;
+    let cursor = null;
     let pageCount = 0;
-    const maxPages = Math.ceil(totalToFetch / perPage);
-    let pageInfo = null;
+    const perPage = 250; // GraphQL max is 250
 
-    while (pageCount < maxPages) {
-      console.log(`  📄 Fetching page ${pageCount + 1}/${maxPages}...`);
+    while (hasNextPage && allOrders.length < totalToFetch) {
+      pageCount++;
+      console.log(`  📄 Fetching page ${pageCount}...`);
 
-      let response;
+      const query = `
+        query getOrders($first: Int!, $after: String) {
+          orders(first: $first, after: $after, sortKey: CREATED_AT, reverse: true) {
+            edges {
+              node {
+                id
+                legacyResourceId
+                name
+                createdAt
+                email
+                totalPriceSet {
+                  shopMoney {
+                    amount
+                  }
+                }
+                displayFinancialStatus
+                displayFulfillmentStatus
+                tags
+                customer {
+                  firstName
+                  lastName
+                  email
+                }
+                note
+                customAttributes {
+                  key
+                  value
+                }
+                lineItems(first: 250) {
+                  edges {
+                    node {
+                      customAttributes {
+                        key
+                        value
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
+        }
+      `;
 
-      // Build query params
-      const queryParams = {
-        limit: perPage
+      const variables = {
+        first: perPage,
+        after: cursor
       };
 
-      // Add page_info if we have it (for subsequent pages)
-      if (pageInfo) {
-        queryParams.page_info = pageInfo;
-        console.log(`    🔗 Using page_info for pagination`);
-      } else {
-        // Only use these params for the first page
-        queryParams.status = 'any';
-        queryParams.order = 'created_at DESC';
-      }
-
-      response = await client.get({
-        path: 'orders',
-        query: queryParams
+      const response = await client.query({
+        data: { query, variables }
       });
 
-      const orders = response.body.orders || [];
+      const ordersData = response.body.data.orders;
+      const edges = ordersData.edges || [];
 
-      // If we got no orders, we're done
-      if (orders.length === 0) {
+      if (edges.length === 0) {
         console.log(`    ℹ️  No more orders to fetch`);
         break;
       }
 
-      allOrders = allOrders.concat(orders);
-      pageCount++;
+      // Convert GraphQL format to REST-like format for compatibility
+      const orders = edges.map(edge => {
+        const node = edge.node;
+        return {
+          id: node.legacyResourceId,
+          name: node.name,
+          created_at: node.createdAt,
+          email: node.email,
+          total_price: node.totalPriceSet.shopMoney.amount,
+          financial_status: node.displayFinancialStatus,
+          fulfillment_status: node.displayFulfillmentStatus,
+          tags: node.tags.join(','),
+          customer: {
+            first_name: node.customer?.firstName,
+            last_name: node.customer?.lastName,
+            email: node.customer?.email
+          },
+          note: node.note,
+          note_attributes: node.customAttributes?.map(attr => ({
+            name: attr.key,
+            value: attr.value
+          })) || [],
+          line_items: node.lineItems.edges.map(li => ({
+            properties: li.node.customAttributes?.map(attr => ({
+              name: attr.key,
+              value: attr.value
+            })) || []
+          }))
+        };
+      });
 
+      allOrders = allOrders.concat(orders);
       console.log(`    ✓ Retrieved ${orders.length} orders (total: ${allOrders.length})`);
 
-      // Check if there's a next page FIRST (before breaking on small batches)
-      pageInfo = null;
+      // Update pagination info
+      hasNextPage = ordersData.pageInfo.hasNextPage;
+      cursor = ordersData.pageInfo.endCursor;
 
-      // Try to extract from Link header
-      const linkHeader = response.headers['link'] || response.headers.Link;
-      console.log(`    🔗 Link header exists: ${!!linkHeader}`);
-
-      if (linkHeader) {
-        console.log(`    🔗 Link header type: ${typeof linkHeader}`);
-        console.log(`    🔗 Link header value: ${String(linkHeader).substring(0, 300)}`);
-
-        const linkStr = String(linkHeader);
-
-        // Look for rel="next" link
-        const nextMatch = linkStr.match(/<([^>]+)>;\s*rel="next"/);
-        if (nextMatch) {
-          const nextUrl = nextMatch[1];
-          console.log(`    🔗 Next URL found: ${nextUrl.substring(0, 150)}`);
-
-          // Extract page_info from the URL
-          const pageInfoMatch = nextUrl.match(/page_info=([^&]+)/);
-          if (pageInfoMatch) {
-            pageInfo = pageInfoMatch[1];
-            console.log(`    ✅ Extracted page_info: ${pageInfo.substring(0, 50)}...`);
-          } else {
-            console.log(`    ⚠️  Could not extract page_info from next URL`);
-          }
-        } else {
-          console.log(`    ⚠️  No rel="next" found in Link header`);
-        }
-      }
-
-      // If no next page info, we're done
-      if (!pageInfo) {
-        console.log(`    ℹ️  No more pages available, stopping pagination`);
-        break;
-      }
-
-      // Stop if we've reached the requested limit
-      if (allOrders.length >= totalToFetch) {
-        console.log(`    ℹ️  Reached requested limit of ${totalToFetch} orders`);
+      if (!hasNextPage) {
+        console.log(`    ℹ️  No more pages available`);
         break;
       }
     }
