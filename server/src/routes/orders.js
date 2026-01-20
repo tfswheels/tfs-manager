@@ -286,6 +286,11 @@ router.post('/sync', async (req, res) => {
       // Check if there are more pages using Link header
       // Note: Shopify REST client returns headers as plain object, not Headers object
       const linkHeader = response.headers['link'] || response.headers.link;
+      console.log(`    📎 Link header:`, linkHeader ? 'Present' : 'Missing');
+      if (linkHeader) {
+        console.log(`       Has next? ${linkHeader.includes('rel="next"')}`);
+      }
+
       if (linkHeader && linkHeader.includes('rel="next"')) {
         // Extract page_info from Link header
         const nextMatch = linkHeader.match(/<[^>]*[?&]page_info=([^&>]+)[^>]*>;\s*rel="next"/);
