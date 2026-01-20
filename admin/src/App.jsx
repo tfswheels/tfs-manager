@@ -1,5 +1,69 @@
-import React from 'react';
-import { AppProvider, Page, Card, Layout, Text } from '@shopify/polaris';
+import React, { useState, useCallback } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
+import { AppProvider, Frame, Navigation } from '@shopify/polaris';
+
+// Pages
+import Orders from './pages/Orders';
+import Products from './pages/Products';
+import EmailTemplates from './pages/EmailTemplates';
+import Scraping from './pages/Scraping';
+import Settings from './pages/Settings';
+
+function AppContent() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const navigationMarkup = (
+    <Navigation location={location.pathname}>
+      <Navigation.Section
+        items={[
+          {
+            label: 'Orders',
+            icon: () => '📦',
+            onClick: () => navigate('/'),
+            selected: location.pathname === '/'
+          },
+          {
+            label: 'Products',
+            icon: () => '🛍️',
+            onClick: () => navigate('/products'),
+            selected: location.pathname === '/products'
+          },
+          {
+            label: 'Email Templates',
+            icon: () => '📧',
+            onClick: () => navigate('/email'),
+            selected: location.pathname === '/email'
+          },
+          {
+            label: 'Inventory Scraping',
+            icon: () => '🔧',
+            onClick: () => navigate('/scraping'),
+            selected: location.pathname === '/scraping'
+          },
+          {
+            label: 'Settings',
+            icon: () => '⚙️',
+            onClick: () => navigate('/settings'),
+            selected: location.pathname === '/settings'
+          }
+        ]}
+      />
+    </Navigation>
+  );
+
+  return (
+    <Frame navigation={navigationMarkup}>
+      <Routes>
+        <Route path="/" element={<Orders />} />
+        <Route path="/products" element={<Products />} />
+        <Route path="/email" element={<EmailTemplates />} />
+        <Route path="/scraping" element={<Scraping />} />
+        <Route path="/settings" element={<Settings />} />
+      </Routes>
+    </Frame>
+  );
+}
 
 function App() {
   return (
@@ -18,81 +82,9 @@ function App() {
         },
       }}
     >
-      <Page title="TFS Manager - Dashboard">
-        <Layout>
-          <Layout.Section>
-            <Card>
-              <div style={{ padding: '40px', textAlign: 'center' }}>
-                <Text variant="headingLg" as="h1">
-                  Welcome to TFS Manager
-                </Text>
-                <div style={{ marginTop: '20px' }}>
-                  <Text variant="bodyLg" as="p" tone="subdued">
-                    Your comprehensive Shopify management system for TFS Wheels
-                  </Text>
-                </div>
-                <div style={{ marginTop: '30px', padding: '20px', background: '#f6f6f7', borderRadius: '8px' }}>
-                  <Text variant="headingMd" as="h2">
-                    System Status
-                  </Text>
-                  <div style={{ marginTop: '12px' }}>
-                    <Text variant="bodyMd" as="p" tone="success">
-                      ✓ Backend API Connected
-                    </Text>
-                  </div>
-                  <div style={{ marginTop: '8px' }}>
-                    <Text variant="bodyMd" as="p" tone="success">
-                      ✓ Database Connected
-                    </Text>
-                  </div>
-                  <div style={{ marginTop: '8px' }}>
-                    <Text variant="bodyMd" as="p">
-                      Ready to manage orders, products, and customer communication
-                    </Text>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </Layout.Section>
-
-          <Layout.Section secondary>
-            <Card>
-              <div style={{ padding: '20px' }}>
-                <Text variant="headingMd" as="h3">
-                  Quick Access
-                </Text>
-                <div style={{ marginTop: '16px' }}>
-                  <div style={{ marginBottom: '12px' }}>
-                    <Text variant="bodyMd" as="p">
-                      📦 Orders Management
-                    </Text>
-                  </div>
-                  <div style={{ marginBottom: '12px' }}>
-                    <Text variant="bodyMd" as="p">
-                      🛍️ Products Catalog
-                    </Text>
-                  </div>
-                  <div style={{ marginBottom: '12px' }}>
-                    <Text variant="bodyMd" as="p">
-                      📧 Email Templates
-                    </Text>
-                  </div>
-                  <div style={{ marginBottom: '12px' }}>
-                    <Text variant="bodyMd" as="p">
-                      🔧 Inventory Scraping
-                    </Text>
-                  </div>
-                  <div>
-                    <Text variant="bodyMd" as="p">
-                      ⚙️ Settings
-                    </Text>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </Layout.Section>
-        </Layout>
-      </Page>
+      <Router>
+        <AppContent />
+      </Router>
     </AppProvider>
   );
 }

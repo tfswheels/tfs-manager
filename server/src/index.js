@@ -24,7 +24,7 @@ app.use(applyAllSecurityHeaders);
 app.use(cors({
   origin: [
     'http://localhost:5173',  // Local development
-    'https://tfs-manager.vercel.app',  // Production frontend (Vercel)
+    'https://tfs-manager-admin.vercel.app',  // Production frontend (Vercel)
     process.env.FRONTEND_URL  // Custom domain (if configured)
   ].filter(Boolean),
   credentials: true

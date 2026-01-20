@@ -1,64 +1,124 @@
 import express from 'express';
-import { verifyShopInstalled } from '../middleware/auth.js';
+import { shopify } from '../config/shopify.js';
 import db from '../config/database.js';
 
 const router = express.Router();
 
 /**
- * Get all orders with pagination and filtering
+ * Get all orders - Fetch from Shopify and sync to database
  */
-router.get('/', verifyShopInstalled, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const shopId = req.shop.id;
-    const { page = 1, limit = 50, status, search } = req.query;
-    const offset = (page - 1) * limit;
+    const shop = req.query.shop || '2f3d7a-2.myshopify.com';
+    const limit = parseInt(req.query.limit) || 250;
 
-    let query = 'SELECT * FROM orders WHERE shop_id = ?';
-    const params = [shopId];
+    console.log(`📦 Fetching orders for ${shop}...`);
 
-    if (status) {
-      query += ' AND financial_status = ?';
-      params.push(status);
+    // Get access token from database
+    const [rows] = await db.execute(
+      'SELECT id, access_token FROM shops WHERE shop_name = ?',
+      [shop]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        error: 'Shop not found',
+        message: 'Please install the app first'
+      });
     }
 
-    if (search) {
-      query += ' AND (order_number LIKE ? OR customer_name LIKE ? OR customer_email LIKE ?)';
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    const shopId = rows[0].id;
+    const accessToken = rows[0].access_token;
+
+    if (!accessToken) {
+      return res.status(401).json({
+        error: 'No access token',
+        message: 'Please reinstall the app'
+      });
     }
 
-    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
-
-    const [orders] = await db.execute(query, params);
-
-    // Get total count
-    let countQuery = 'SELECT COUNT(*) as total FROM orders WHERE shop_id = ?';
-    const countParams = [shopId];
-
-    if (status) {
-      countQuery += ' AND financial_status = ?';
-      countParams.push(status);
-    }
-
-    if (search) {
-      countQuery += ' AND (order_number LIKE ? OR customer_name LIKE ? OR customer_email LIKE ?)';
-      countParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-    }
-
-    const [countResult] = await db.execute(countQuery, countParams);
-
-    res.json({
-      orders,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: countResult[0].total,
-        totalPages: Math.ceil(countResult[0].total / limit)
+    // Create Shopify REST client
+    const client = new shopify.clients.Rest({
+      session: {
+        shop,
+        accessToken
       }
     });
+
+    // Fetch orders from Shopify
+    const response = await client.get({
+      path: 'orders',
+      query: {
+        limit: limit,
+        status: 'any',
+        fields: 'id,name,created_at,updated_at,customer,total_price,financial_status,fulfillment_status,line_items,tags,note'
+      }
+    });
+
+    const orders = response.body.orders || [];
+
+    console.log(`✅ Retrieved ${orders.length} orders from Shopify`);
+
+    // Sync orders to database for caching
+    for (const order of orders) {
+      try {
+        const customerName = order.customer?.default_address?.name ||
+                            (order.customer?.first_name && order.customer?.last_name
+                              ? `${order.customer.first_name} ${order.customer.last_name}`
+                              : 'Guest');
+
+        await db.execute(
+          `INSERT INTO orders (
+            shop_id,
+            shopify_order_id,
+            order_number,
+            customer_name,
+            customer_email,
+            total_price,
+            financial_status,
+            fulfillment_status,
+            tags,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            customer_name = VALUES(customer_name),
+            customer_email = VALUES(customer_email),
+            total_price = VALUES(total_price),
+            financial_status = VALUES(financial_status),
+            fulfillment_status = VALUES(fulfillment_status),
+            tags = VALUES(tags),
+            updated_at = NOW()`,
+          [
+            shopId,
+            order.id,
+            order.name,
+            customerName,
+            order.customer?.email || null,
+            parseFloat(order.total_price) || 0,
+            order.financial_status || 'pending',
+            order.fulfillment_status || null,
+            order.tags || null,
+            order.created_at
+          ]
+        );
+      } catch (dbError) {
+        console.error(`⚠️ Failed to sync order ${order.name}:`, dbError.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      count: orders.length,
+      orders: orders
+    });
+
   } catch (error) {
-    console.error('Get orders error:', error);
-    res.status(500).json({ error: 'Failed to fetch orders' });
+    console.error('❌ Error fetching orders:', error);
+    res.status(500).json({
+      error: 'Failed to fetch orders',
+      message: error.message
+    });
   }
 });
 
