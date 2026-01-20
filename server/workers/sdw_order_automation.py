@@ -2579,15 +2579,32 @@ def process_manual_search(driver, order, card_info, selected_line_items=None):
 
     # Collect items to process (wheels and tires only)
     items_to_process = []
+
+    # Debug: Show selected line items if provided
+    if selected_line_items is not None:
+        print(f"\n📋 Selected line item IDs: {selected_line_items}")
+
     for edge in order['lineItems']['edges']:
         item = edge['node']
 
         # If selected_line_items is provided, only process items in that list
         if selected_line_items is not None:
+            # Extract numeric ID from GraphQL GID format (gid://shopify/LineItem/12345 -> 12345)
             item_id = item['id']
-            if item_id not in selected_line_items:
-                print(f"\n⏭️  Skipping (not selected): {item['name']}")
+            numeric_id = item_id.split('/')[-1] if '/' in item_id else item_id
+
+            # Check if this item ID (or numeric ID) is in the selected list
+            # Support both formats: numeric (123) and GraphQL GID (gid://shopify/LineItem/123)
+            is_selected = (
+                str(numeric_id) in [str(x) for x in selected_line_items] or
+                item_id in selected_line_items
+            )
+
+            if not is_selected:
+                print(f"\n⏭️  Skipping (not selected): {item['name']} [ID: {numeric_id}]")
                 continue
+            else:
+                print(f"\n✅ Selected: {item['name']} [ID: {numeric_id}]")
 
         # Skip items that should be skipped
         if should_skip_item(item['name']):

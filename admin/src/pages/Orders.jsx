@@ -245,12 +245,8 @@ export default function Orders() {
       setVehicleModel(order.vehicle_model || '');
       setVehicleTrim(order.vehicle_trim || '');
 
-      // Pre-select all line items by default (excluding skip items)
-      const skipKeywords = ['shipping protection', 'installation kit', 'hub centric'];
-      const defaultSelected = orderData.line_items
-        .filter(item => !skipKeywords.some(keyword => item.name.toLowerCase().includes(keyword)))
-        .map(item => item.id);
-      setSelectedLineItems(defaultSelected);
+      // Start with NO items selected - user must explicitly select items to process
+      setSelectedLineItems([]);
 
     } catch (err) {
       console.error('Error fetching order details:', err);
