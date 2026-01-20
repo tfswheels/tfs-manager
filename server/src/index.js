@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
+import zohoAuthRoutes from './routes/zohoAuth.js';
 import webhookRoutes from './routes/webhooks.js';
 import gdprWebhookRoutes from './routes/gdprWebhooks.js';
 import zohoWebhookRoutes from './routes/zohoWebhooks.js';
@@ -50,6 +51,7 @@ app.use('/webhooks/orders', webhookRoutes);  // Shopify order webhooks
 app.use('/webhooks/gdpr', gdprWebhookRoutes);  // Shopify GDPR webhooks
 app.use('/webhooks/zoho', zohoWebhookRoutes);  // Zoho Mail webhooks
 app.use('/auth', authRoutes);
+app.use('/auth/zoho', zohoAuthRoutes);  // Zoho OAuth flow
 app.use('/api/admin', adminRoutes);
 app.use('/api/orders', ordersRoutes);
 app.use('/api/products', productsRoutes);
@@ -84,9 +86,16 @@ app.use((req, res, next) => {
       'GET /health',
       'GET /auth/install',
       'GET /auth/callback',
+      'GET /auth/zoho/authorize',
+      'GET /auth/zoho/callback',
+      'GET /auth/zoho/test',
       'POST /webhooks/orders/create',
       'POST /webhooks/orders/updated',
-      'GET /api/admin/*'
+      'POST /webhooks/zoho/email-received',
+      'GET /api/admin/*',
+      'GET /api/orders',
+      'GET /api/email-templates',
+      'GET /api/customer-emails'
     ]
   });
 });
