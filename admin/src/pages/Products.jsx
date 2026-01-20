@@ -79,8 +79,8 @@ export default function Products() {
     fetchJobs();
     fetchBrands();
 
-    // Poll for job updates every 5 seconds
-    const interval = setInterval(fetchJobs, 5000);
+    // Poll for job updates every 30 seconds (reduced from 5 to minimize log spam)
+    const interval = setInterval(fetchJobs, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -135,8 +135,38 @@ export default function Products() {
     setSelectedJob(job);
     setJobLogsOpen(true);
 
-    // Fetch job logs (placeholder - we'll implement log streaming)
-    setJobLogs(`Fetching logs for job #${job.id}...\n\nThis feature will show real-time logs from the scraper.`);
+    // Show instructions for viewing logs in Railway
+    const railwayUrl = 'https://railway.app';
+    setJobLogs(
+`Job #${job.id} - ${job.scraper_type}
+Status: ${job.status}
+Started: ${job.started_at ? new Date(job.started_at).toLocaleString() : 'Not started'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+To view real-time logs for this scraping job:
+
+1. Go to Railway Dashboard: ${railwayUrl}
+2. Select "TFS Manager Server"
+3. Click on the "Deployments" tab
+4. Click on the latest deployment
+5. View the logs and search for:
+   [Scraper #${job.id}]
+
+The logs will show:
+• Product scraping progress
+• Product creation attempts
+• Success/failure messages
+• Error details (if any)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Job Statistics:
+• Products Found: ${job.products_found || 0}
+• Products Created: ${job.products_created || 0}
+• Products Updated: ${job.products_updated || 0}
+`
+    );
   };
 
   const terminateJob = async (jobId) => {

@@ -552,12 +552,25 @@ async def publish_to_sales_channels(session: aiohttp.ClientSession, product_id: 
             SHOPIFY_STORE_URL, headers=headers, json={"query": mutation, "variables": variables}
         ) as resp:
             data = await resp.json()
+
+            # Check if response is valid
+            if not data:
+                logger.error(f"Failed to publish product {product_id}: Empty response from Shopify")
+                return False
+
             throttle = data.get("extensions", {}).get("cost", {}).get("throttleStatus", {})
             await handle_rate_limiting(throttle)
+
+            # Check for errors in response
+            if 'errors' in data:
+                logger.error(f"Publishing errors for product {product_id}: {data['errors']}")
+                return False
+
             user_errors = data.get("data", {}).get("publishablePublish", {}).get("userErrors")
             if user_errors:
                 logger.warning(f"Publishing errors for product {product_id}: {user_errors}")
                 return False
+
             logger.info(f"✅ Published product {product_id} to sales channels")
             return True
     except Exception as e:

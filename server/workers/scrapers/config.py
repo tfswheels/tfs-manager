@@ -12,9 +12,28 @@ import logging
 # LOGGING SETUP
 # =============================================================================
 
+# Configure logging to use stdout instead of stderr for INFO/DEBUG
+# This prevents Node.js from labeling all logs as "ERROR" in Railway
+import sys
+
+class InfoFilter(logging.Filter):
+    """Filter to send INFO/DEBUG to stdout, WARNING/ERROR to stderr"""
+    def filter(self, record):
+        return record.levelno <= logging.INFO
+
+# Create handlers
+stdout_handler = logging.StreamHandler(sys.stdout)
+stdout_handler.setLevel(logging.DEBUG)
+stdout_handler.addFilter(InfoFilter())
+
+stderr_handler = logging.StreamHandler(sys.stderr)
+stderr_handler.setLevel(logging.WARNING)
+
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[stdout_handler, stderr_handler]
 )
 logger = logging.getLogger(__name__)
 
