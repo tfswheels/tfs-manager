@@ -297,10 +297,30 @@ router.post('/sync', async (req, res) => {
 
       // Try to extract from Link header
       const linkHeader = response.headers['link'] || response.headers.Link;
-      if (linkHeader && typeof linkHeader === 'string') {
-        const pageInfoMatch = linkHeader.match(/page_info=([^&>]+)/);
-        if (pageInfoMatch) {
-          pageInfo = decodeURIComponent(pageInfoMatch[1]);
+      console.log(`    🔗 Link header exists: ${!!linkHeader}`);
+
+      if (linkHeader) {
+        console.log(`    🔗 Link header type: ${typeof linkHeader}`);
+        console.log(`    🔗 Link header value: ${String(linkHeader).substring(0, 300)}`);
+
+        const linkStr = String(linkHeader);
+
+        // Look for rel="next" link
+        const nextMatch = linkStr.match(/<([^>]+)>;\s*rel="next"/);
+        if (nextMatch) {
+          const nextUrl = nextMatch[1];
+          console.log(`    🔗 Next URL found: ${nextUrl.substring(0, 150)}`);
+
+          // Extract page_info from the URL
+          const pageInfoMatch = nextUrl.match(/page_info=([^&]+)/);
+          if (pageInfoMatch) {
+            pageInfo = pageInfoMatch[1];
+            console.log(`    ✅ Extracted page_info: ${pageInfo.substring(0, 50)}...`);
+          } else {
+            console.log(`    ⚠️  Could not extract page_info from next URL`);
+          }
+        } else {
+          console.log(`    ⚠️  No rel="next" found in Link header`);
         }
       }
 
