@@ -235,6 +235,21 @@ router.post('/sync', async (req, res) => {
       });
     }
 
+    // First, get total order count from REST API to compare
+    try {
+      const countResponse = await fetch(`https://${shop}/admin/api/2024-01/orders/count.json`, {
+        headers: {
+          'X-Shopify-Access-Token': accessToken
+        }
+      });
+      if (countResponse.ok) {
+        const countData = await countResponse.json();
+        console.log(`📊 Shopify REST API reports ${countData.count} total orders`);
+      }
+    } catch (e) {
+      console.log(`⚠️  Could not fetch order count: ${e.message}`);
+    }
+
     // Fetch orders using GraphQL with cursor-based pagination (raw fetch like license-manager)
     let allOrders = [];
     let cursor = null;
@@ -246,8 +261,8 @@ router.post('/sync', async (req, res) => {
       console.log(`  📄 Fetching page ${pageCount}...`);
 
       const query = `
-        query getOrders($first: Int!, $after: String) {
-          orders(first: $first, after: $after) {
+        {
+          orders(first: ${perPage}${cursor ? `, after: "${cursor}"` : ''}) {
             edges {
               node {
                 id
@@ -293,11 +308,6 @@ router.post('/sync', async (req, res) => {
         }
       `;
 
-      const variables = {
-        first: perPage,
-        after: cursor || null
-      };
-
       // Use raw fetch instead of Shopify client (like license-manager app)
       const response = await fetch(`https://${shop}/admin/api/2024-01/graphql.json`, {
         method: 'POST',
@@ -305,7 +315,7 @@ router.post('/sync', async (req, res) => {
           'Content-Type': 'application/json',
           'X-Shopify-Access-Token': accessToken
         },
-        body: JSON.stringify({ query, variables })
+        body: JSON.stringify({ query })
       });
 
       if (!response.ok) {
