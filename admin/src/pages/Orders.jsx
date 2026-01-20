@@ -884,16 +884,23 @@ export default function Orders() {
                   {selectedOrderDetails.line_items?.map((item) => {
                     const isSkipItem = ['shipping protection', 'installation kit', 'hub centric']
                       .some(keyword => item.name.toLowerCase().includes(keyword));
+
+                    // Check if item is removed/cancelled (fulfillable_quantity = 0 or less than quantity)
+                    const isRemoved = item.fulfillable_quantity === 0 ||
+                                     (item.fulfillable_quantity && item.fulfillable_quantity < item.quantity);
+
                     const isSelected = selectedLineItems.includes(item.id);
+                    const isDisabled = isSkipItem || isRemoved;
 
                     return (
                       <div
                         key={item.id}
                         style={{
                           padding: '12px',
-                          background: isSkipItem ? '#f9f9f9' : (isSelected ? '#f0f7ff' : '#ffffff'),
+                          background: isRemoved ? '#f5f5f5' : (isSkipItem ? '#f9f9f9' : (isSelected ? '#f0f7ff' : '#ffffff')),
                           border: isSelected ? '2px solid #0066cc' : '1px solid #e1e1e1',
-                          borderRadius: '8px'
+                          borderRadius: '8px',
+                          opacity: isRemoved ? 0.6 : 1
                         }}
                       >
                         <InlineStack gap="300" align="start">
@@ -906,20 +913,30 @@ export default function Orders() {
                                 setSelectedLineItems(selectedLineItems.filter(id => id !== item.id));
                               }
                             }}
-                            disabled={isSkipItem}
+                            disabled={isDisabled}
                           />
                           <BlockStack gap="100">
-                            <Text variant="bodyMd" as="p" fontWeight="semibold">
+                            <Text variant="bodyMd" as="p" fontWeight="semibold" tone={isRemoved ? 'subdued' : undefined}>
                               {item.name}
                             </Text>
                             <InlineStack gap="300">
                               <Text variant="bodySm" tone="subdued">SKU: {item.sku || '-'}</Text>
                               <Text variant="bodySm" tone="subdued">Qty: {item.quantity}</Text>
-                              <Text variant="bodySm" fontWeight="medium">{formatCurrency(item.price)}</Text>
+                              {isRemoved && item.fulfillable_quantity !== undefined && (
+                                <Text variant="bodySm" tone="subdued">Fulfillable: {item.fulfillable_quantity}</Text>
+                              )}
+                              <Text variant="bodySm" fontWeight="medium" tone={isRemoved ? 'subdued' : undefined}>
+                                {formatCurrency(item.price)}
+                              </Text>
                             </InlineStack>
-                            {isSkipItem && (
-                              <Badge tone="info">Auto-skipped</Badge>
-                            )}
+                            <InlineStack gap="200">
+                              {isSkipItem && (
+                                <Badge tone="info">Auto-skipped</Badge>
+                              )}
+                              {isRemoved && (
+                                <Badge tone="critical">Removed/Cancelled</Badge>
+                              )}
+                            </InlineStack>
                           </BlockStack>
                         </InlineStack>
                       </div>
