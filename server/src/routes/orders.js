@@ -214,7 +214,7 @@ router.post('/sync', async (req, res) => {
 
     // Get access token from database
     const [rows] = await db.execute(
-      'SELECT id, access_token FROM shops WHERE shop_name = ?',
+      'SELECT id, access_token, scopes, created_at FROM shops WHERE shop_name = ?',
       [shop]
     );
 
@@ -227,6 +227,8 @@ router.post('/sync', async (req, res) => {
 
     const shopId = rows[0].id;
     const accessToken = rows[0].access_token;
+    const appInstalledDate = rows[0].created_at;
+    const scopes = rows[0].scopes;
 
     if (!accessToken) {
       return res.status(401).json({
@@ -235,7 +237,11 @@ router.post('/sync', async (req, res) => {
       });
     }
 
+    console.log(`🔐 App installed: ${appInstalledDate ? new Date(appInstalledDate).toISOString().split('T')[0] : 'unknown'}`);
+    console.log(`🔑 Scopes: ${scopes || 'unknown'}`);
+
     // First, get total order count from REST API to compare
+    let restOrderCount = 0;
     try {
       const countResponse = await fetch(`https://${shop}/admin/api/2024-01/orders/count.json`, {
         headers: {
@@ -244,10 +250,26 @@ router.post('/sync', async (req, res) => {
       });
       if (countResponse.ok) {
         const countData = await countResponse.json();
-        console.log(`📊 Shopify REST API reports ${countData.count} total orders`);
+        restOrderCount = countData.count;
+        console.log(`📊 REST API order count: ${restOrderCount}`);
       }
     } catch (e) {
       console.log(`⚠️  Could not fetch order count: ${e.message}`);
+    }
+
+    // Try to get count with status filter
+    try {
+      const allCountResponse = await fetch(`https://${shop}/admin/api/2024-01/orders/count.json?status=any`, {
+        headers: {
+          'X-Shopify-Access-Token': accessToken
+        }
+      });
+      if (allCountResponse.ok) {
+        const allCountData = await allCountResponse.json();
+        console.log(`📊 REST API order count (status=any): ${allCountData.count}`);
+      }
+    } catch (e) {
+      console.log(`⚠️  Could not fetch order count with status filter`);
     }
 
     // Fetch orders using GraphQL with cursor-based pagination (raw fetch like license-manager)
@@ -373,7 +395,15 @@ router.post('/sync', async (req, res) => {
       });
 
       allOrders = allOrders.concat(orders);
+
+      // Get date range for this page
+      const dates = orders.map(o => new Date(o.created_at));
+      const newestDate = new Date(Math.max(...dates));
+      const oldestDate = new Date(Math.min(...dates));
+
       console.log(`    ✓ Retrieved ${orders.length} orders (total: ${allOrders.length})`);
+      console.log(`    📅 Date range: ${oldestDate.toISOString().split('T')[0]} to ${newestDate.toISOString().split('T')[0]}`);
+      console.log(`    🔢 Order numbers: ${orders[orders.length-1].name} to ${orders[0].name}`);
 
       // Update cursor for next page (like license-manager app)
       const hasMore = ordersData.pageInfo.hasNextPage;
@@ -394,7 +424,19 @@ router.post('/sync', async (req, res) => {
       }
     }
 
-    console.log(`\n📊 Total orders fetched: ${allOrders.length}`);
+    console.log(`\n📊 SYNC SUMMARY`);
+    console.log(`   Total orders fetched: ${allOrders.length}`);
+
+    if (allOrders.length > 0) {
+      // Get overall date range
+      const allDates = allOrders.map(o => new Date(o.created_at));
+      const newestOrder = new Date(Math.max(...allDates));
+      const oldestOrder = new Date(Math.min(...allDates));
+
+      console.log(`   📅 Date range: ${oldestOrder.toISOString().split('T')[0]} to ${newestOrder.toISOString().split('T')[0]}`);
+      console.log(`   🔢 Order numbers: ${allOrders[allOrders.length-1].name} to ${allOrders[0].name}`);
+      console.log(`   ⏱️  Timespan: ${Math.floor((newestOrder - oldestOrder) / (1000 * 60 * 60 * 24))} days`);
+    }
 
     let syncedCount = 0;
     let vehicleExtractedCount = 0;
