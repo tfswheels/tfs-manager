@@ -1,0 +1,23 @@
+# Add these lines to your /Users/jeremiah/Desktop/TFS Wheels/Scripts/.env file
+# You can add multiple cards - just increment the number
+
+# Card 1
+CARD_1_NAME=Test Card
+CARD_1_NUMBER=4111111111111111
+CARD_1_EXP=12/25
+CARD_1_CVV=123
+CARD_1_ZIP=82801
+
+# Card 2 (example)
+# CARD_2_NAME=Business Card
+# CARD_2_NUMBER=5555555555554444
+# CARD_2_EXP=03/26
+# CARD_2_CVV=456
+# CARD_2_ZIP=82801
+
+# Card 3 (example)
+# CARD_3_NAME=Personal Card
+# CARD_3_NUMBER=378282246310005
+# CARD_3_EXP=08/27
+# CARD_3_CVV=789
+# CARD_3_ZIP=82801

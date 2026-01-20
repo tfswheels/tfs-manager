@@ -1,0 +1,57 @@
+# shopify.app.toml
+name = "TFS Manager"
+client_id = ""  # Will be filled after creating custom app
+application_url = "https://tfs-manager.vercel.app"  # Update after deployment
+embedded = true
+
+[access_scopes]
+# Orders - read and write for processing, tagging, fulfillment
+# Products - read and write for inventory scraping
+# Customers - read for email communication
+# Inventory - read and write for syncing quantities
+# Fulfillments - read and write for order processing
+scopes = "read_products,write_products,read_orders,write_orders,read_customers,read_inventory,write_inventory,read_fulfillments,write_fulfillments,read_shipping,read_files,write_files,read_order_edits,write_order_edits,read_product_listings,write_product_listings,read_locations"
+
+optional_scopes = []
+
+[auth]
+redirect_urls = [
+  "https://api.tfswheels.com/auth/callback"  # Update after Railway deployment
+]
+
+[webhooks]
+api_version = "2025-01"
+
+# GDPR compliance webhooks
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request"]
+uri = "https://api.tfswheels.com/webhooks/gdpr/customers/data_request"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/redact"]
+uri = "https://api.tfswheels.com/webhooks/gdpr/customers/redact"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["shop/redact"]
+uri = "https://api.tfswheels.com/webhooks/gdpr/shop/redact"
+
+# Order webhooks - for automatic order syncing
+[[webhooks.subscriptions]]
+topics = ["orders/create"]
+uri = "https://api.tfswheels.com/webhooks/orders/create"
+
+[[webhooks.subscriptions]]
+topics = ["orders/updated"]
+uri = "https://api.tfswheels.com/webhooks/orders/updated"
+
+# Product webhooks - for inventory sync
+[[webhooks.subscriptions]]
+topics = ["products/create"]
+uri = "https://api.tfswheels.com/webhooks/products/create"
+
+[[webhooks.subscriptions]]
+topics = ["products/update"]
+uri = "https://api.tfswheels.com/webhooks/products/update"
+
+[pos]
+embedded = false
