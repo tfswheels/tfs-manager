@@ -34,36 +34,30 @@ def get_card_info_by_id(card_id):
     """
     Get card information by card ID (1-5)
     Returns card info dict matching the format expected by the SDW script
+    Loads from environment variables (CARD_1_NAME, CARD_1_NUMBER, etc.)
     """
-    cards = {
-        '1': {
-            'id': '****3438',
-            'name': 'Card ending 3438',
-            'last4': '3438'
-        },
-        '2': {
-            'id': '****3364',
-            'name': 'Card ending 3364',
-            'last4': '3364'
-        },
-        '3': {
-            'id': '****5989',
-            'name': 'Card ending 5989',
-            'last4': '5989'
-        },
-        '4': {
-            'id': '****7260',
-            'name': 'Card ending 7260',
-            'last4': '7260'
-        },
-        '5': {
-            'id': '****9106',
-            'name': 'WISE',
-            'last4': '9106'
-        }
+    # Convert string card_id to int
+    try:
+        card_num = int(card_id)
+    except (ValueError, TypeError):
+        return None
+
+    # Load card info from environment variables (same format as original script)
+    card_name = os.environ.get(f'CARD_{card_num}_NAME')
+    if not card_name:
+        return None
+
+    card_number = os.environ.get(f'CARD_{card_num}_NUMBER')
+    card_info = {
+        'name': card_name,
+        'number': card_number,
+        'exp': os.environ.get(f'CARD_{card_num}_EXP'),
+        'cvv': os.environ.get(f'CARD_{card_num}_CVV'),
+        'zip': os.environ.get(f'CARD_{card_num}_ZIP'),
+        'last4': card_number[-4:] if card_number else ''
     }
 
-    return cards.get(card_id)
+    return card_info
 
 
 def process_sdw_order_non_interactive(
