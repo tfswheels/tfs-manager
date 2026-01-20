@@ -35,7 +35,8 @@ RUN npm install --production
 COPY workers/requirements.txt ./workers/
 
 # Install Python dependencies
-RUN pip3 install --no-cache-dir -r workers/requirements.txt
+# Using --break-system-packages is safe in Docker containers (isolated environment)
+RUN pip3 install --no-cache-dir --break-system-packages -r workers/requirements.txt
 
 # Copy application code
 COPY . .
