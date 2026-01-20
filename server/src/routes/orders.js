@@ -119,13 +119,16 @@ router.get('/', async (req, res) => {
 function extractVehicleInfo(order) {
   let vehicleInfo = null;
 
-  // 1. Try to get from line items custom attributes (key: 'vehicle' or '_vehicle')
+  // 1. Try to get from line items properties (key: 'vehicle' or '_vehicle')
+  // In Shopify REST API, line item custom attributes are called 'properties'
   if (order.line_items) {
     for (const item of order.line_items) {
-      if (item.properties) {
+      if (item.properties && Array.isArray(item.properties)) {
         for (const prop of item.properties) {
-          if (prop.name && prop.name.toLowerCase() in ['vehicle', '_vehicle']) {
+          const propName = prop.name ? prop.name.toLowerCase() : '';
+          if (propName === 'vehicle' || propName === '_vehicle') {
             vehicleInfo = prop.value;
+            console.log(`  ✓ Found vehicle in line item properties: ${vehicleInfo}`);
             break;
           }
         }
@@ -139,14 +142,17 @@ function extractVehicleInfo(order) {
     const vehicleMatch = order.note.match(/Vehicle:\s*(.+?)(?:\n|$)/i);
     if (vehicleMatch) {
       vehicleInfo = vehicleMatch[1].trim();
+      console.log(`  ✓ Found vehicle in order note: ${vehicleInfo}`);
     }
   }
 
-  // 3. Try order-level custom attributes/note_attributes
-  if (!vehicleInfo && order.note_attributes) {
+  // 3. Try order-level note_attributes (Shopify order custom attributes)
+  if (!vehicleInfo && order.note_attributes && Array.isArray(order.note_attributes)) {
     for (const attr of order.note_attributes) {
-      if (attr.name && attr.name.toLowerCase() === 'vehicle') {
+      const attrName = attr.name ? attr.name.toLowerCase() : '';
+      if (attrName === 'vehicle') {
         vehicleInfo = attr.value;
+        console.log(`  ✓ Found vehicle in order note_attributes: ${vehicleInfo}`);
         break;
       }
     }
