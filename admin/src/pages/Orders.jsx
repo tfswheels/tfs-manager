@@ -46,6 +46,24 @@ export default function Orders() {
   // Sync state
   const [syncing, setSyncing] = useState(false);
 
+  // Order Details Modal
+  const [orderDetailsModalOpen, setOrderDetailsModalOpen] = useState(false);
+  const [selectedOrderDetails, setSelectedOrderDetails] = useState(null);
+  const [loadingOrderDetails, setLoadingOrderDetails] = useState(false);
+  const [selectedLineItems, setSelectedLineItems] = useState([]);
+
+  // Vehicle info editing
+  const [vehicleYear, setVehicleYear] = useState('');
+  const [vehicleMake, setVehicleMake] = useState('');
+  const [vehicleModel, setVehicleModel] = useState('');
+  const [vehicleTrim, setVehicleTrim] = useState('');
+
+  // SDW Configuration
+  const [selectedCard, setSelectedCard] = useState('1');
+  const [processingMode, setProcessingMode] = useState('manual');
+  const [quoteLink, setQuoteLink] = useState('');
+  const [processingSDW, setProcessingSDW] = useState(false);
+
   useEffect(() => {
     fetchOrders();
     fetchTemplates();
@@ -184,8 +202,113 @@ export default function Orders() {
     openSendEmailModal(selectedOrders);
   };
 
-  const handleRowClick = (order) => {
-    openSendEmailModal([order.id]);
+  const handleRowClick = async (order) => {
+    try {
+      setLoadingOrderDetails(true);
+      setOrderDetailsModalOpen(true);
+
+      const response = await axios.get(`${API_URL}/api/orders/${order.shopify_order_id}/details`, {
+        params: {
+          shop: '2f3d7a-2.myshopify.com'
+        }
+      });
+
+      const orderData = response.data.order;
+      setSelectedOrderDetails(orderData);
+
+      // Pre-fill vehicle info
+      setVehicleYear(order.vehicle_year || '');
+      setVehicleMake(order.vehicle_make || '');
+      setVehicleModel(order.vehicle_model || '');
+      setVehicleTrim(order.vehicle_trim || '');
+
+      // Pre-select all line items by default (excluding skip items)
+      const skipKeywords = ['shipping protection', 'installation kit', 'hub centric'];
+      const defaultSelected = orderData.line_items
+        .filter(item => !skipKeywords.some(keyword => item.name.toLowerCase().includes(keyword)))
+        .map(item => item.id);
+      setSelectedLineItems(defaultSelected);
+
+    } catch (err) {
+      console.error('Error fetching order details:', err);
+      alert('Failed to load order details');
+      setOrderDetailsModalOpen(false);
+    } finally {
+      setLoadingOrderDetails(false);
+    }
+  };
+
+  const handleProcessSDW = async () => {
+    if (processingSDW) return;
+
+    // Validation
+    if (selectedLineItems.length === 0) {
+      alert('Please select at least one item to process');
+      return;
+    }
+
+    if (processingMode === 'quote' && !quoteLink.trim()) {
+      alert('Please enter a quote link');
+      return;
+    }
+
+    // Build vehicle string
+    const vehicleParts = [vehicleYear, vehicleMake, vehicleModel, vehicleTrim].filter(Boolean);
+    const vehicleString = vehicleParts.join(' ');
+
+    const confirmed = confirm(
+      `Process ${selectedLineItems.length} item(s) on SDW?\n\n` +
+      `Vehicle: ${vehicleString || 'Not provided'}\n` +
+      `Card: ${getCardName(selectedCard)}\n` +
+      `Mode: ${processingMode === 'quote' ? 'Custom Quote' : 'Manual Search'}`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setProcessingSDW(true);
+
+      const response = await axios.post(`${API_URL}/api/orders/process-sdw`, {
+        orderNumber: selectedOrderDetails.name,
+        shopifyOrderId: selectedOrderDetails.id,
+        selectedLineItems,
+        vehicle: {
+          year: vehicleYear,
+          make: vehicleMake,
+          model: vehicleModel,
+          trim: vehicleTrim
+        },
+        card: selectedCard,
+        mode: processingMode,
+        quoteLink: quoteLink
+      }, {
+        params: {
+          shop: '2f3d7a-2.myshopify.com'
+        }
+      });
+
+      if (response.data.success) {
+        alert(`SDW processing started for order ${selectedOrderDetails.name}.\n\n${response.data.message}`);
+        setOrderDetailsModalOpen(false);
+      }
+
+    } catch (err) {
+      console.error('Error processing SDW order:', err);
+      alert(err.response?.data?.message || 'Failed to start SDW processing');
+    } finally {
+      setProcessingSDW(false);
+    }
+  };
+
+  const getCardName = (cardId) => {
+    const cards = {
+      '1': 'Card ending 3438',
+      '2': 'Card ending 3364',
+      '3': 'Card ending 5989',
+      '4': 'Card ending 7260',
+      '5': 'WISE'
+    };
+    return cards[cardId] || 'Unknown';
   };
 
   const handleSyncOrders = async () => {
@@ -567,6 +690,215 @@ export default function Orders() {
               </Banner>
             )}
           </BlockStack>
+        </Modal.Section>
+      </Modal>
+
+      {/* Order Details Modal with SDW Processing */}
+      <Modal
+        open={orderDetailsModalOpen}
+        onClose={() => setOrderDetailsModalOpen(false)}
+        title={selectedOrderDetails ? `Order ${selectedOrderDetails.name}` : 'Order Details'}
+        primaryAction={{
+          content: 'Process on SDW',
+          onAction: handleProcessSDW,
+          loading: processingSDW,
+          disabled: selectedLineItems.length === 0 || processingSDW
+        }}
+        secondaryActions={[
+          {
+            content: 'Close',
+            onAction: () => setOrderDetailsModalOpen(false)
+          }
+        ]}
+        large
+      >
+        <Modal.Section>
+          {loadingOrderDetails ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
+              <Spinner size="large" />
+            </div>
+          ) : selectedOrderDetails ? (
+            <BlockStack gap="500">
+              {/* Order Information */}
+              <Card>
+                <BlockStack gap="300">
+                  <Text variant="headingMd" as="h3">Order Information</Text>
+                  <InlineStack gap="400" wrap>
+                    <Text as="span"><strong>Customer:</strong> {selectedOrderDetails.customer?.first_name} {selectedOrderDetails.customer?.last_name}</Text>
+                    <Text as="span"><strong>Email:</strong> {selectedOrderDetails.email || '-'}</Text>
+                    <Text as="span"><strong>Total:</strong> {formatCurrency(selectedOrderDetails.total_price)}</Text>
+                  </InlineStack>
+                  <div>
+                    <Text variant="bodyMd" as="p" fontWeight="semibold">Shipping Address:</Text>
+                    <Text as="p">
+                      {selectedOrderDetails.shipping_address?.address1}<br />
+                      {selectedOrderDetails.shipping_address?.city}, {selectedOrderDetails.shipping_address?.province} {selectedOrderDetails.shipping_address?.zip}
+                    </Text>
+                  </div>
+                </BlockStack>
+              </Card>
+
+              {/* Vehicle Information */}
+              <Card>
+                <BlockStack gap="400">
+                  <Text variant="headingMd" as="h3">Vehicle Information</Text>
+                  <InlineStack gap="300" wrap>
+                    <div style={{ flex: 1, minWidth: '150px' }}>
+                      <TextField
+                        label="Year"
+                        value={vehicleYear}
+                        onChange={setVehicleYear}
+                        placeholder="2017"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div style={{ flex: 1, minWidth: '150px' }}>
+                      <TextField
+                        label="Make"
+                        value={vehicleMake}
+                        onChange={setVehicleMake}
+                        placeholder="Lincoln"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div style={{ flex: 1, minWidth: '150px' }}>
+                      <TextField
+                        label="Model"
+                        value={vehicleModel}
+                        onChange={setVehicleModel}
+                        placeholder="Continental"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div style={{ flex: 2, minWidth: '200px' }}>
+                      <TextField
+                        label="Trim"
+                        value={vehicleTrim}
+                        onChange={setVehicleTrim}
+                        placeholder="Select FWD 4 Dr Sedan"
+                        autoComplete="off"
+                      />
+                    </div>
+                  </InlineStack>
+                </BlockStack>
+              </Card>
+
+              {/* Line Items */}
+              <Card>
+                <BlockStack gap="400">
+                  <Text variant="headingMd" as="h3">Order Items</Text>
+                  <Text variant="bodyMd" tone="subdued">Select items to process on SDW</Text>
+
+                  {selectedOrderDetails.line_items?.map((item) => {
+                    const isSkipItem = ['shipping protection', 'installation kit', 'hub centric']
+                      .some(keyword => item.name.toLowerCase().includes(keyword));
+                    const isSelected = selectedLineItems.includes(item.id);
+
+                    return (
+                      <div
+                        key={item.id}
+                        style={{
+                          padding: '12px',
+                          background: isSkipItem ? '#f9f9f9' : (isSelected ? '#f0f7ff' : '#ffffff'),
+                          border: isSelected ? '2px solid #0066cc' : '1px solid #e1e1e1',
+                          borderRadius: '8px'
+                        }}
+                      >
+                        <InlineStack gap="300" align="start">
+                          <Checkbox
+                            checked={isSelected}
+                            onChange={(checked) => {
+                              if (checked) {
+                                setSelectedLineItems([...selectedLineItems, item.id]);
+                              } else {
+                                setSelectedLineItems(selectedLineItems.filter(id => id !== item.id));
+                              }
+                            }}
+                            disabled={isSkipItem}
+                          />
+                          <BlockStack gap="100">
+                            <Text variant="bodyMd" as="p" fontWeight="semibold">
+                              {item.name}
+                            </Text>
+                            <InlineStack gap="300">
+                              <Text variant="bodySm" tone="subdued">SKU: {item.sku || '-'}</Text>
+                              <Text variant="bodySm" tone="subdued">Qty: {item.quantity}</Text>
+                              <Text variant="bodySm" fontWeight="medium">{formatCurrency(item.price)}</Text>
+                            </InlineStack>
+                            {isSkipItem && (
+                              <Badge tone="info">Auto-skipped</Badge>
+                            )}
+                          </BlockStack>
+                        </InlineStack>
+                      </div>
+                    );
+                  })}
+                </BlockStack>
+              </Card>
+
+              {/* SDW Configuration */}
+              <Card>
+                <BlockStack gap="400">
+                  <Text variant="headingMd" as="h3">SDW Configuration</Text>
+
+                  <Select
+                    label="Credit Card"
+                    options={[
+                      { label: 'Card ending 3438', value: '1' },
+                      { label: 'Card ending 3364', value: '2' },
+                      { label: 'Card ending 5989', value: '3' },
+                      { label: 'Card ending 7260', value: '4' },
+                      { label: 'WISE', value: '5' }
+                    ]}
+                    value={selectedCard}
+                    onChange={setSelectedCard}
+                  />
+
+                  <div>
+                    <Text variant="bodyMd" as="p" fontWeight="semibold">Processing Mode</Text>
+                    <div style={{ marginTop: '8px' }}>
+                      <BlockStack gap="200">
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                          <input
+                            type="radio"
+                            checked={processingMode === 'manual'}
+                            onChange={() => setProcessingMode('manual')}
+                          />
+                          <Text>Manual Search (Search and add items)</Text>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                          <input
+                            type="radio"
+                            checked={processingMode === 'quote'}
+                            onChange={() => setProcessingMode('quote')}
+                          />
+                          <Text>Custom Quote (I have a quote link)</Text>
+                        </label>
+                      </BlockStack>
+                    </div>
+                  </div>
+
+                  {processingMode === 'quote' && (
+                    <TextField
+                      label="Quote Link"
+                      value={quoteLink}
+                      onChange={setQuoteLink}
+                      placeholder="https://www.sdwheelwholesale.com/quote/..."
+                      autoComplete="off"
+                      requiredIndicator
+                    />
+                  )}
+
+                  <Banner tone="info">
+                    <p>
+                      <strong>Note:</strong> SDW processing will run with the selected configuration.
+                      You'll be asked to confirm before the final purchase is completed.
+                    </p>
+                  </Banner>
+                </BlockStack>
+              </Card>
+            </BlockStack>
+          ) : null}
         </Modal.Section>
       </Modal>
     </Page>

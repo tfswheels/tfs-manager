@@ -348,6 +348,60 @@ router.post('/sync', async (req, res) => {
 });
 
 /**
+ * Get full order details from Shopify including line items
+ */
+router.get('/:shopifyOrderId/details', async (req, res) => {
+  try {
+    const shop = req.query.shop || '2f3d7a-2.myshopify.com';
+    const { shopifyOrderId } = req.params;
+
+    console.log(`📋 Fetching order details for ${shopifyOrderId}...`);
+
+    // Get access token
+    const [rows] = await db.execute(
+      'SELECT access_token FROM shops WHERE shop_name = ?',
+      [shop]
+    );
+
+    if (rows.length === 0 || !rows[0].access_token) {
+      return res.status(404).json({
+        error: 'Shop not found or not authenticated'
+      });
+    }
+
+    const accessToken = rows[0].access_token;
+
+    // Fetch full order details from Shopify using REST API
+    const client = new shopify.clients.Rest({
+      session: {
+        shop,
+        accessToken
+      }
+    });
+
+    const response = await client.get({
+      path: `orders/${shopifyOrderId}`
+    });
+
+    const order = response.body.order;
+
+    console.log(`✅ Retrieved order ${order.name} with ${order.line_items?.length || 0} items`);
+
+    res.json({
+      success: true,
+      order: order
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching order details:', error);
+    res.status(500).json({
+      error: 'Failed to fetch order details',
+      message: error.message
+    });
+  }
+});
+
+/**
  * Update vehicle information for an order
  */
 router.patch('/:orderId/vehicle', async (req, res) => {
@@ -458,6 +512,75 @@ router.get('/:orderId', async (req, res) => {
     console.error('❌ Error fetching order:', error);
     res.status(500).json({
       error: 'Failed to fetch order',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Process order on SDW
+ * Triggers the Python SDW automation script with pre-configured options
+ */
+router.post('/process-sdw', async (req, res) => {
+  try {
+    const {
+      orderNumber,
+      shopifyOrderId,
+      selectedLineItems,
+      vehicle,
+      card,
+      mode,
+      quoteLink
+    } = req.body;
+
+    console.log(`🚀 Starting SDW processing for order ${orderNumber}...`);
+    console.log(`   Selected items: ${selectedLineItems.length}`);
+    console.log(`   Vehicle: ${vehicle.year} ${vehicle.make} ${vehicle.model} ${vehicle.trim}`);
+    console.log(`   Card: ${card}, Mode: ${mode}`);
+
+    // Build vehicle string
+    const vehicleParts = [vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean);
+    const vehicleString = vehicleParts.join(' ');
+
+    // Validate
+    if (!orderNumber) {
+      return res.status(400).json({
+        error: 'Order number is required'
+      });
+    }
+
+    if (selectedLineItems.length === 0) {
+      return res.status(400).json({
+        error: 'No items selected'
+      });
+    }
+
+    if (mode === 'quote' && !quoteLink) {
+      return res.status(400).json({
+        error: 'Quote link is required for quote mode'
+      });
+    }
+
+    // TODO: Spawn Python subprocess to run SDW automation
+    // For now, we'll just return a success message
+    // Next step: Modify the Python script to accept CLI arguments
+
+    res.json({
+      success: true,
+      message: `SDW processing queued for order ${orderNumber}. This feature is still under development - Python script integration coming soon.`,
+      details: {
+        orderNumber,
+        itemCount: selectedLineItems.length,
+        vehicle: vehicleString,
+        card,
+        mode
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error starting SDW processing:', error);
+    res.status(500).json({
+      error: 'Failed to start SDW processing',
       message: error.message
     });
   }
