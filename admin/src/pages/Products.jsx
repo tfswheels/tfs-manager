@@ -139,12 +139,31 @@ export default function Products() {
     setJobLogs(`Fetching logs for job #${job.id}...\n\nThis feature will show real-time logs from the scraper.`);
   };
 
+  const terminateJob = async (jobId) => {
+    if (!window.confirm(`Are you sure you want to terminate job #${jobId}? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await axios.post(`${API_URL}/api/scraping/terminate/${jobId}`, {}, {
+        params: { shop: '2f3d7a-2.myshopify.com' }
+      });
+
+      // Refresh jobs list
+      await fetchJobs();
+    } catch (error) {
+      console.error('Failed to terminate job:', error);
+      alert('Failed to terminate job. It may have already completed.');
+    }
+  };
+
   const getStatusBadge = (status) => {
     const statusMap = {
       pending: 'info',
       running: 'attention',
       completed: 'success',
-      failed: 'critical'
+      failed: 'critical',
+      terminated: 'warning'
     };
     return <Badge tone={statusMap[status] || 'info'}>{status}</Badge>;
   };
@@ -157,7 +176,18 @@ export default function Products() {
     job.products_created || 0,
     job.products_updated || 0,
     new Date(job.created_at).toLocaleString(),
-    job.status === 'running' ? <Spinner size="small" /> : '-'
+    job.status === 'running' ? (
+      <InlineStack gap="200">
+        <Spinner size="small" />
+        <Button
+          size="slim"
+          destructive
+          onClick={() => terminateJob(job.id)}
+        >
+          Terminate
+        </Button>
+      </InlineStack>
+    ) : '-'
   ]);
 
   const tabs = [

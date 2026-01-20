@@ -329,18 +329,20 @@ async def create_product_in_table(db_pool, product_data: Dict, klaviyo_data: Dic
         return None
 
 
-async def update_product_sync_status(db_pool, url_part_number: str, status: str, error: str = None, shopify_id: int = None):
+async def update_product_sync_status(db_pool, url_part_number: str, status: str, error: str = None, shopify_id: int = None, retry_count: int = 0):
     """Update product_sync status in wheels/tires table."""
     try:
         table_name = MODE
 
         if error:
+            # Include retry count in error message for tracking
+            error_with_retry = f"{error} (attempt {retry_count})" if retry_count > 0 else error
             query = f"""
             UPDATE {table_name}
             SET product_sync = %s, sync_error = %s
             WHERE url_part_number = %s
             """
-            values = (status, error, url_part_number)
+            values = (status, error_with_retry, url_part_number)
         else:
             query = f"""
             UPDATE {table_name}
@@ -609,6 +611,9 @@ async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_
             # Create on Shopify (tires) - uses same function, tires just have fewer metafields
             shopify_result = await create_product_on_shopify(session, tire_data, tire_data.get('image'))
 
+        # Get retry count from product (0 for new products, >0 for retries)
+        retry_count = product.get('retry_count', 0)
+
         if shopify_result:
             # Success! Update status and insert into shopify_products
             await update_product_sync_status(
@@ -627,13 +632,16 @@ async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_
             logger.info(f"✅ Successfully created {part_number} on Shopify")
             return True
         else:
-            # Failed to create on Shopify
+            # Failed to create on Shopify - increment retry count
+            new_retry_count = retry_count + 1
             await update_product_sync_status(
                 db_pool,
                 product.get('url_part_number'),
                 'error',
-                'Failed to create on Shopify'
+                'Failed to create on Shopify',
+                retry_count=new_retry_count
             )
+            logger.warning(f"❌ Failed to create product (attempt {new_retry_count}): {product.get('url_part_number')}")
             return False
 
     except Exception as e:
@@ -641,12 +649,15 @@ async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_
         import traceback
         logger.error(traceback.format_exc())
 
-        # Update status to error
+        # Update status to error - increment retry count
+        retry_count = product.get('retry_count', 0)
+        new_retry_count = retry_count + 1
         await update_product_sync_status(
             db_pool,
             product.get('url_part_number'),
             'error',
-            str(e)
+            str(e),
+            retry_count=new_retry_count
         )
         return False
 

@@ -78,17 +78,23 @@ async def check_product_in_main_table(db_pool, url_part_number: str) -> Optional
             return result[0]
 
 
-async def get_failed_products_for_retry(db_pool) -> List[Dict]:
+async def get_failed_products_for_retry(db_pool, max_retries: int = 3) -> List[Dict]:
     """
     Get products from wheels/tires table that need retry (product_sync='error' or 'pending').
 
     Returns products with FULL data from database (no need to re-scrape).
+    Only returns products that haven't exceeded max_retries.
+
+    Args:
+        db_pool: Database connection pool
+        max_retries: Maximum retry attempts (default: 3)
     """
     table_name = MODE
 
     async with db_pool.acquire() as conn:
         async with conn.cursor() as cur:
             # Get ALL fields for failed products - they already have complete data
+            # Include sync_error to check retry count
             if MODE == 'wheels':
                 query = f"""
                 SELECT
@@ -96,7 +102,7 @@ async def get_failed_products_for_retry(db_pool) -> List[Dict]:
                     diameter, width, bolt_pattern, bolt_pattern2, offset, backspace,
                     finish, short_color, primary_color, hub_bore, load_rating, weight,
                     available_finishes, available_bolt_patterns, image, map_price, quantity,
-                    supplier, status, custom_build
+                    supplier, status, custom_build, sync_error
                 FROM {table_name}
                 WHERE product_sync IN ('error', 'pending')
                   AND url_part_number IS NOT NULL
@@ -107,7 +113,7 @@ async def get_failed_products_for_retry(db_pool) -> List[Dict]:
                 query = f"""
                 SELECT
                     url_part_number, brand, part_number, model, size, image1, image2, image3,
-                    map_price, quantity, weight, supplier
+                    map_price, quantity, weight, supplier, sync_error
                 FROM {table_name}
                 WHERE product_sync IN ('error', 'pending')
                   AND url_part_number IS NOT NULL
@@ -118,10 +124,27 @@ async def get_failed_products_for_retry(db_pool) -> List[Dict]:
             await cur.execute(query)
             results = await cur.fetchall()
 
-            logger.info(f"📦 Loading {len(results)} failed products from {table_name} table (no re-scraping needed)")
+            logger.info(f"📦 Found {len(results)} failed products in {table_name} table (checking retry limits...)")
 
             products = []
+            skipped_max_retries = 0
+
             for row in results:
+                # Parse retry count from sync_error field
+                sync_error = row[26] if MODE == 'wheels' else row[12]
+                retry_count = 0
+                if sync_error:
+                    # Parse "(attempt X)" from error message
+                    import re
+                    match = re.search(r'\(attempt (\d+)\)', sync_error)
+                    if match:
+                        retry_count = int(match.group(1))
+
+                # Skip if exceeded max retries
+                if retry_count >= max_retries:
+                    skipped_max_retries += 1
+                    continue
+
                 if MODE == 'wheels':
                     # Map database row to product dict with klaviyo-like structure
                     products.append({
@@ -129,6 +152,7 @@ async def get_failed_products_for_retry(db_pool) -> List[Dict]:
                         'brand': row[1],
                         'part_number': row[2],
                         'quantity': row[22] or 0,
+                        'retry_count': retry_count,  # Track current retry count
                         'extracted_data': {
                             'klaviyo_data': {
                                 'partnumber': row[2],
@@ -165,6 +189,7 @@ async def get_failed_products_for_retry(db_pool) -> List[Dict]:
                         'brand': row[1],
                         'part_number': row[2],
                         'quantity': row[9] or 0,
+                        'retry_count': retry_count,  # Track current retry count
                         'extracted_data': {
                             'klaviyo_data': {
                                 'inventoryNumber': row[2],
@@ -180,6 +205,10 @@ async def get_failed_products_for_retry(db_pool) -> List[Dict]:
                         'map_price': row[8],
                     })
 
+            if skipped_max_retries > 0:
+                logger.warning(f"⚠️  Skipped {skipped_max_retries} products that exceeded {max_retries} retry attempts")
+
+            logger.info(f"📦 Loaded {len(products)} products eligible for retry (no re-scraping needed)")
             return products
 
 

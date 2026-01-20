@@ -9,6 +9,9 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
+// Track running Python processes by job ID
+const runningProcesses = new Map();
+
 /**
  * Get scraping jobs
  */
@@ -112,8 +115,13 @@ router.post('/start', async (req, res) => {
     });
 
     pythonProcess.on('close', (code) => {
+      // Remove from running processes
+      runningProcesses.delete(jobId);
+
       if (code === 0) {
         console.log(`✅ Scraper job #${jobId} completed successfully`);
+      } else if (code === null) {
+        console.log(`⚠️  Scraper job #${jobId} was terminated`);
       } else {
         console.error(`❌ Scraper job #${jobId} failed with code ${code}`);
       }
@@ -121,7 +129,11 @@ router.post('/start', async (req, res) => {
 
     pythonProcess.on('error', (error) => {
       console.error(`❌ Failed to start scraper job #${jobId}:`, error);
+      runningProcesses.delete(jobId);
     });
+
+    // Track the process
+    runningProcesses.set(jobId, pythonProcess);
 
     res.json({
       success: true,
@@ -136,6 +148,51 @@ router.post('/start', async (req, res) => {
   } catch (error) {
     console.error('❌ Start scraping error:', error);
     res.status(500).json({ error: 'Failed to start scraping job' });
+  }
+});
+
+/**
+ * Terminate a running scraping job
+ */
+router.post('/terminate/:jobId', async (req, res) => {
+  try {
+    const jobId = parseInt(req.params.jobId);
+    const shop = req.query.shop || '2f3d7a-2.myshopify.com';
+
+    console.log(`🛑 Terminating scraping job #${jobId}...`);
+
+    // Check if process is running
+    const process = runningProcesses.get(jobId);
+
+    if (!process) {
+      return res.status(404).json({
+        error: 'Job not found or not running',
+        message: 'This job may have already completed or was never started.'
+      });
+    }
+
+    // Kill the Python process
+    process.kill('SIGTERM');
+
+    // Update job status in database
+    await db.execute(
+      `UPDATE scraping_jobs
+       SET status = 'terminated',
+           completed_at = NOW()
+       WHERE id = ?`,
+      [jobId]
+    );
+
+    console.log(`✅ Terminated scraping job #${jobId}`);
+
+    res.json({
+      success: true,
+      message: `Scraping job #${jobId} has been terminated`,
+      jobId: jobId
+    });
+  } catch (error) {
+    console.error('❌ Terminate scraping error:', error);
+    res.status(500).json({ error: 'Failed to terminate scraping job' });
   }
 });
 
