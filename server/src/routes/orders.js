@@ -321,10 +321,17 @@ router.post('/sync', async (req, res) => {
           const fullNextUrl = nextLinkMatch[1];
           console.log(`    ✅ Found next page URL: ${fullNextUrl.substring(0, 100)}...`);
 
-          // Extract just the path and query from the full URL
-          const urlObj = new URL(fullNextUrl);
-          nextPageUrl = urlObj.pathname + urlObj.search;
-          console.log(`    🔗 Next page path: ${nextPageUrl.substring(0, 100)}...`);
+          // Extract just the path and query from the full URL without using URL constructor
+          // The URL format is: https://{shop}/admin/api/{version}/orders.json?page_info=...
+          // We need everything after the domain: /admin/api/{version}/orders.json?page_info=...
+          const pathMatch = fullNextUrl.match(/https?:\/\/[^\/]+(.+)/);
+          if (pathMatch) {
+            nextPageUrl = pathMatch[1];
+            console.log(`    🔗 Next page path: ${nextPageUrl.substring(0, 100)}...`);
+          } else {
+            console.log(`    ⚠️  Could not extract path from URL`);
+            nextPageUrl = null;
+          }
         } else {
           console.log(`    ⚠️  Link header exists but no rel="next" found`);
           nextPageUrl = null;
