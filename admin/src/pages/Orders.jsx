@@ -278,9 +278,9 @@ export default function Orders() {
         return;
       }
 
-      // Continue polling if still processing
+      // Continue polling if still processing (poll every 1 second)
       if (status.status === 'processing' || status.status === 'pending') {
-        setTimeout(() => pollSDWJobStatus(jobId), 2000);
+        setTimeout(() => pollSDWJobStatus(jobId), 1000);
       }
 
     } catch (err) {
@@ -318,7 +318,6 @@ export default function Orders() {
 
     try {
       setProcessingSDW(true);
-      setSdwProgress([{ message: 'Starting SDW processing...', timestamp: new Date() }]);
 
       const response = await axios.post(`${API_URL}/api/orders/process-sdw/start`, {
         orderNumber: selectedOrderDetails.name,
@@ -341,8 +340,8 @@ export default function Orders() {
 
       if (response.data.success && response.data.jobId) {
         setSdwJobId(response.data.jobId);
-        // Start polling for status
-        setTimeout(() => pollSDWJobStatus(response.data.jobId), 1000);
+        // Start polling immediately for status
+        pollSDWJobStatus(response.data.jobId);
       }
 
     } catch (err) {

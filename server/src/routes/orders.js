@@ -746,17 +746,27 @@ async function processSDWInBackground(jobId, config) {
       const text = data.toString().trim();
       console.log(`[Job ${jobId}] ${text}`);
 
-      // Parse output for progress updates
+      // Parse output for progress updates based on actual Python script output
       if (text.includes('Fetching order')) {
         updateJobProgress(jobId, 'Fetching order from Shopify...', 'fetching_order');
+      } else if (text.includes('Initializing browser')) {
+        updateJobProgress(jobId, 'Launching browser automation...', 'launching_browser');
       } else if (text.includes('Logging into SDW')) {
         updateJobProgress(jobId, 'Logging into SDW...', 'logging_in');
-      } else if (text.includes('Searching for items')) {
-        updateJobProgress(jobId, 'Searching for items...', 'searching_items');
-      } else if (text.includes('Adding to cart')) {
-        updateJobProgress(jobId, 'Adding items to cart...', 'adding_to_cart');
-      } else if (text.includes('Calculating shipping')) {
-        updateJobProgress(jobId, 'Calculating shipping...', 'calculating_shipping');
+      } else if (text.includes('Extracting vehicle')) {
+        updateJobProgress(jobId, 'Extracting vehicle information...', 'extracting_vehicle');
+      } else if (text.includes('Found') && text.includes('item(s) to process')) {
+        updateJobProgress(jobId, text, 'items_found');
+      } else if (text.includes('Processing:')) {
+        updateJobProgress(jobId, text, 'processing_item');
+      } else if (text.includes('Successfully added') && text.includes('to cart')) {
+        updateJobProgress(jobId, 'Items added to cart successfully', 'cart_updated');
+      } else if (text.includes('Proceeding to checkout')) {
+        updateJobProgress(jobId, 'Proceeding to checkout...', 'checkout');
+      } else if (text.includes('Filling payment')) {
+        updateJobProgress(jobId, 'Filling payment information...', 'payment');
+      } else if (text.includes('Waiting for shipping')) {
+        updateJobProgress(jobId, 'Calculating shipping cost...', 'calculating_shipping');
       } else if (text.startsWith('SHIPPING_CALCULATED:')) {
         // Parse shipping info: SHIPPING_CALCULATED:45.99:345.99
         const parts = text.split(':');
