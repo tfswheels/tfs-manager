@@ -209,10 +209,8 @@ function parseVehicleInfo(vehicleStr) {
 router.post('/sync', async (req, res) => {
   try {
     const shop = req.query.shop || '2f3d7a-2.myshopify.com';
-    const requestedLimit = parseInt(req.query.limit) || 1000;
-    const totalToFetch = Math.min(requestedLimit, 2000); // Cap at 2000 total
 
-    console.log(`🔄 Syncing up to ${totalToFetch} orders from Shopify for ${shop}...`);
+    console.log(`🔄 Syncing ALL orders from Shopify for ${shop}...`);
 
     // Get access token from database
     const [rows] = await db.execute(
@@ -252,13 +250,13 @@ router.post('/sync', async (req, res) => {
     let pageCount = 0;
     const perPage = 250; // GraphQL max is 250
 
-    while (hasNextPage && allOrders.length < totalToFetch) {
+    while (hasNextPage) {
       pageCount++;
       console.log(`  📄 Fetching page ${pageCount}...`);
 
       const query = `
-        query getOrders($first: Int!, $after: String, $query: String) {
-          orders(first: $first, after: $after, query: $query, sortKey: CREATED_AT, reverse: true) {
+        query getOrders($first: Int!, $after: String) {
+          orders(first: $first, after: $after) {
             edges {
               node {
                 id
@@ -306,8 +304,7 @@ router.post('/sync', async (req, res) => {
 
       const variables = {
         first: perPage,
-        after: cursor,
-        query: "status:any" // Include all orders regardless of status
+        after: cursor
       };
 
       const response = await client.query({
@@ -367,28 +364,20 @@ router.post('/sync', async (req, res) => {
       console.log(`    🔗 hasNextPage: ${hasNextPage}, endCursor: ${cursor ? cursor.substring(0, 30) + '...' : 'null'}`);
 
       if (!hasNextPage) {
-        console.log(`    ℹ️  No more pages available (Shopify reports hasNextPage: false)`);
+        console.log(`    ℹ️  No more pages available`);
         break;
       }
     }
 
-    // Check if we actually got all orders or if Shopify is limiting us
-    if (allOrders.length < totalToFetch && !hasNextPage) {
-      console.log(`    ⚠️  WARNING: Only fetched ${allOrders.length} orders but requested ${totalToFetch}`);
-      console.log(`    ⚠️  Shopify may be filtering results. Check API scopes and permissions.`);
-    }
-
-    // Trim to requested limit
-    const orders = allOrders.slice(0, totalToFetch);
-    console.log(`\n📊 Total orders fetched: ${orders.length}`);
+    console.log(`\n📊 Total orders fetched: ${allOrders.length}`);
 
     let syncedCount = 0;
     let vehicleExtractedCount = 0;
 
-    console.log(`\n💾 Saving ${orders.length} orders to database...`);
+    console.log(`\n💾 Saving ${allOrders.length} orders to database...`);
 
     // Sync orders to database
-    for (const order of orders) {
+    for (const order of allOrders) {
       try {
         const customerName = order.customer?.default_address?.name ||
                             (order.customer?.first_name && order.customer?.last_name
@@ -464,7 +453,7 @@ router.post('/sync', async (req, res) => {
       success: true,
       message: `Successfully synced ${syncedCount} orders from Shopify (${vehicleExtractedCount} with vehicle info)`,
       synced: syncedCount,
-      total: orders.length,
+      total: allOrders.length,
       vehicleExtracted: vehicleExtractedCount
     });
 
