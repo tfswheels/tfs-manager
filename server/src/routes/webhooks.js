@@ -40,18 +40,110 @@ const verifyWebhook = (req, res, next) => {
 };
 
 /**
+ * Extract vehicle info from order webhook data
+ */
+function extractVehicleInfoFromWebhook(order) {
+  let vehicleInfo = null;
+
+  // 1. Check line items properties
+  if (order.line_items) {
+    for (const item of order.line_items) {
+      if (item.properties && Array.isArray(item.properties)) {
+        for (const prop of item.properties) {
+          const propName = prop.name ? prop.name.toLowerCase() : '';
+          if (propName === 'vehicle' || propName === '_vehicle') {
+            vehicleInfo = prop.value;
+            break;
+          }
+        }
+      }
+      if (vehicleInfo) break;
+    }
+  }
+
+  // 2. Check order note
+  if (!vehicleInfo && order.note) {
+    const vehicleMatch = order.note.match(/Vehicle:\s*(.+?)(?:\n|$)/i);
+    if (vehicleMatch) {
+      vehicleInfo = vehicleMatch[1].trim();
+    }
+  }
+
+  // 3. Check note_attributes
+  if (!vehicleInfo && order.note_attributes && Array.isArray(order.note_attributes)) {
+    for (const attr of order.note_attributes) {
+      const attrName = attr.name ? attr.name.toLowerCase() : '';
+      if (attrName === 'vehicle') {
+        vehicleInfo = attr.value;
+        break;
+      }
+    }
+  }
+
+  return vehicleInfo;
+}
+
+/**
+ * Parse vehicle string into components
+ */
+function parseVehicleInfoFromWebhook(vehicleStr) {
+  if (!vehicleStr) {
+    return { year: null, make: null, model: null, trim: null };
+  }
+
+  const parts = vehicleStr.trim().split(/\s+/);
+  const result = { year: null, make: null, model: null, trim: null };
+
+  if (parts.length >= 1 && parts[0].match(/^\d{4}$/)) {
+    result.year = parts[0];
+    if (parts.length >= 2) result.make = parts[1];
+    if (parts.length >= 3) result.model = parts[2];
+    if (parts.length >= 4) result.trim = parts.slice(3).join(' ');
+  } else {
+    if (parts.length >= 1) result.make = parts[0];
+    if (parts.length >= 2) result.model = parts[1];
+    if (parts.length >= 3) result.trim = parts.slice(2).join(' ');
+  }
+
+  return result;
+}
+
+/**
  * Orders Create Webhook
  * Triggered when a new order is created in Shopify
  */
 router.post('/create', verifyWebhook, async (req, res) => {
   try {
     const order = req.webhookBody;
+    const shop = req.headers['x-shopify-shop-domain'] || '2f3d7a-2.myshopify.com';
 
-    console.log(`📦 New order received: ${order.name} (${order.id})`);
+    console.log(`📦 New order received: ${order.name} (${order.id}) from ${shop}`);
 
-    // Save order to database
+    // Get shop_id
+    const [shops] = await db.execute(
+      'SELECT id FROM shops WHERE shop_name = ?',
+      [shop]
+    );
+
+    if (shops.length === 0) {
+      console.error(`❌ Shop not found: ${shop}`);
+      return res.status(200).json({ received: true }); // Return 200 to acknowledge webhook
+    }
+
+    const shopId = shops[0].id;
+
+    // Extract vehicle info
+    const vehicleStr = extractVehicleInfoFromWebhook(order);
+    const vehicleInfo = parseVehicleInfoFromWebhook(vehicleStr);
+
+    if (vehicleStr) {
+      console.log(`  ✓ Found vehicle: ${vehicleStr}`);
+    }
+
+    // Save order to database with vehicle info
     await db.execute(
       `INSERT INTO orders (
+        shop_id,
         shopify_order_id,
         order_number,
         customer_name,
@@ -59,16 +151,29 @@ router.post('/create', verifyWebhook, async (req, res) => {
         total_price,
         financial_status,
         fulfillment_status,
-        created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        tags,
+        vehicle_year,
+        vehicle_make,
+        vehicle_model,
+        vehicle_trim,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
       ON DUPLICATE KEY UPDATE
         order_number = VALUES(order_number),
         customer_name = VALUES(customer_name),
         customer_email = VALUES(customer_email),
         total_price = VALUES(total_price),
         financial_status = VALUES(financial_status),
-        fulfillment_status = VALUES(fulfillment_status)`,
+        fulfillment_status = VALUES(fulfillment_status),
+        tags = VALUES(tags),
+        vehicle_year = VALUES(vehicle_year),
+        vehicle_make = VALUES(vehicle_make),
+        vehicle_model = VALUES(vehicle_model),
+        vehicle_trim = VALUES(vehicle_trim),
+        updated_at = NOW()`,
       [
+        shopId,
         order.id,
         order.name,
         `${order.customer?.first_name || ''} ${order.customer?.last_name || ''}`.trim(),
@@ -76,6 +181,11 @@ router.post('/create', verifyWebhook, async (req, res) => {
         parseFloat(order.total_price),
         order.financial_status,
         order.fulfillment_status || 'unfulfilled',
+        order.tags || null,
+        vehicleInfo.year,
+        vehicleInfo.make,
+        vehicleInfo.model,
+        vehicleInfo.trim,
         new Date(order.created_at)
       ]
     );
@@ -124,18 +234,36 @@ router.post('/updated', verifyWebhook, async (req, res) => {
 
     console.log(`📝 Order updated: ${order.name} (${order.id})`);
 
-    // Update order in database
+    // Extract vehicle info
+    const vehicleStr = extractVehicleInfoFromWebhook(order);
+    const vehicleInfo = parseVehicleInfoFromWebhook(vehicleStr);
+
+    if (vehicleStr) {
+      console.log(`  ✓ Found vehicle: ${vehicleStr}`);
+    }
+
+    // Update order in database with vehicle info
     await db.execute(
       `UPDATE orders SET
         financial_status = ?,
         fulfillment_status = ?,
         total_price = ?,
+        tags = ?,
+        vehicle_year = ?,
+        vehicle_make = ?,
+        vehicle_model = ?,
+        vehicle_trim = ?,
         updated_at = NOW()
       WHERE shopify_order_id = ?`,
       [
         order.financial_status,
         order.fulfillment_status || 'unfulfilled',
         parseFloat(order.total_price),
+        order.tags || null,
+        vehicleInfo.year,
+        vehicleInfo.make,
+        vehicleInfo.model,
+        vehicleInfo.trim,
         order.id
       ]
     );

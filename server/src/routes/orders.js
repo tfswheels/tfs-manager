@@ -206,9 +206,13 @@ function parseVehicleInfo(vehicleStr) {
 router.post('/sync', async (req, res) => {
   try {
     const shop = req.query.shop || '2f3d7a-2.myshopify.com';
-    const limit = parseInt(req.query.limit) || 250;
+    const requestedLimit = parseInt(req.query.limit) || 1000; // Increased default to 1000
 
-    console.log(`🔄 Syncing orders from Shopify for ${shop}...`);
+    // Shopify API has a max limit of 250 per request, so we'll need to paginate
+    const perPage = 250;
+    const totalToFetch = Math.min(requestedLimit, 2000); // Cap at 2000 total
+
+    console.log(`🔄 Syncing up to ${totalToFetch} orders from Shopify for ${shop}...`);
 
     // Get access token from database
     const [rows] = await db.execute(
@@ -241,18 +245,62 @@ router.post('/sync', async (req, res) => {
       }
     });
 
-    // Fetch orders from Shopify with ALL fields including line_items and note_attributes
-    const response = await client.get({
-      path: 'orders',
-      query: {
-        limit: limit,
+    // Fetch orders with pagination
+    let allOrders = [];
+    let hasMorePages = true;
+    let pageInfo = null;
+    let pageCount = 0;
+    const maxPages = Math.ceil(totalToFetch / perPage);
+
+    while (hasMorePages && pageCount < maxPages) {
+      const queryParams = {
+        limit: perPage,
         status: 'any',
         order: 'created_at DESC'
-        // Don't use 'fields' parameter so we get ALL data including line items
-      }
-    });
+      };
 
-    const orders = response.body.orders || [];
+      // Add page_info for pagination (if not first page)
+      if (pageInfo) {
+        queryParams.page_info = pageInfo;
+      }
+
+      console.log(`  📄 Fetching page ${pageCount + 1}/${maxPages}...`);
+
+      const response = await client.get({
+        path: 'orders',
+        query: queryParams
+      });
+
+      const orders = response.body.orders || [];
+      allOrders = allOrders.concat(orders);
+      pageCount++;
+
+      console.log(`    ✓ Retrieved ${orders.length} orders (total: ${allOrders.length})`);
+
+      // Check if there are more pages using Link header
+      const linkHeader = response.headers.get('link');
+      if (linkHeader && linkHeader.includes('rel="next"')) {
+        // Extract page_info from Link header
+        const nextMatch = linkHeader.match(/<[^>]*[?&]page_info=([^&>]+)[^>]*>;\s*rel="next"/);
+        if (nextMatch) {
+          pageInfo = nextMatch[1];
+        } else {
+          hasMorePages = false;
+        }
+      } else {
+        hasMorePages = false;
+      }
+
+      // Stop if we've reached the requested limit
+      if (allOrders.length >= totalToFetch) {
+        hasMorePages = false;
+      }
+    }
+
+    // Trim to requested limit
+    const orders = allOrders.slice(0, totalToFetch);
+    console.log(`\n📊 Total orders fetched: ${orders.length}`);
+
     let syncedCount = 0;
     let vehicleExtractedCount = 0;
 
