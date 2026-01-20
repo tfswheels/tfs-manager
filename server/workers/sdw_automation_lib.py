@@ -8,9 +8,9 @@ import sys
 import os
 from pathlib import Path
 
-# Add SDW script to path
-sdw_path = Path("/Users/jeremiah/Desktop/TFS Wheels/TFS Wheels App/Order Processing/SDW Order Processing")
-sys.path.insert(0, str(sdw_path))
+# Add SDW script to path - use local copy in same directory
+current_dir = Path(__file__).parent
+sys.path.insert(0, str(current_dir))
 
 # Import all the functions from the original script
 from sdw_order_automation import (

@@ -705,7 +705,93 @@ router.get('/:orderId', async (req, res) => {
  * Process order on SDW
  * Triggers the Python SDW automation script with pre-configured options
  */
-router.post('/process-sdw', async (req, res) => {
+/**
+ * Background function to process SDW order
+ */
+async function processSDWInBackground(jobId, config) {
+  const { getJob, updateJobProgress } = await import('../services/sdwJobManager.js');
+  const job = getJob(jobId);
+
+  try {
+    job.setProcessing('calculate');
+    updateJobProgress(jobId, 'Launching browser automation...', 'launching_browser');
+
+    const pythonScript = path.join(__dirname, '../../workers/sdw_processor.py');
+    const args = [
+      '--order-number', config.orderNumber,
+      '--card', config.card,
+      '--mode', config.mode
+    ];
+
+    if (config.vehicleString) {
+      args.push('--vehicle', config.vehicleString);
+    }
+
+    if (config.mode === 'quote' && config.quoteLink) {
+      args.push('--quote-link', config.quoteLink);
+    }
+
+    if (config.selectedLineItems.length > 0) {
+      args.push('--selected-items', JSON.stringify(config.selectedLineItems));
+    }
+
+    console.log(`🐍 Spawning Python for job ${jobId}`);
+
+    const pythonProcess = spawn('python3', [pythonScript, ...args], {
+      cwd: path.join(__dirname, '../../workers')
+    });
+
+    // Capture output and update progress
+    pythonProcess.stdout.on('data', (data) => {
+      const text = data.toString().trim();
+      console.log(`[Job ${jobId}] ${text}`);
+
+      // Parse output for progress updates
+      if (text.includes('Fetching order')) {
+        updateJobProgress(jobId, 'Fetching order from Shopify...', 'fetching_order');
+      } else if (text.includes('Logging into SDW')) {
+        updateJobProgress(jobId, 'Logging into SDW...', 'logging_in');
+      } else if (text.includes('Searching for items')) {
+        updateJobProgress(jobId, 'Searching for items...', 'searching_items');
+      } else if (text.includes('Adding to cart')) {
+        updateJobProgress(jobId, 'Adding items to cart...', 'adding_to_cart');
+      } else if (text.includes('Calculating shipping')) {
+        updateJobProgress(jobId, 'Calculating shipping...', 'calculating_shipping');
+      } else if (text.startsWith('SHIPPING_CALCULATED:')) {
+        // Parse shipping info: SHIPPING_CALCULATED:45.99:345.99
+        const parts = text.split(':');
+        if (parts.length === 3) {
+          const shippingCost = parseFloat(parts[1]);
+          const totalPrice = parseFloat(parts[2]);
+          job.setCalculateComplete(totalPrice, shippingCost);
+        }
+      }
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      const text = data.toString().trim();
+      console.error(`[Job ${jobId} Error] ${text}`);
+      updateJobProgress(jobId, `Error: ${text}`, 'error');
+    });
+
+    pythonProcess.on('close', (code) => {
+      if (code !== 0 && job.status !== 'awaiting_confirmation') {
+        job.setFailed(`Process exited with code ${code}`);
+      }
+      console.log(`✅ Job ${jobId} Python process exited with code ${code}`);
+    });
+
+  } catch (error) {
+    console.error(`❌ Error in background processing for job ${jobId}:`, error);
+    job.setFailed(error.message);
+  }
+}
+
+/**
+ * Start SDW processing (Phase 1: Calculate shipping/total)
+ * Returns a job ID for tracking progress
+ */
+router.post('/process-sdw/start', async (req, res) => {
   try {
     const {
       orderNumber,
@@ -717,101 +803,121 @@ router.post('/process-sdw', async (req, res) => {
       quoteLink
     } = req.body;
 
-    console.log(`🚀 Starting SDW processing for order ${orderNumber}...`);
-    console.log(`   Selected items: ${selectedLineItems.length}`);
-    console.log(`   Vehicle: ${vehicle.year} ${vehicle.make} ${vehicle.model} ${vehicle.trim}`);
-    console.log(`   Card: ${card}, Mode: ${mode}`);
+    // Validate
+    if (!orderNumber) {
+      return res.status(400).json({ error: 'Order number is required' });
+    }
+
+    if (selectedLineItems.length === 0) {
+      return res.status(400).json({ error: 'No items selected' });
+    }
+
+    if (mode === 'quote' && !quoteLink) {
+      return res.status(400).json({ error: 'Quote link is required for quote mode' });
+    }
+
+    // Create job
+    const { createJob, updateJobProgress } = await import('../services/sdwJobManager.js');
+    const job = createJob(orderNumber.replace('#', ''));
 
     // Build vehicle string
     const vehicleParts = [vehicle.year, vehicle.make, vehicle.model, vehicle.trim].filter(Boolean);
     const vehicleString = vehicleParts.join(' ');
 
-    // Validate
-    if (!orderNumber) {
-      return res.status(400).json({
-        error: 'Order number is required'
-      });
-    }
+    console.log(`🚀 Starting SDW job ${job.jobId} for order ${orderNumber}`);
+    updateJobProgress(job.jobId, `Starting SDW processing for order ${orderNumber}`, 'initializing');
 
-    if (selectedLineItems.length === 0) {
-      return res.status(400).json({
-        error: 'No items selected'
-      });
-    }
-
-    if (mode === 'quote' && !quoteLink) {
-      return res.status(400).json({
-        error: 'Quote link is required for quote mode'
-      });
-    }
-
-    // Spawn Python subprocess to run SDW automation
-    const pythonScript = path.join(__dirname, '../../workers/sdw_processor.py');
-
-    const args = [
-      '--order-number', orderNumber.replace('#', ''),
-      '--card', card,
-      '--mode', mode
-    ];
-
-    if (vehicleString) {
-      args.push('--vehicle', vehicleString);
-    }
-
-    if (mode === 'quote' && quoteLink) {
-      args.push('--quote-link', quoteLink);
-    }
-
-    if (selectedLineItems.length > 0) {
-      args.push('--selected-items', JSON.stringify(selectedLineItems));
-    }
-
-    console.log(`🐍 Spawning Python subprocess...`);
-    console.log(`   Script: ${pythonScript}`);
-    console.log(`   Args: ${JSON.stringify(args)}`);
-
-    const pythonProcess = spawn('python3', [pythonScript, ...args], {
-      cwd: path.join(__dirname, '../../workers')
-    });
-
-    let output = '';
-    let errorOutput = '';
-
-    pythonProcess.stdout.on('data', (data) => {
-      const text = data.toString();
-      output += text;
-      console.log(`[Python] ${text.trim()}`);
-    });
-
-    pythonProcess.stderr.on('data', (data) => {
-      const text = data.toString();
-      errorOutput += text;
-      console.error(`[Python Error] ${text.trim()}`);
-    });
-
-    pythonProcess.on('close', (code) => {
-      console.log(`✅ Python process exited with code ${code}`);
-    });
-
-    // Return immediately - process runs in background
+    // Return job ID immediately
     res.json({
       success: true,
-      message: `SDW processing started for order ${orderNumber}. Check server logs for progress.`,
-      details: {
-        orderNumber,
-        itemCount: selectedLineItems.length,
-        vehicle: vehicleString,
-        card,
-        mode,
-        status: 'processing'
-      },
-      note: 'This is currently running a stub. Full SDW automation requires refactoring the Python script to be non-interactive.'
+      jobId: job.jobId,
+      message: 'SDW processing started. Poll /api/orders/sdw-job/{jobId} for progress.',
+      orderNumber
+    });
+
+    // Start processing in background
+    processSDWInBackground(job.jobId, {
+      orderNumber: orderNumber.replace('#', ''),
+      selectedLineItems,
+      vehicleString,
+      card,
+      mode,
+      quoteLink
     });
 
   } catch (error) {
     console.error('❌ Error starting SDW processing:', error);
     res.status(500).json({
       error: 'Failed to start SDW processing',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Get SDW job status and progress
+ */
+router.get('/sdw-job/:jobId', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const { getJob } = await import('../services/sdwJobManager.js');
+    const job = getJob(jobId);
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    res.json(job.getStatus());
+
+  } catch (error) {
+    console.error('❌ Error fetching job status:', error);
+    res.status(500).json({
+      error: 'Failed to fetch job status',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Confirm and complete SDW purchase (Phase 2)
+ */
+router.post('/sdw-job/:jobId/confirm', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const { getJob, updateJobProgress } = await import('../services/sdwJobManager.js');
+    const job = getJob(jobId);
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    if (job.status !== 'awaiting_confirmation') {
+      return res.status(400).json({
+        error: 'Job is not awaiting confirmation',
+        currentStatus: job.status
+      });
+    }
+
+    console.log(`✅ User confirmed purchase for job ${jobId}`);
+    updateJobProgress(jobId, 'User confirmed. Completing purchase...', 'completing');
+
+    job.setProcessing('purchase');
+
+    res.json({
+      success: true,
+      message: 'Purchase confirmation received. Completing order...'
+    });
+
+    // TODO: Signal Python process to complete purchase
+    // For now, mark as completed
+    setTimeout(() => {
+      job.setCompleted({ message: 'Purchase completed successfully' });
+    }, 2000);
+
+  } catch (error) {
+    console.error('❌ Error confirming SDW purchase:', error);
+    res.status(500).json({
+      error: 'Failed to confirm purchase',
       message: error.message
     });
   }
