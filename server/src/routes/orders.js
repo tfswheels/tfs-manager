@@ -253,21 +253,20 @@ router.post('/sync', async (req, res) => {
 
     // Fetch orders with pagination
     let allOrders = [];
-    let hasMorePages = true;
-    let pageInfo = null;
     let pageCount = 0;
     const maxPages = Math.ceil(totalToFetch / perPage);
+    let lastOrderId = null;
 
-    while (hasMorePages && pageCount < maxPages) {
+    while (pageCount < maxPages) {
       const queryParams = {
         limit: perPage,
         status: 'any',
         order: 'created_at DESC'
       };
 
-      // Add page_info for pagination (if not first page)
-      if (pageInfo) {
-        queryParams.page_info = pageInfo;
+      // Use since_id for pagination (more reliable than Link header)
+      if (lastOrderId) {
+        queryParams.since_id = lastOrderId;
       }
 
       console.log(`  📄 Fetching page ${pageCount + 1}/${maxPages}...`);
@@ -278,34 +277,31 @@ router.post('/sync', async (req, res) => {
       });
 
       const orders = response.body.orders || [];
+
+      // If we got no orders, we're done
+      if (orders.length === 0) {
+        console.log(`    ℹ️  No more orders to fetch`);
+        break;
+      }
+
       allOrders = allOrders.concat(orders);
       pageCount++;
 
       console.log(`    ✓ Retrieved ${orders.length} orders (total: ${allOrders.length})`);
 
-      // Check if there are more pages using Link header
-      // Note: Shopify REST client returns headers as plain object, not Headers object
-      const linkHeader = response.headers['link'] || response.headers.link;
-      console.log(`    📎 Link header:`, linkHeader ? 'Present' : 'Missing');
-      if (linkHeader) {
-        console.log(`       Has next? ${linkHeader.includes('rel="next"')}`);
+      // If we got fewer than perPage orders, this is the last page
+      if (orders.length < perPage) {
+        console.log(`    ℹ️  Received ${orders.length} orders (less than ${perPage}), last page reached`);
+        break;
       }
 
-      if (linkHeader && linkHeader.includes('rel="next"')) {
-        // Extract page_info from Link header
-        const nextMatch = linkHeader.match(/<[^>]*[?&]page_info=([^&>]+)[^>]*>;\s*rel="next"/);
-        if (nextMatch) {
-          pageInfo = nextMatch[1];
-        } else {
-          hasMorePages = false;
-        }
-      } else {
-        hasMorePages = false;
-      }
+      // Get the ID of the last order for next page
+      lastOrderId = orders[orders.length - 1].id;
 
       // Stop if we've reached the requested limit
       if (allOrders.length >= totalToFetch) {
-        hasMorePages = false;
+        console.log(`    ℹ️  Reached requested limit of ${totalToFetch} orders`);
+        break;
       }
     }
 
