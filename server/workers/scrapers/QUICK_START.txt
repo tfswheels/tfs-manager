@@ -1,0 +1,75 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    ENHANCED CWO SCRAPER - QUICK START                         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+📍 LOCATION
+  /Users/jeremiah/Desktop/TFS Wheels/Scripts/Inventory Scraping/Wheels Inventory/enhanced_cwo/
+
+🚀 BASIC USAGE
+  cd "/Users/jeremiah/Desktop/TFS Wheels/Scripts/Inventory Scraping/Wheels Inventory"
+  
+  python -m enhanced_cwo.main --wheels        # Scrape wheels
+  python -m enhanced_cwo.main --tires         # Scrape tires
+
+🎯 WHAT IT DOES
+  1. Syncs all_shopify_wheels / shopify_tires with Shopify
+  2. Scrapes CWO inventory (updates existing products)
+  3. Discovers NEW products not in our system
+  4. Extracts full product data (Klaviyo JSON)
+  5. Processes images (download, OCR, upload to GCS)
+  6. Creates products in wheels/tires table
+  7. Creates products on Shopify
+  8. Enforces 1000 products/24hrs limit
+
+⚙️  COMMON OPTIONS
+  --wheels                   Scrape wheels
+  --tires                    Scrape tires
+  --sale-only                Only sale items
+  --no-discovery             Disable product creation (inventory only)
+  --no-shopify-sync          Skip Shopify table sync (faster start)
+  --headed                   Show browser
+
+📊 CHECK DAILY LIMIT
+  SELECT products_created_count, first_creation_timestamp,
+         (1000 - products_created_count) as remaining
+  FROM product_creation_tracker
+  WHERE product_type = 'wheel';
+
+🔍 CHECK FAILED PRODUCTS
+  SELECT url_part_number, brand, sync_error
+  FROM wheels
+  WHERE product_sync = 'error' AND supplier = 'CWO'
+  LIMIT 10;
+
+📁 MODULE STRUCTURE
+  __init__.py              - Package init
+  config.py                - Settings & configuration
+  gcs_manager.py           - GCS image uploads
+  image_processing.py      - Image handling
+  shopify_ops.py           - Shopify GraphQL
+  scraper_core.py          - Page scraping
+  product_discovery.py     - Find new products
+  product_creation.py      - Create products
+  main.py                  - RUN THIS!
+
+📖 DOCUMENTATION
+  README.md                      - Full user guide
+  IMPLEMENTATION_SUMMARY.md      - Technical details
+  QUICK_START.txt                - This file
+
+✅ FEATURES
+  ✓ Automatic product discovery
+  ✓ Klaviyo data extraction
+  ✓ Image processing & upload
+  ✓ Daily limit enforcement (1000/24h)
+  ✓ Failed product retry
+  ✓ Shopify table sync
+  ✓ All original scraper modes
+
+🐛 TROUBLESHOOTING
+  See README.md "Troubleshooting" section for:
+  - Daily limit issues
+  - Shopify creation failures
+  - Image processing errors
+  - Common solutions
+

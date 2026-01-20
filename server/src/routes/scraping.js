@@ -1,5 +1,11 @@
 import express from 'express';
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import db from '../config/database.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
@@ -76,9 +82,46 @@ router.post('/start', async (req, res) => {
 
     console.log(`✅ Created scraping job #${jobId}`);
 
-    // TODO: Trigger actual scraping process here
-    // For now, we'll just mark it as pending
-    // You can integrate with your Python scrapers from TFS Wheels App
+    // Spawn Python scraper process
+    const scraperPath = path.join(__dirname, '../../workers/scrapers');
+    const pythonScript = path.join(scraperPath, 'run_scraper.py');
+
+    console.log(`🐍 Launching Python scraper: ${pythonScript}`);
+    console.log(`📂 Working directory: ${scraperPath}`);
+
+    const pythonProcess = spawn('python3', [
+      pythonScript,
+      `--job-id=${jobId}`,
+      `--type=${scraperType}`
+    ], {
+      cwd: scraperPath,
+      env: {
+        ...process.env,
+        // Ensure the scraper uses tfs-db for product data
+        DB_NAME: 'tfs-db'  // Override to use product database
+      }
+    });
+
+    // Log Python output in real-time
+    pythonProcess.stdout.on('data', (data) => {
+      console.log(`[Scraper #${jobId}] ${data.toString().trim()}`);
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      console.error(`[Scraper #${jobId} ERROR] ${data.toString().trim()}`);
+    });
+
+    pythonProcess.on('close', (code) => {
+      if (code === 0) {
+        console.log(`✅ Scraper job #${jobId} completed successfully`);
+      } else {
+        console.error(`❌ Scraper job #${jobId} failed with code ${code}`);
+      }
+    });
+
+    pythonProcess.on('error', (error) => {
+      console.error(`❌ Failed to start scraper job #${jobId}:`, error);
+    });
 
     res.json({
       success: true,
@@ -87,7 +130,7 @@ router.post('/start', async (req, res) => {
         shop_id: shopId,
         scraper_type: scraperType,
         status: 'running',
-        message: 'Scraping job started successfully'
+        message: 'Scraping job started successfully. Check Railway logs for progress.'
       }
     });
   } catch (error) {
