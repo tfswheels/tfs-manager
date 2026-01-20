@@ -70,6 +70,10 @@ export default function Orders() {
   const [sdwProgress, setSdwProgress] = useState([]);
   const [calculatedTotal, setCalculatedTotal] = useState(null);
   const [calculatedShipping, setCalculatedShipping] = useState(null);
+  const [sdwOrderItems, setSdwOrderItems] = useState([]);
+  const [sdwOrderSummary, setSdwOrderSummary] = useState(null);
+  const [sdwCompletionData, setSdwCompletionData] = useState(null);
+  const [sdwFailureData, setSdwFailureData] = useState(null);
 
   useEffect(() => {
     fetchOrders();
@@ -221,6 +225,10 @@ export default function Orders() {
       setProcessingSDW(false);
       setCalculatedTotal(null);
       setCalculatedShipping(null);
+      setSdwOrderItems([]);
+      setSdwOrderSummary(null);
+      setSdwCompletionData(null);
+      setSdwFailureData(null);
 
       const response = await axios.get(`${API_URL}/api/orders/${order.shopify_order_id}/details`, {
         params: {
@@ -263,6 +271,14 @@ export default function Orders() {
       setSdwJobStatus(status.status);
       setSdwProgress(status.progress || []);
 
+      // Update order items and summary if available
+      if (status.orderItems) {
+        setSdwOrderItems(status.orderItems);
+      }
+      if (status.orderSummary) {
+        setSdwOrderSummary(status.orderSummary);
+      }
+
       // If awaiting confirmation, update pricing (UI shows inline confirmation)
       if (status.status === 'awaiting_confirmation') {
         console.log(`[Poll] Awaiting confirmation! Total: $${status.totalPrice}, Shipping: $${status.shippingCost}`);
@@ -272,18 +288,18 @@ export default function Orders() {
         return; // Stop polling until user confirms
       }
 
-      // If completed or failed, stop polling
+      // If completed, show success UI
       if (status.status === 'completed') {
-        alert('SDW order completed successfully!');
+        setSdwCompletionData(status.completionData);
         setProcessingSDW(false);
-        setOrderDetailsModalOpen(false);
-        return;
+        return; // Stop polling
       }
 
+      // If failed, show failure UI
       if (status.status === 'failed') {
-        alert(`SDW processing failed: ${status.error}`);
+        setSdwFailureData(status.failureData || { error_message: status.error });
         setProcessingSDW(false);
-        return;
+        return; // Stop polling
       }
 
       // Continue polling if still processing (poll every 1 second)
@@ -1009,18 +1025,62 @@ export default function Orders() {
                       <p><strong>Shipping calculated successfully!</strong></p>
                     </Banner>
 
-                    <div style={{ padding: '16px', background: '#f6f6f7', borderRadius: '8px' }}>
-                      <BlockStack gap="200">
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <Text variant="bodyMd" fontWeight="semibold">Shipping Cost:</Text>
-                          <Text variant="bodyMd">${calculatedShipping ? calculatedShipping.toFixed(2) : '0.00'}</Text>
+                    {/* Order Items */}
+                    {sdwOrderItems.length > 0 && (
+                      <div style={{ padding: '16px', background: '#f6f6f7', borderRadius: '8px' }}>
+                        <Text variant="headingSm" as="h4" fontWeight="semibold">Items to Process:</Text>
+                        <div style={{ marginTop: '12px' }}>
+                          {sdwOrderItems.map((item, idx) => (
+                            <div key={idx} style={{ padding: '8px 0', borderBottom: idx < sdwOrderItems.length - 1 ? '1px solid #e1e1e1' : 'none' }}>
+                              <Text variant="bodyMd" fontWeight="medium">{item.name}</Text>
+                              <div style={{ marginTop: '4px' }}>
+                                <Text variant="bodySm" tone="subdued">
+                                  SKU: {item.sku || 'N/A'} | Qty: {item.quantity} | Type: {item.product_type}
+                                </Text>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: '2px solid #000' }}>
-                          <Text variant="bodyLg" fontWeight="bold">Total Price:</Text>
-                          <Text variant="bodyLg" fontWeight="bold">${calculatedTotal ? calculatedTotal.toFixed(2) : '0.00'}</Text>
-                        </div>
-                      </BlockStack>
-                    </div>
+                      </div>
+                    )}
+
+                    {/* Order Summary */}
+                    {sdwOrderSummary && (
+                      <div style={{ padding: '16px', background: '#f6f6f7', borderRadius: '8px' }}>
+                        <Text variant="headingSm" as="h4" fontWeight="semibold">Order Summary:</Text>
+                        <BlockStack gap="200" style={{ marginTop: '12px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text variant="bodyMd">Subtotal:</Text>
+                            <Text variant="bodyMd">{sdwOrderSummary.subtotal || '$0.00'}</Text>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text variant="bodyMd">Shipping:</Text>
+                            <Text variant="bodyMd">{sdwOrderSummary.shipping || '$0.00'}</Text>
+                          </div>
+                          {sdwOrderSummary.shipping_protection && sdwOrderSummary.shipping_protection !== '$0.00' && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <Text variant="bodyMd">Shipping Protection:</Text>
+                              <Text variant="bodyMd">{sdwOrderSummary.shipping_protection}</Text>
+                            </div>
+                          )}
+                          {sdwOrderSummary.mounting_balancing && sdwOrderSummary.mounting_balancing !== '$0.00' && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <Text variant="bodyMd">Mounting & Balancing:</Text>
+                              <Text variant="bodyMd">{sdwOrderSummary.mounting_balancing}</Text>
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text variant="bodyMd">Tax:</Text>
+                            <Text variant="bodyMd">{sdwOrderSummary.tax || '$0.00'}</Text>
+                          </div>
+                          <Divider />
+                          <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px' }}>
+                            <Text variant="bodyLg" fontWeight="bold">Total:</Text>
+                            <Text variant="bodyLg" fontWeight="bold">{sdwOrderSummary.total || '$0.00'}</Text>
+                          </div>
+                        </BlockStack>
+                      </div>
+                    )}
 
                     <Banner tone="warning">
                       <p><strong>Important:</strong> Clicking "Confirm Purchase" will complete the order on SDW using the selected payment method.</p>
@@ -1035,6 +1095,97 @@ export default function Orders() {
                       </Button>
                       <Button primary onClick={handleConfirmPurchase} loading={processingSDW}>
                         Confirm Purchase
+                      </Button>
+                    </InlineStack>
+                  </BlockStack>
+                </Card>
+              )}
+
+              {/* Success State */}
+              {sdwJobStatus === 'completed' && sdwCompletionData && (
+                <Card>
+                  <BlockStack gap="400">
+                    <Banner tone="success">
+                      <p><strong>Order Processing Complete!</strong></p>
+                    </Banner>
+
+                    <div style={{ padding: '16px', background: '#e8f5e9', borderRadius: '8px' }}>
+                      <BlockStack gap="300">
+                        <Text variant="headingMd" as="h3" fontWeight="bold">SDW Order Details:</Text>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <Text variant="bodyMd" fontWeight="semibold">Shopify Order:</Text>
+                          <Text variant="bodyMd">#{sdwCompletionData.order_number}</Text>
+                        </div>
+
+                        {sdwCompletionData.invoice_number && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text variant="bodyMd" fontWeight="semibold">SDW Invoice:</Text>
+                            <Text variant="bodyMd" fontWeight="bold">{sdwCompletionData.invoice_number}</Text>
+                          </div>
+                        )}
+
+                        {sdwCompletionData.invoice_total && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Text variant="bodyMd" fontWeight="semibold">Total:</Text>
+                            <Text variant="bodyMd">${sdwCompletionData.invoice_total}</Text>
+                          </div>
+                        )}
+
+                        {sdwCompletionData.folder_name && (
+                          <div style={{ marginTop: '8px' }}>
+                            <Text variant="bodySm" tone="subdued">Folder: {sdwCompletionData.folder_name}</Text>
+                          </div>
+                        )}
+                      </BlockStack>
+                    </div>
+
+                    <InlineStack gap="300" align="end">
+                      <Button primary onClick={() => {
+                        setOrderDetailsModalOpen(false);
+                      }}>
+                        Close
+                      </Button>
+                    </InlineStack>
+                  </BlockStack>
+                </Card>
+              )}
+
+              {/* Failure State */}
+              {sdwJobStatus === 'failed' && sdwFailureData && (
+                <Card>
+                  <BlockStack gap="400">
+                    <Banner tone="critical">
+                      <p><strong>Order Processing Failed</strong></p>
+                    </Banner>
+
+                    <div style={{ padding: '16px', background: '#ffebee', borderRadius: '8px' }}>
+                      <BlockStack gap="300">
+                        <Text variant="headingMd" as="h3" fontWeight="bold">Error Details:</Text>
+
+                        <div>
+                          <Text variant="bodyMd" fontWeight="semibold">Error Type:</Text>
+                          <Text variant="bodyMd">{sdwFailureData.error_type || 'Unknown'}</Text>
+                        </div>
+
+                        <div>
+                          <Text variant="bodyMd" fontWeight="semibold">Message:</Text>
+                          <Text variant="bodyMd">{sdwFailureData.error_message || 'An error occurred during processing'}</Text>
+                        </div>
+
+                        {sdwFailureData.current_url && (
+                          <div style={{ marginTop: '8px' }}>
+                            <Text variant="bodySm" tone="subdued">Last URL: {sdwFailureData.current_url}</Text>
+                          </div>
+                        )}
+                      </BlockStack>
+                    </div>
+
+                    <InlineStack gap="300" align="end">
+                      <Button primary onClick={() => {
+                        setOrderDetailsModalOpen(false);
+                      }}>
+                        Close
                       </Button>
                     </InlineStack>
                   </BlockStack>

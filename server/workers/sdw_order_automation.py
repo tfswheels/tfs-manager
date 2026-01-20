@@ -1909,14 +1909,41 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
         except:
             pass
 
-        # Output shipping calculation for Node.js to parse
+        # Output shipping calculation for Node.js to parse (legacy format)
         print(f"\nSHIPPING_CALCULATED:{shipping_value}:{total_value}")
         sys.stdout.flush()  # Force flush to ensure Node.js sees it immediately
+
+        # Output full order summary as JSON for detailed UI
+        import json as json_module
+        order_summary = {
+            "subtotal": subtotal,
+            "shipping": shipping,
+            "shipping_protection": shipping_protection,
+            "mounting_balancing": mounting_balancing,
+            "tax": tax,
+            "total": total,
+            "shipping_value": float(shipping_value) if shipping_value else 0.0,
+            "total_value": float(total_value) if total_value else 0.0
+        }
+        print(f"\nORDER_SUMMARY_JSON:{json_module.dumps(order_summary)}")
+        sys.stdout.flush()
 
     except Exception as e:
         print(f"Could not extract order summary: {e}")
         # Output with zeros if we couldn't extract
         print(f"\nSHIPPING_CALCULATED:0.00:0.00")
+        import json as json_module
+        order_summary = {
+            "subtotal": "$0.00",
+            "shipping": "$0.00",
+            "shipping_protection": "$0.00",
+            "mounting_balancing": "$0.00",
+            "tax": "$0.00",
+            "total": "$0.00",
+            "shipping_value": 0.0,
+            "total_value": 0.0
+        }
+        print(f"\nORDER_SUMMARY_JSON:{json_module.dumps(order_summary)}")
         sys.stdout.flush()
 
     # Wait for confirmation from Node.js backend via signal file
@@ -2011,7 +2038,8 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
         import traceback
         traceback.print_exc()
         print("   💡 Please submit the order manually in the browser")
-        input("\nPress Enter after you've submitted the order and reached confirmation page...")
+        if is_interactive_mode():
+            input("\nPress Enter after you've submitted the order and reached confirmation page...")
 
     # Check for payment errors
     print("\n🔍 Checking payment status...")
@@ -2034,7 +2062,18 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
         if payment_failed:
             print("\n⚠️  The order was NOT placed due to payment failure.")
             print("   Please check the card or contact SDW support.")
-            input("\nPress Enter to close browser...")
+
+            # Output failure details as JSON for UI
+            import json as json_module
+            failure_data = {
+                "success": False,
+                "error_type": "payment_failed",
+                "error_message": error_text,
+                "order_number": order.get('name', '').replace('#', '')
+            }
+            print(f"\nORDER_FAILED_JSON:{json_module.dumps(failure_data)}")
+            sys.stdout.flush()
+
             return None
 
     except Exception as e:
@@ -2058,7 +2097,19 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
         print("="*60)
         print("\n⚠️  STOPPING - Will not tag Shopify order")
         print("   Please submit the order manually or investigate the issue")
-        input("\nPress Enter to close browser...")
+
+        # Output failure details as JSON for UI
+        import json as json_module
+        failure_data = {
+            "success": False,
+            "error_type": "submission_failed",
+            "error_message": "Order submission failed - did not reach confirmation page",
+            "current_url": current_url,
+            "order_number": order.get('name', '').replace('#', '')
+        }
+        print(f"\nORDER_FAILED_JSON:{json_module.dumps(failure_data)}")
+        sys.stdout.flush()
+
         return None
 
     # Try to get invoice number and order details from tracking page
@@ -2128,8 +2179,8 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
         except Exception as e:
             print(f"   ⚠️  Error extracting invoice from tracking page: {e}")
 
-        # Fallback: Manual input
-        if not invoice_number:
+        # Fallback: Manual input (only in interactive mode)
+        if not invoice_number and is_interactive_mode():
             print("   ⚠️  Could not automatically detect invoice number")
             print("   Please check the tracking page and enter the invoice number manually")
 
@@ -2147,6 +2198,8 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
                 except KeyboardInterrupt:
                     print("\n\nSkipping invoice capture...")
                     break
+        elif not invoice_number:
+            print("   ⚠️  Could not automatically detect invoice number (non-interactive mode)")
 
     except Exception as e:
         print(f"   ⚠️  Error getting invoice number: {e}")
@@ -2256,7 +2309,18 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
         print(f"Folder: {folder_name}")
     print("="*60)
 
-    input("\nPress Enter to close browser...")
+    # Output success details as JSON for UI
+    import json as json_module
+    success_data = {
+        "success": True,
+        "order_number": order_number,
+        "invoice_number": invoice_number,
+        "invoice_total": invoice_total if invoice_total else None,
+        "folder_name": folder_name if invoice_number else None,
+        "processed_items": cart_items
+    }
+    print(f"\nORDER_COMPLETE_JSON:{json_module.dumps(success_data)}")
+    sys.stdout.flush()
 
     return {
         'order_number': order_number,
@@ -2536,6 +2600,11 @@ def process_manual_search(driver, order, card_info):
         return None
 
     print(f"\n📋 Found {len(items_to_process)} item(s) to process")
+
+    # Output items being processed as JSON for UI
+    import json as json_module
+    print(f"\nITEMS_TO_PROCESS_JSON:{json_module.dumps(items_to_process)}")
+    sys.stdout.flush()
 
     # Process each item
     cart_items = []

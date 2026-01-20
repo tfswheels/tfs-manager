@@ -17,6 +17,10 @@ class SDWJob {
     this.shippingCost = null;
     this.error = null;
     this.result = null;
+    this.orderItems = null; // Items being processed
+    this.orderSummary = null; // Order summary (subtotal, shipping, tax, etc.)
+    this.completionData = null; // Success data (invoice number, etc.)
+    this.failureData = null; // Failure data (error details)
     this.createdAt = new Date();
     this.updatedAt = new Date();
   }
@@ -70,6 +74,10 @@ class SDWJob {
       shippingCost: this.shippingCost,
       error: this.error,
       result: this.result,
+      orderItems: this.orderItems,
+      orderSummary: this.orderSummary,
+      completionData: this.completionData,
+      failureData: this.failureData,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt
     };

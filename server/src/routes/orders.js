@@ -772,8 +772,50 @@ async function processSDWInBackground(jobId, config) {
           updateJobProgress(jobId, 'Filling payment information...', 'payment');
         } else if (line.includes('Waiting for shipping')) {
           updateJobProgress(jobId, 'Calculating shipping cost...', 'calculating_shipping');
+        } else if (line.startsWith('ITEMS_TO_PROCESS_JSON:')) {
+          // Parse items being processed
+          try {
+            const jsonStr = line.substring('ITEMS_TO_PROCESS_JSON:'.length);
+            const items = JSON.parse(jsonStr);
+            job.orderItems = items;
+            console.log(`📦 Stored ${items.length} order items in job state`);
+          } catch (e) {
+            console.error(`❌ Failed to parse ITEMS_TO_PROCESS_JSON: ${e.message}`);
+          }
+        } else if (line.startsWith('ORDER_SUMMARY_JSON:')) {
+          // Parse order summary
+          try {
+            const jsonStr = line.substring('ORDER_SUMMARY_JSON:'.length);
+            const summary = JSON.parse(jsonStr);
+            job.orderSummary = summary;
+            console.log(`📋 Stored order summary in job state`);
+          } catch (e) {
+            console.error(`❌ Failed to parse ORDER_SUMMARY_JSON: ${e.message}`);
+          }
+        } else if (line.startsWith('ORDER_COMPLETE_JSON:')) {
+          // Parse completion data
+          try {
+            const jsonStr = line.substring('ORDER_COMPLETE_JSON:'.length);
+            const completionData = JSON.parse(jsonStr);
+            job.completionData = completionData;
+            job.setCompleted();
+            console.log(`✅ Order completed with invoice: ${completionData.invoice_number}`);
+          } catch (e) {
+            console.error(`❌ Failed to parse ORDER_COMPLETE_JSON: ${e.message}`);
+          }
+        } else if (line.startsWith('ORDER_FAILED_JSON:')) {
+          // Parse failure data
+          try {
+            const jsonStr = line.substring('ORDER_FAILED_JSON:'.length);
+            const failureData = JSON.parse(jsonStr);
+            job.failureData = failureData;
+            job.setFailed(failureData.error_message);
+            console.log(`❌ Order failed: ${failureData.error_message}`);
+          } catch (e) {
+            console.error(`❌ Failed to parse ORDER_FAILED_JSON: ${e.message}`);
+          }
         } else if (line.startsWith('SHIPPING_CALCULATED:')) {
-          // Parse shipping info: SHIPPING_CALCULATED:45.99:345.99
+          // Parse shipping info: SHIPPING_CALCULATED:45.99:345.99 (legacy format)
           const parts = line.split(':');
           if (parts.length === 3) {
             const shippingCost = parseFloat(parts[1]);
