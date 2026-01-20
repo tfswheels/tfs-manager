@@ -264,17 +264,17 @@ router.post('/sync', async (req, res) => {
 
       // Build query params
       const queryParams = {
-        limit: perPage,
-        status: 'any',
-        order: 'created_at DESC'
+        limit: perPage
       };
 
       // Add page_info if we have it (for subsequent pages)
       if (pageInfo) {
         queryParams.page_info = pageInfo;
-        // Remove 'order' param when using page_info (Shopify requirement)
-        delete queryParams.order;
         console.log(`    🔗 Using page_info for pagination`);
+      } else {
+        // Only use these params for the first page
+        queryParams.status = 'any';
+        queryParams.order = 'created_at DESC';
       }
 
       response = await client.get({
