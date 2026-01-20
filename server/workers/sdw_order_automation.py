@@ -23,6 +23,24 @@ import mysql.connector
 dotenv_path = "/Users/jeremiah/Desktop/TFS Wheels/Scripts/.env"
 load_dotenv(dotenv_path)
 
+# Helper function for non-interactive mode
+def is_interactive_mode():
+    """Check if running in interactive mode (has TTY)"""
+    return sys.stdin.isatty()
+
+def safe_input(prompt, default='y'):
+    """Get user input if interactive, otherwise return default"""
+    if is_interactive_mode():
+        try:
+            return input(prompt).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\n\nOperation cancelled.")
+            return 'n'
+    else:
+        # Non-interactive mode: automatically use default
+        print(f"{prompt}[Auto: {default}]")
+        return default
+
 SHOPIFY_STORE_URL = os.environ.get('SHOPIFY_STORE_URL')
 SHOPIFY_ACCESS_TOKEN = os.environ.get('SHOPIFY_ACCESS_TOKEN')
 CAPSOLVER_API_KEY = os.environ.get('CAPSOLVER_API_KEY')
@@ -31,11 +49,12 @@ SDW_EMAIL = os.environ.get('SDW_EMAIL')
 SDW_PASS = os.environ.get('SDW_PASS')
 
 # Database configuration
+# Use DB_PRODUCT_NAME for product database (tfs-db) if set, otherwise fall back to DB_NAME
 DB_CONFIG = {
     'host': os.environ.get('DB_HOST'),
     'user': os.environ.get('DB_USER'),
     'password': os.environ.get('DB_PASSWORD'),
-    'database': os.environ.get('DB_NAME')
+    'database': os.environ.get('DB_PRODUCT_NAME', os.environ.get('DB_NAME'))
 }
 
 # Clean up URL format
@@ -2530,17 +2549,10 @@ def process_manual_search(driver, order, card_info):
 
         if not url_part_number:
             print(f"   ❌ SKU {item['sku']} not found in database")
-            while True:
-                try:
-                    response = input(f"   Continue without this item? (y/n): ").strip().lower()
-                    if response in ['y', 'yes']:
-                        break
-                    elif response in ['n', 'no']:
-                        print("Order processing cancelled.")
-                        return None
-                except KeyboardInterrupt:
-                    print("\n\nOperation cancelled.")
-                    return None
+            response = safe_input(f"   Continue without this item? (y/n): ", default='y')
+            if response in ['n', 'no']:
+                print("Order processing cancelled.")
+                return None
             continue
 
         print(f"   ✅ Found URL part number: {url_part_number}")
@@ -2550,17 +2562,10 @@ def process_manual_search(driver, order, card_info):
 
         if not product_url:
             print(f"   ❌ Product not found on SDW")
-            while True:
-                try:
-                    response = input(f"   Continue without this item? (y/n): ").strip().lower()
-                    if response in ['y', 'yes']:
-                        break
-                    elif response in ['n', 'no']:
-                        print("Order processing cancelled.")
-                        return None
-                except KeyboardInterrupt:
-                    print("\n\nOperation cancelled.")
-                    return None
+            response = safe_input(f"   Continue without this item? (y/n): ", default='y')
+            if response in ['n', 'no']:
+                print("Order processing cancelled.")
+                return None
             continue
 
         # Navigate to product page
