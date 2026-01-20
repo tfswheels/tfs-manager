@@ -134,7 +134,6 @@ function extractVehicleInfo(order) {
           const propName = prop.name ? prop.name.toLowerCase() : '';
           if (propName === 'vehicle' || propName === '_vehicle') {
             vehicleInfo = prop.value;
-            console.log(`  ✓ Found vehicle in line item properties: ${vehicleInfo}`);
             break;
           }
         }
@@ -148,7 +147,6 @@ function extractVehicleInfo(order) {
     const vehicleMatch = order.note.match(/Vehicle:\s*(.+?)(?:\n|$)/i);
     if (vehicleMatch) {
       vehicleInfo = vehicleMatch[1].trim();
-      console.log(`  ✓ Found vehicle in order note: ${vehicleInfo}`);
     }
   }
 
@@ -158,7 +156,6 @@ function extractVehicleInfo(order) {
       const attrName = attr.name ? attr.name.toLowerCase() : '';
       if (attrName === 'vehicle') {
         vehicleInfo = attr.value;
-        console.log(`  ✓ Found vehicle in order note_attributes: ${vehicleInfo}`);
         break;
       }
     }
@@ -294,39 +291,22 @@ router.post('/sync', async (req, res) => {
       pageCount++;
 
       console.log(`    ✓ Retrieved ${orders.length} orders (total: ${allOrders.length})`);
-      console.log(`    📊 Order range: ${orders[0].name} → ${orders[orders.length - 1].name}`);
 
-      // If we got fewer than perPage orders, this is the last page
-      if (orders.length < perPage) {
-        console.log(`    ℹ️  Received ${orders.length} orders (less than ${perPage}), last page reached`);
-        break;
-      }
+      // Check if there's a next page FIRST (before breaking on small batches)
+      pageInfo = null;
 
-      // Check if there's a next page using the pageInfo from response
-      if (response.pageInfo && response.pageInfo.nextPage) {
-        pageInfo = response.pageInfo.nextPage.query.page_info;
-        console.log(`    ✅ Found next page_info`);
-      } else {
-        // Try to extract from Link header as fallback
-        const linkHeader = response.headers['link'] || response.headers.Link;
-        if (linkHeader && typeof linkHeader === 'string') {
-          const pageInfoMatch = linkHeader.match(/page_info=([^&>]+)/);
-          if (pageInfoMatch) {
-            pageInfo = decodeURIComponent(pageInfoMatch[1]);
-            console.log(`    ✅ Extracted page_info from Link header`);
-          } else {
-            console.log(`    ⚠️  No page_info found in Link header`);
-            pageInfo = null;
-          }
-        } else {
-          console.log(`    ℹ️  No Link header, this is the last page`);
-          pageInfo = null;
+      // Try to extract from Link header
+      const linkHeader = response.headers['link'] || response.headers.Link;
+      if (linkHeader && typeof linkHeader === 'string') {
+        const pageInfoMatch = linkHeader.match(/page_info=([^&>]+)/);
+        if (pageInfoMatch) {
+          pageInfo = decodeURIComponent(pageInfoMatch[1]);
         }
       }
 
       // If no next page info, we're done
       if (!pageInfo) {
-        console.log(`    ℹ️  No next page info, stopping pagination`);
+        console.log(`    ℹ️  No more pages available, stopping pagination`);
         break;
       }
 
@@ -344,6 +324,8 @@ router.post('/sync', async (req, res) => {
     let syncedCount = 0;
     let vehicleExtractedCount = 0;
 
+    console.log(`\n💾 Saving ${orders.length} orders to database...`);
+
     // Sync orders to database
     for (const order of orders) {
       try {
@@ -358,7 +340,6 @@ router.post('/sync', async (req, res) => {
 
         if (vehicleStr) {
           vehicleExtractedCount++;
-          console.log(`  ✓ Order ${order.name}: Found vehicle - ${vehicleStr}`);
         }
 
         await db.execute(
