@@ -10,7 +10,8 @@ router.get('/', async (req, res) => {
   try {
     const shop = req.query.shop || '2f3d7a-2.myshopify.com';
 
-    console.log(`📋 Fetching brands for ${shop}...`);
+    // Only log errors - this endpoint is polled by frontend
+    // Removed: console.log(`📋 Fetching brands for ${shop}...`);
 
     // Query tfs-db database for brands from shopify_products table
     const [rows] = await db.execute(
@@ -22,7 +23,8 @@ router.get('/', async (req, res) => {
 
     const brands = rows.map(row => row.brand);
 
-    console.log(`✅ Retrieved ${brands.length} brands`);
+    // Only log errors - this endpoint is polled by frontend
+    // Removed: console.log(`✅ Retrieved ${brands.length} brands`);
 
     res.json({ brands });
   } catch (error) {

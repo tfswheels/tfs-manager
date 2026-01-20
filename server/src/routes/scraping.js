@@ -19,7 +19,8 @@ router.get('/jobs', async (req, res) => {
   try {
     const shop = req.query.shop || '2f3d7a-2.myshopify.com';
 
-    console.log(`📋 Fetching scraping jobs for ${shop}...`);
+    // Only log errors - this endpoint is polled frequently by frontend
+    // Removed: console.log(`📋 Fetching scraping jobs for ${shop}...`);
 
     // Get shop ID
     const [rows] = await db.execute(
@@ -38,7 +39,8 @@ router.get('/jobs', async (req, res) => {
       [shopId]
     );
 
-    console.log(`✅ Retrieved ${jobs.length} scraping jobs`);
+    // Only log errors - this endpoint is polled frequently by frontend
+    // Removed: console.log(`✅ Retrieved ${jobs.length} scraping jobs`);
 
     res.json({ jobs });
   } catch (error) {

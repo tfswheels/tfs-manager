@@ -13,7 +13,8 @@ router.get('/', async (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
     const page = parseInt(req.query.page) || 1;
 
-    console.log(`📦 Fetching orders for ${shop} (page ${page}, limit ${limit})...`);
+    // Only log errors - this endpoint may be polled by frontend
+    // Removed: console.log(`📦 Fetching orders for ${shop} (page ${page}, limit ${limit})...`);
 
     // Get access token from database
     const [rows] = await db.execute(
@@ -71,7 +72,8 @@ router.get('/', async (req, res) => {
       orders = orders.slice(offset, offset + limit);
     }
 
-    console.log(`✅ Retrieved ${orders.length} orders from Shopify (page ${page})`);
+    // Only log errors - this endpoint may be polled by frontend
+    // Removed: console.log(`✅ Retrieved ${orders.length} orders from Shopify (page ${page})`);
 
     // Sync orders to database for caching
     for (const order of orders) {
