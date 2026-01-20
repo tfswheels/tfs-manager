@@ -149,7 +149,7 @@ router.get('/shop', async (req, res) => {
     }
 
     const [rows] = await db.execute(
-      'SELECT id, shop_name, created_at, updated_at FROM shops WHERE shop_name = ?',
+      'SELECT id, shop_name, access_token, created_at, updated_at FROM shops WHERE shop_name = ?',
       [shop]
     );
 
@@ -160,8 +160,18 @@ router.get('/shop', async (req, res) => {
       });
     }
 
+    const shopData = rows[0];
+    const hasAccessToken = !!shopData.access_token;
+
     res.json({
-      shop: rows[0],
+      shop: {
+        id: shopData.id,
+        shop_name: shopData.shop_name,
+        created_at: shopData.created_at,
+        updated_at: shopData.updated_at,
+        has_access_token: hasAccessToken,
+        token_preview: shopData.access_token ? `${shopData.access_token.substring(0, 10)}...${shopData.access_token.slice(-4)}` : null
+      },
       installed: true
     });
 
