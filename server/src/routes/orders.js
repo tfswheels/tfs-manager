@@ -114,6 +114,87 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * Extract vehicle info from order using the exact same logic as SDW script
+ */
+function extractVehicleInfo(order) {
+  let vehicleInfo = null;
+
+  // 1. Try to get from line items custom attributes (key: 'vehicle' or '_vehicle')
+  if (order.line_items) {
+    for (const item of order.line_items) {
+      if (item.properties) {
+        for (const prop of item.properties) {
+          if (prop.name && prop.name.toLowerCase() in ['vehicle', '_vehicle']) {
+            vehicleInfo = prop.value;
+            break;
+          }
+        }
+      }
+      if (vehicleInfo) break;
+    }
+  }
+
+  // 2. Try to get from order notes (pattern: "Vehicle: ...")
+  if (!vehicleInfo && order.note) {
+    const vehicleMatch = order.note.match(/Vehicle:\s*(.+?)(?:\n|$)/i);
+    if (vehicleMatch) {
+      vehicleInfo = vehicleMatch[1].trim();
+    }
+  }
+
+  // 3. Try order-level custom attributes/note_attributes
+  if (!vehicleInfo && order.note_attributes) {
+    for (const attr of order.note_attributes) {
+      if (attr.name && attr.name.toLowerCase() === 'vehicle') {
+        vehicleInfo = attr.value;
+        break;
+      }
+    }
+  }
+
+  return vehicleInfo;
+}
+
+/**
+ * Parse vehicle string into components
+ */
+function parseVehicleInfo(vehicleStr) {
+  if (!vehicleStr) {
+    return {
+      year: null,
+      make: null,
+      model: null,
+      trim: null
+    };
+  }
+
+  const parts = vehicleStr.trim().split(/\s+/);
+
+  const result = {
+    year: null,
+    make: null,
+    model: null,
+    trim: null
+  };
+
+  // First part should be year (4 digits)
+  if (parts.length >= 1 && parts[0].match(/^\d{4}$/)) {
+    result.year = parts[0];
+
+    if (parts.length >= 2) result.make = parts[1];
+    if (parts.length >= 3) result.model = parts[2];
+    if (parts.length >= 4) result.trim = parts.slice(3).join(' ');
+  } else {
+    // No year, try to extract make/model
+    if (parts.length >= 1) result.make = parts[0];
+    if (parts.length >= 2) result.model = parts[1];
+    if (parts.length >= 3) result.trim = parts.slice(2).join(' ');
+  }
+
+  return result;
+}
+
+/**
  * Sync orders from Shopify to database
  */
 router.post('/sync', async (req, res) => {
@@ -154,19 +235,20 @@ router.post('/sync', async (req, res) => {
       }
     });
 
-    // Fetch orders from Shopify
+    // Fetch orders from Shopify with ALL fields including line_items and note_attributes
     const response = await client.get({
       path: 'orders',
       query: {
         limit: limit,
         status: 'any',
-        order: 'created_at DESC',
-        fields: 'id,name,created_at,updated_at,customer,total_price,financial_status,fulfillment_status,tags,note'
+        order: 'created_at DESC'
+        // Don't use 'fields' parameter so we get ALL data including line items
       }
     });
 
     const orders = response.body.orders || [];
     let syncedCount = 0;
+    let vehicleExtractedCount = 0;
 
     // Sync orders to database
     for (const order of orders) {
@@ -175,6 +257,15 @@ router.post('/sync', async (req, res) => {
                             (order.customer?.first_name && order.customer?.last_name
                               ? `${order.customer.first_name} ${order.customer.last_name}`
                               : 'Guest');
+
+        // Extract vehicle info using the exact same logic as SDW script
+        const vehicleStr = extractVehicleInfo(order);
+        const vehicleInfo = parseVehicleInfo(vehicleStr);
+
+        if (vehicleStr) {
+          vehicleExtractedCount++;
+          console.log(`  ✓ Order ${order.name}: Found vehicle - ${vehicleStr}`);
+        }
 
         await db.execute(
           `INSERT INTO orders (
@@ -187,9 +278,13 @@ router.post('/sync', async (req, res) => {
             financial_status,
             fulfillment_status,
             tags,
+            vehicle_year,
+            vehicle_make,
+            vehicle_model,
+            vehicle_trim,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
           ON DUPLICATE KEY UPDATE
             customer_name = VALUES(customer_name),
             customer_email = VALUES(customer_email),
@@ -197,6 +292,10 @@ router.post('/sync', async (req, res) => {
             financial_status = VALUES(financial_status),
             fulfillment_status = VALUES(fulfillment_status),
             tags = VALUES(tags),
+            vehicle_year = VALUES(vehicle_year),
+            vehicle_make = VALUES(vehicle_make),
+            vehicle_model = VALUES(vehicle_model),
+            vehicle_trim = VALUES(vehicle_trim),
             updated_at = NOW()`,
           [
             shopId,
@@ -208,6 +307,10 @@ router.post('/sync', async (req, res) => {
             order.financial_status || 'pending',
             order.fulfillment_status || null,
             order.tags || null,
+            vehicleInfo.year,
+            vehicleInfo.make,
+            vehicleInfo.model,
+            vehicleInfo.trim,
             order.created_at
           ]
         );
@@ -219,12 +322,14 @@ router.post('/sync', async (req, res) => {
     }
 
     console.log(`✅ Synced ${syncedCount} orders from Shopify`);
+    console.log(`🚗 Extracted vehicle info from ${vehicleExtractedCount} orders`);
 
     res.json({
       success: true,
-      message: `Successfully synced ${syncedCount} orders from Shopify`,
+      message: `Successfully synced ${syncedCount} orders from Shopify (${vehicleExtractedCount} with vehicle info)`,
       synced: syncedCount,
-      total: orders.length
+      total: orders.length,
+      vehicleExtracted: vehicleExtractedCount
     });
 
   } catch (error) {
