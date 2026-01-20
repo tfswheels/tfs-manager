@@ -214,6 +214,14 @@ export default function Orders() {
       setLoadingOrderDetails(true);
       setOrderDetailsModalOpen(true);
 
+      // Reset SDW state for new order
+      setSdwJobId(null);
+      setSdwJobStatus(null);
+      setSdwProgress([]);
+      setProcessingSDW(false);
+      setCalculatedTotal(null);
+      setCalculatedShipping(null);
+
       const response = await axios.get(`${API_URL}/api/orders/${order.shopify_order_id}/details`, {
         params: {
           shop: '2f3d7a-2.myshopify.com'
