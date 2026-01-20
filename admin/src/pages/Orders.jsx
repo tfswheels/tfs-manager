@@ -64,6 +64,14 @@ export default function Orders() {
   const [quoteLink, setQuoteLink] = useState('');
   const [processingSDW, setProcessingSDW] = useState(false);
 
+  // SDW Job Tracking
+  const [sdwJobId, setSdwJobId] = useState(null);
+  const [sdwJobStatus, setSdwJobStatus] = useState(null);
+  const [sdwProgress, setSdwProgress] = useState([]);
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [calculatedTotal, setCalculatedTotal] = useState(null);
+  const [calculatedShipping, setCalculatedShipping] = useState(null);
+
   useEffect(() => {
     fetchOrders();
     fetchTemplates();
@@ -238,6 +246,49 @@ export default function Orders() {
     }
   };
 
+  // Poll for SDW job status
+  const pollSDWJobStatus = useCallback(async (jobId) => {
+    try {
+      const response = await axios.get(`${API_URL}/api/orders/sdw-job/${jobId}`);
+      const status = response.data;
+
+      setSdwJobStatus(status.status);
+      setSdwProgress(status.progress || []);
+
+      // If awaiting confirmation, show modal
+      if (status.status === 'awaiting_confirmation') {
+        setCalculatedTotal(status.totalPrice);
+        setCalculatedShipping(status.shippingCost);
+        setShowConfirmationModal(true);
+        setProcessingSDW(false);
+        return; // Stop polling
+      }
+
+      // If completed or failed, stop polling
+      if (status.status === 'completed') {
+        alert('SDW order completed successfully!');
+        setProcessingSDW(false);
+        setOrderDetailsModalOpen(false);
+        return;
+      }
+
+      if (status.status === 'failed') {
+        alert(`SDW processing failed: ${status.error}`);
+        setProcessingSDW(false);
+        return;
+      }
+
+      // Continue polling if still processing
+      if (status.status === 'processing' || status.status === 'pending') {
+        setTimeout(() => pollSDWJobStatus(jobId), 2000);
+      }
+
+    } catch (err) {
+      console.error('Error polling job status:', err);
+      setProcessingSDW(false);
+    }
+  }, []);
+
   const handleProcessSDW = async () => {
     if (processingSDW) return;
 
@@ -267,8 +318,9 @@ export default function Orders() {
 
     try {
       setProcessingSDW(true);
+      setSdwProgress([{ message: 'Starting SDW processing...', timestamp: new Date() }]);
 
-      const response = await axios.post(`${API_URL}/api/orders/process-sdw`, {
+      const response = await axios.post(`${API_URL}/api/orders/process-sdw/start`, {
         orderNumber: selectedOrderDetails.name,
         shopifyOrderId: selectedOrderDetails.id,
         selectedLineItems,
@@ -287,15 +339,37 @@ export default function Orders() {
         }
       });
 
-      if (response.data.success) {
-        alert(`SDW processing started for order ${selectedOrderDetails.name}.\n\n${response.data.message}`);
-        setOrderDetailsModalOpen(false);
+      if (response.data.success && response.data.jobId) {
+        setSdwJobId(response.data.jobId);
+        // Start polling for status
+        setTimeout(() => pollSDWJobStatus(response.data.jobId), 1000);
       }
 
     } catch (err) {
       console.error('Error processing SDW order:', err);
       alert(err.response?.data?.message || 'Failed to start SDW processing');
-    } finally {
+      setProcessingSDW(false);
+    }
+  };
+
+  const handleConfirmPurchase = async () => {
+    if (!sdwJobId) return;
+
+    try {
+      setShowConfirmationModal(false);
+      setProcessingSDW(true);
+      setSdwProgress(prev => [...prev, { message: 'User confirmed. Completing purchase...', timestamp: new Date() }]);
+
+      const response = await axios.post(`${API_URL}/api/orders/sdw-job/${sdwJobId}/confirm`);
+
+      if (response.data.success) {
+        // Resume polling to track completion
+        setTimeout(() => pollSDWJobStatus(sdwJobId), 1000);
+      }
+
+    } catch (err) {
+      console.error('Error confirming purchase:', err);
+      alert(err.response?.data?.message || 'Failed to confirm purchase');
       setProcessingSDW(false);
     }
   };
@@ -897,8 +971,71 @@ export default function Orders() {
                   </Banner>
                 </BlockStack>
               </Card>
+
+              {/* SDW Progress Display */}
+              {sdwProgress.length > 0 && (
+                <Card>
+                  <BlockStack gap="300">
+                    <Text variant="headingMd" as="h3">Processing Progress</Text>
+                    <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                      {sdwProgress.map((prog, idx) => (
+                        <div key={idx} style={{ padding: '8px 0', borderBottom: idx < sdwProgress.length - 1 ? '1px solid #e1e1e1' : 'none' }}>
+                          <Text variant="bodySm">{prog.message}</Text>
+                        </div>
+                      ))}
+                    </div>
+                    {processingSDW && (
+                      <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                        <Spinner size="small" />
+                      </div>
+                    )}
+                  </BlockStack>
+                </Card>
+              )}
             </BlockStack>
           ) : null}
+        </Modal.Section>
+      </Modal>
+
+      {/* Purchase Confirmation Modal */}
+      <Modal
+        open={showConfirmationModal}
+        onClose={() => setShowConfirmationModal(false)}
+        title="Confirm SDW Purchase"
+        primaryAction={{
+          content: 'Confirm Purchase',
+          onAction: handleConfirmPurchase
+        }}
+        secondaryActions={[
+          {
+            content: 'Cancel',
+            onAction: () => setShowConfirmationModal(false)
+          }
+        ]}
+      >
+        <Modal.Section>
+          <BlockStack gap="400">
+            <Banner tone="success">
+              <p>Shipping has been calculated!</p>
+            </Banner>
+
+            <div style={{ padding: '16px', background: '#f6f6f7', borderRadius: '8px' }}>
+              <BlockStack gap="200">
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Text variant="bodyMd" fontWeight="semibold">Shipping Cost:</Text>
+                  <Text variant="bodyMd">{calculatedShipping ? `$${calculatedShipping.toFixed(2)}` : '-'}</Text>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: '2px solid #000' }}>
+                  <Text variant="bodyLg" fontWeight="bold">Total Price:</Text>
+                  <Text variant="bodyLg" fontWeight="bold">{calculatedTotal ? `$${calculatedTotal.toFixed(2)}` : '-'}</Text>
+                </div>
+              </BlockStack>
+            </div>
+
+            <Banner tone="warning">
+              <p><strong>Important:</strong> Clicking "Confirm Purchase" will complete the order on SDW using the selected payment method.</p>
+            </Banner>
+          </BlockStack>
         </Modal.Section>
       </Modal>
     </Page>
