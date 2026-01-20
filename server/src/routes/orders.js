@@ -257,8 +257,8 @@ router.post('/sync', async (req, res) => {
       console.log(`  📄 Fetching page ${pageCount}...`);
 
       const query = `
-        query getOrders($first: Int!, $after: String) {
-          orders(first: $first, after: $after, sortKey: CREATED_AT, reverse: true) {
+        query getOrders($first: Int!, $after: String, $query: String) {
+          orders(first: $first, after: $after, query: $query, sortKey: CREATED_AT, reverse: true) {
             edges {
               node {
                 id
@@ -306,7 +306,8 @@ router.post('/sync', async (req, res) => {
 
       const variables = {
         first: perPage,
-        after: cursor
+        after: cursor,
+        query: "status:any" // Include all orders regardless of status
       };
 
       const response = await client.query({
@@ -324,10 +325,14 @@ router.post('/sync', async (req, res) => {
       // Convert GraphQL format to REST-like format for compatibility
       const orders = edges.map(edge => {
         const node = edge.node;
+
+        // Convert ISO 8601 to MySQL datetime format
+        const createdAt = node.createdAt ? new Date(node.createdAt) : new Date();
+
         return {
           id: node.legacyResourceId,
           name: node.name,
-          created_at: node.createdAt,
+          created_at: createdAt, // Will be a Date object
           email: node.email,
           total_price: node.totalPriceSet.shopMoney.amount,
           financial_status: node.displayFinancialStatus,
@@ -359,10 +364,18 @@ router.post('/sync', async (req, res) => {
       hasNextPage = ordersData.pageInfo.hasNextPage;
       cursor = ordersData.pageInfo.endCursor;
 
+      console.log(`    🔗 hasNextPage: ${hasNextPage}, endCursor: ${cursor ? cursor.substring(0, 30) + '...' : 'null'}`);
+
       if (!hasNextPage) {
-        console.log(`    ℹ️  No more pages available`);
+        console.log(`    ℹ️  No more pages available (Shopify reports hasNextPage: false)`);
         break;
       }
+    }
+
+    // Check if we actually got all orders or if Shopify is limiting us
+    if (allOrders.length < totalToFetch && !hasNextPage) {
+      console.log(`    ⚠️  WARNING: Only fetched ${allOrders.length} orders but requested ${totalToFetch}`);
+      console.log(`    ⚠️  Shopify may be filtering results. Check API scopes and permissions.`);
     }
 
     // Trim to requested limit
