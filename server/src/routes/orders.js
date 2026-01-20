@@ -70,9 +70,9 @@ router.get('/', async (req, res) => {
     }
 
     // Add ordering and pagination
-    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    // Note: LIMIT and OFFSET are safe to insert directly since they're validated integers
     const offset = (page - 1) * limit;
-    params.push(limit, offset);
+    query += ` ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`;
 
     // Fetch orders from database
     const [orders] = await db.execute(query, params);
