@@ -235,8 +235,35 @@ export default function Orders() {
       order.vehicle_trim
     ].filter(Boolean);
 
-    if (parts.length === 0) return '-';
-    return parts.join(' ');
+    if (parts.length === 0) {
+      return (
+        <Badge tone="attention">No vehicle info</Badge>
+      );
+    }
+
+    return (
+      <Text as="span" variant="bodyMd">
+        {parts.join(' ')}
+      </Text>
+    );
+  };
+
+  const formatTags = (tags) => {
+    if (!tags) return <Text tone="subdued">No tags</Text>;
+
+    const tagList = tags.split(',').map(t => t.trim()).filter(Boolean);
+    if (tagList.length === 0) return <Text tone="subdued">No tags</Text>;
+
+    return (
+      <InlineStack gap="100" wrap={false}>
+        {tagList.slice(0, 2).map((tag, idx) => (
+          <Badge key={idx}>{tag}</Badge>
+        ))}
+        {tagList.length > 2 && (
+          <Text as="span" tone="subdued" variant="bodySm">+{tagList.length - 2}</Text>
+        )}
+      </InlineStack>
+    );
   };
 
   const rows = orders.map((order) => {
@@ -251,11 +278,11 @@ export default function Orders() {
         {order.order_number}
       </Button>,
       formatDate(order.created_at),
-      order.customer_name || 'Guest',
-      order.customer_email || '-',
+      <Text as="span" variant="bodyMd" fontWeight="medium">{order.customer_name || 'Guest'}</Text>,
+      <Text as="span" variant="bodySm" tone="subdued">{order.customer_email || '-'}</Text>,
       formatVehicleInfo(order),
-      order.tags || '-',
-      formatCurrency(order.total_price)
+      formatTags(order.tags),
+      <Text as="span" variant="bodyMd" fontWeight="semibold">{formatCurrency(order.total_price)}</Text>
     ];
   });
 
