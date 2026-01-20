@@ -737,7 +737,8 @@ async function processSDWInBackground(jobId, config) {
 
     console.log(`🐍 Spawning Python for job ${jobId}`);
 
-    const pythonProcess = spawn('python3', [pythonScript, ...args], {
+    // Use -u flag for unbuffered Python output (real-time logs)
+    const pythonProcess = spawn('python3', ['-u', pythonScript, ...args], {
       cwd: path.join(__dirname, '../../workers')
     });
 
@@ -877,7 +878,9 @@ router.get('/sdw-job/:jobId', async (req, res) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
-    res.json(job.getStatus());
+    const status = job.getStatus();
+    console.log(`📊 Job ${jobId} status: ${status.status}, progress items: ${status.progress.length}`);
+    res.json(status);
 
   } catch (error) {
     console.error('❌ Error fetching job status:', error);

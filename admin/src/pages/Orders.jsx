@@ -68,7 +68,6 @@ export default function Orders() {
   const [sdwJobId, setSdwJobId] = useState(null);
   const [sdwJobStatus, setSdwJobStatus] = useState(null);
   const [sdwProgress, setSdwProgress] = useState([]);
-  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [calculatedTotal, setCalculatedTotal] = useState(null);
   const [calculatedShipping, setCalculatedShipping] = useState(null);
 
@@ -255,13 +254,12 @@ export default function Orders() {
       setSdwJobStatus(status.status);
       setSdwProgress(status.progress || []);
 
-      // If awaiting confirmation, show modal
+      // If awaiting confirmation, update pricing (UI shows inline confirmation)
       if (status.status === 'awaiting_confirmation') {
         setCalculatedTotal(status.totalPrice);
         setCalculatedShipping(status.shippingCost);
-        setShowConfirmationModal(true);
-        setProcessingSDW(false);
-        return; // Stop polling
+        setProcessingSDW(false); // Stop spinner, show confirmation UI
+        return; // Stop polling until user confirms
       }
 
       // If completed or failed, stop polling
@@ -355,7 +353,6 @@ export default function Orders() {
     if (!sdwJobId) return;
 
     try {
-      setShowConfirmationModal(false);
       setProcessingSDW(true);
       setSdwProgress(prev => [...prev, { message: 'User confirmed. Completing purchase...', timestamp: new Date() }]);
 
@@ -983,11 +980,53 @@ export default function Orders() {
                         </div>
                       ))}
                     </div>
-                    {processingSDW && (
+                    {processingSDW && sdwJobStatus !== 'awaiting_confirmation' && (
                       <div style={{ textAlign: 'center', padding: '12px 0' }}>
                         <Spinner size="small" />
                       </div>
                     )}
+                  </BlockStack>
+                </Card>
+              )}
+
+              {/* Inline Purchase Confirmation */}
+              {sdwJobStatus === 'awaiting_confirmation' && (
+                <Card>
+                  <BlockStack gap="400">
+                    <Text variant="headingMd" as="h3">Confirm Purchase</Text>
+
+                    <Banner tone="success">
+                      <p><strong>Shipping calculated successfully!</strong></p>
+                    </Banner>
+
+                    <div style={{ padding: '16px', background: '#f6f6f7', borderRadius: '8px' }}>
+                      <BlockStack gap="200">
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <Text variant="bodyMd" fontWeight="semibold">Shipping Cost:</Text>
+                          <Text variant="bodyMd">${calculatedShipping ? calculatedShipping.toFixed(2) : '0.00'}</Text>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: '2px solid #000' }}>
+                          <Text variant="bodyLg" fontWeight="bold">Total Price:</Text>
+                          <Text variant="bodyLg" fontWeight="bold">${calculatedTotal ? calculatedTotal.toFixed(2) : '0.00'}</Text>
+                        </div>
+                      </BlockStack>
+                    </div>
+
+                    <Banner tone="warning">
+                      <p><strong>Important:</strong> Clicking "Confirm Purchase" will complete the order on SDW using the selected payment method.</p>
+                    </Banner>
+
+                    <InlineStack gap="300" align="end">
+                      <Button onClick={() => {
+                        setProcessingSDW(false);
+                        setOrderDetailsModalOpen(false);
+                      }}>
+                        Cancel
+                      </Button>
+                      <Button primary onClick={handleConfirmPurchase} loading={processingSDW}>
+                        Confirm Purchase
+                      </Button>
+                    </InlineStack>
                   </BlockStack>
                 </Card>
               )}
@@ -996,47 +1035,6 @@ export default function Orders() {
         </Modal.Section>
       </Modal>
 
-      {/* Purchase Confirmation Modal */}
-      <Modal
-        open={showConfirmationModal}
-        onClose={() => setShowConfirmationModal(false)}
-        title="Confirm SDW Purchase"
-        primaryAction={{
-          content: 'Confirm Purchase',
-          onAction: handleConfirmPurchase
-        }}
-        secondaryActions={[
-          {
-            content: 'Cancel',
-            onAction: () => setShowConfirmationModal(false)
-          }
-        ]}
-      >
-        <Modal.Section>
-          <BlockStack gap="400">
-            <Banner tone="success">
-              <p>Shipping has been calculated!</p>
-            </Banner>
-
-            <div style={{ padding: '16px', background: '#f6f6f7', borderRadius: '8px' }}>
-              <BlockStack gap="200">
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Text variant="bodyMd" fontWeight="semibold">Shipping Cost:</Text>
-                  <Text variant="bodyMd">{calculatedShipping ? `$${calculatedShipping.toFixed(2)}` : '-'}</Text>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: '2px solid #000' }}>
-                  <Text variant="bodyLg" fontWeight="bold">Total Price:</Text>
-                  <Text variant="bodyLg" fontWeight="bold">{calculatedTotal ? `$${calculatedTotal.toFixed(2)}` : '-'}</Text>
-                </div>
-              </BlockStack>
-            </div>
-
-            <Banner tone="warning">
-              <p><strong>Important:</strong> Clicking "Confirm Purchase" will complete the order on SDW using the selected payment method.</p>
-            </Banner>
-          </BlockStack>
-        </Modal.Section>
-      </Modal>
     </Page>
   );
 }
