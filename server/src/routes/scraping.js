@@ -113,7 +113,16 @@ router.post('/start', async (req, res) => {
     });
 
     pythonProcess.stderr.on('data', (data) => {
-      console.error(`[Scraper #${jobId} ERROR] ${data.toString().trim()}`);
+      const output = data.toString().trim();
+
+      // Python warnings/errors come through stderr, but so does normal logging
+      // Only prefix with ERROR if it's actually an error/warning message
+      if (output.includes('ERROR') || output.includes('WARNING') || output.includes('Traceback') || output.includes('Exception')) {
+        console.error(`[Scraper #${jobId} ERROR] ${output}`);
+      } else {
+        // Regular Python INFO logs that went to stderr
+        console.log(`[Scraper #${jobId}] ${output}`);
+      }
     });
 
     pythonProcess.on('close', (code) => {

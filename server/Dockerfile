@@ -1,7 +1,8 @@
 # Multi-stage build for Node.js + Python support
-FROM node:22-bullseye
+# Using bookworm (Debian 12) for Python 3.11+ instead of bullseye (Debian 11 with Python 3.9)
+FROM node:22-bookworm
 
-# Install Python 3.11, Chrome, and dependencies
+# Install Python 3.11+, Chrome, and dependencies
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
