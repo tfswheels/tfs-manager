@@ -1978,20 +1978,302 @@ class DatabaseClient:
     async def close(self) -> None:
         if self.no_db:
             return
-        
+
         logger.info("Closing database connections...")
-        
+
         # Print final statistics
         stats = await self.get_statistics()
         if stats:
             logger.info(f"Final DB statistics: {dict(stats)}")
-        
+
         try:
             if hasattr(self.connection_pool, 'close'):
                 self.connection_pool.close()
                 logger.info("Connection pool closed")
         except Exception as e:
             logger.error(f"Error closing connection pool: {e}")
+
+    async def restore_ended_sale_prices(self, brands: List[str], scraped_parts: List[str]) -> int:
+        """
+        Restore original prices for products no longer on sale (brand-aware version).
+
+        For products from specified brands that were NOT scraped in this run:
+        - Only updates products where compare_at_price > map_price
+        - Sets map_price = compare_at_price (restore original price)
+        - Sets compare_at_price = NULL (remove sale indicator)
+
+        Triggers will handle adding to shopify_sync_queue.
+
+        Args:
+            brands: List of brand names to process
+            scraped_parts: List of url_part_numbers that were scraped (exclude these)
+
+        Returns:
+            Number of products with prices restored
+        """
+        if self.no_db or not brands:
+            return 0
+
+        product_type = self._db_product_type()
+        connection = None
+        total_restored = 0
+
+        try:
+            connection = await self._get_connection()
+            cursor = connection.cursor(buffered=True)
+
+            # Create temp table for scraped parts (products to EXCLUDE)
+            if scraped_parts:
+                logger.debug(f"Creating temp table with {len(scraped_parts)} scraped products to exclude...")
+
+                cursor.execute("""
+                    CREATE TEMPORARY TABLE temp_scraped_exclude (
+                        url_part_number VARCHAR(255) PRIMARY KEY
+                    )
+                """)
+
+                # Batch insert scraped parts
+                batch_size = 1000
+                for i in range(0, len(scraped_parts), batch_size):
+                    batch = scraped_parts[i:i+batch_size]
+                    placeholders = ','.join(['(%s)'] * len(batch))
+                    insert_query = f"INSERT IGNORE INTO temp_scraped_exclude (url_part_number) VALUES {placeholders}"
+                    cursor.execute(insert_query, batch)
+
+                connection.commit()
+
+            # Create temp table for brands to process
+            logger.debug(f"Creating temp table with {len(brands)} brands...")
+
+            cursor.execute("""
+                CREATE TEMPORARY TABLE temp_restore_brands (
+                    brand VARCHAR(255) PRIMARY KEY
+                )
+            """)
+
+            # Insert brands
+            placeholders = ','.join(['(%s)'] * len(brands))
+            insert_query = f"INSERT IGNORE INTO temp_restore_brands (brand) VALUES {placeholders}"
+            cursor.execute(insert_query, brands)
+            connection.commit()
+
+            # Count candidates for price restoration
+            if scraped_parts:
+                # Exclude scraped parts using LEFT JOIN
+                count_query = f"""
+                    SELECT COUNT(*)
+                    FROM {self.mode_to_table[self.mode]} p
+                    INNER JOIN temp_restore_brands b ON p.brand = b.brand
+                    LEFT JOIN temp_scraped_exclude e ON p.url_part_number = e.url_part_number
+                    WHERE e.url_part_number IS NULL
+                    AND p.product_type = %s
+                    AND p.compare_at_price IS NOT NULL
+                    AND p.map_price IS NOT NULL
+                    AND p.compare_at_price > p.map_price
+                """
+            else:
+                # No exclusions needed
+                count_query = f"""
+                    SELECT COUNT(*)
+                    FROM {self.mode_to_table[self.mode]} p
+                    INNER JOIN temp_restore_brands b ON p.brand = b.brand
+                    WHERE p.product_type = %s
+                    AND p.compare_at_price IS NOT NULL
+                    AND p.map_price IS NOT NULL
+                    AND p.compare_at_price > p.map_price
+                """
+
+            cursor.execute(count_query, [product_type])
+            result = cursor.fetchone()
+            candidates = result[0] if result else 0
+
+            if candidates == 0:
+                logger.debug("No products need price restoration")
+                # Clean up temp tables
+                cursor.execute("DROP TEMPORARY TABLE IF EXISTS temp_restore_brands")
+                if scraped_parts:
+                    cursor.execute("DROP TEMPORARY TABLE IF EXISTS temp_scraped_exclude")
+                cursor.close()
+                return 0
+
+            logger.info(f"Found {candidates} products with ended sales (compare_at_price > map_price)")
+
+            # Perform the restoration in efficient batches
+            if scraped_parts:
+                # Use LEFT JOIN to exclude scraped parts
+                update_query = f"""
+                    UPDATE {self.mode_to_table[self.mode]} p
+                    INNER JOIN temp_restore_brands b ON p.brand = b.brand
+                    LEFT JOIN temp_scraped_exclude e ON p.url_part_number = e.url_part_number
+                    SET
+                        p.map_price = p.compare_at_price,
+                        p.compare_at_price = NULL,
+                        p.last_modified = NOW(),
+                        p.last_sdw_sync = NOW()
+                    WHERE e.url_part_number IS NULL
+                    AND p.product_type = %s
+                    AND p.compare_at_price IS NOT NULL
+                    AND p.map_price IS NOT NULL
+                    AND p.compare_at_price > p.map_price
+                """
+            else:
+                # Simple update with just brand filter
+                update_query = f"""
+                    UPDATE {self.mode_to_table[self.mode]} p
+                    INNER JOIN temp_restore_brands b ON p.brand = b.brand
+                    SET
+                        p.map_price = p.compare_at_price,
+                        p.compare_at_price = NULL,
+                        p.last_modified = NOW(),
+                        p.last_sdw_sync = NOW()
+                    WHERE p.product_type = %s
+                    AND p.compare_at_price IS NOT NULL
+                    AND p.map_price IS NOT NULL
+                    AND p.compare_at_price > p.map_price
+                """
+
+            cursor.execute(update_query, [product_type])
+            total_restored = cursor.rowcount
+            connection.commit()
+
+            # Clean up temp tables
+            cursor.execute("DROP TEMPORARY TABLE IF EXISTS temp_restore_brands")
+            if scraped_parts:
+                cursor.execute("DROP TEMPORARY TABLE IF EXISTS temp_scraped_exclude")
+
+            cursor.close()
+
+            if total_restored > 0:
+                logger.info(f"✓ Restored prices for {total_restored} products (sale ended)")
+                logger.info(f"  Triggers will queue these products for Shopify sync")
+
+            return total_restored
+
+        except Exception as e:
+            logger.error(f"Error restoring ended sale prices: {e}")
+            import traceback
+            traceback.print_exc()
+            if connection:
+                try:
+                    connection.rollback()
+                except:
+                    pass
+            return 0
+        finally:
+            if connection:
+                connection.close()
+
+    async def disable_triggers(self) -> List[Dict]:
+        """Disable all triggers on shopify_products table and return DDL for restoration.
+
+        IMPORTANT: Saves triggers to backup file for crash recovery.
+        """
+        if self.no_db:
+            return []
+
+        saved_triggers = []
+        connection = None
+
+        try:
+            connection = await self._get_connection()
+            cursor = connection.cursor(buffered=True)
+
+            # Get trigger definitions
+            cursor.execute(f"""
+                SELECT TRIGGER_NAME
+                FROM information_schema.TRIGGERS
+                WHERE EVENT_OBJECT_TABLE = '{self.mode_to_table[self.mode]}'
+                AND EVENT_OBJECT_SCHEMA = DATABASE()
+            """)
+            triggers_info = cursor.fetchall()
+
+            if triggers_info:
+                logger.info(f"Disabling {len(triggers_info)} trigger(s) for performance...")
+
+                for (trigger_name,) in triggers_info:
+                    try:
+                        # Get full CREATE TRIGGER statement
+                        cursor.execute(f"SHOW CREATE TRIGGER {trigger_name}")
+                        result = cursor.fetchone()
+                        if result:
+                            create_statement = result[2] if len(result) > 2 else None
+                            if create_statement:
+                                saved_triggers.append({
+                                    'name': trigger_name,
+                                    'create_sql': create_statement
+                                })
+                                # Drop the trigger
+                                cursor.execute(f"DROP TRIGGER IF EXISTS {trigger_name}")
+                                connection.commit()
+                    except Exception as e:
+                        logger.warning(f"Could not disable trigger {trigger_name}: {e}")
+
+                if saved_triggers:
+                    # CRITICAL: Save to file for crash recovery
+                    import json
+                    from datetime import datetime
+                    backup_file = 'triggers_backup.json'
+                    try:
+                        with open(backup_file, 'w') as f:
+                            json.dump({
+                                'timestamp': datetime.now().isoformat(),
+                                'mode': self.mode,
+                                'triggers': saved_triggers
+                            }, f, indent=2)
+                        logger.info(f"✓ Disabled {len(saved_triggers)} trigger(s) (backup saved to {backup_file})")
+                    except Exception as e:
+                        logger.error(f"⚠️  Failed to save trigger backup: {e}")
+                        # Still return triggers for in-memory restoration
+                        logger.info(f"✓ Disabled {len(saved_triggers)} trigger(s)")
+
+            cursor.close()
+            return saved_triggers
+
+        except Exception as e:
+            logger.warning(f"Could not disable triggers: {e}")
+            return []
+        finally:
+            if connection:
+                connection.close()
+
+    async def restore_triggers(self, saved_triggers: List[Dict]) -> None:
+        """Restore triggers that were disabled."""
+        if self.no_db or not saved_triggers:
+            return
+
+        connection = None
+
+        try:
+            connection = await self._get_connection()
+            cursor = connection.cursor(buffered=True)
+
+            logger.info(f"Re-enabling {len(saved_triggers)} trigger(s)...")
+
+            for trigger_info in saved_triggers:
+                try:
+                    cursor.execute(trigger_info['create_sql'])
+                    connection.commit()
+                except Exception as e:
+                    logger.error(f"Error restoring trigger {trigger_info['name']}: {e}")
+
+            logger.info(f"✓ Re-enabled all {len(saved_triggers)} trigger(s)")
+            cursor.close()
+
+            # Clean up backup file after successful restoration
+            import os
+            backup_file = 'triggers_backup.json'
+            if os.path.exists(backup_file):
+                try:
+                    os.remove(backup_file)
+                    logger.debug(f"Deleted trigger backup file: {backup_file}")
+                except:
+                    pass
+
+        except Exception as e:
+            logger.error(f"Error restoring triggers: {e}")
+        finally:
+            if connection:
+                connection.close()
 
 print("Creating optimized database client instance...")
 db_client = DatabaseClient()
