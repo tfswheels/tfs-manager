@@ -202,10 +202,11 @@ def prepare_metafields(wheel_data: Dict) -> List[Dict]:
         "value": offset_no_mm
     })
 
+    # Filter out empty/None/whitespace values from colors
     color_list = []
-    if wheel_data.get('primary_color'):
+    if wheel_data.get('primary_color') and str(wheel_data.get('primary_color')).strip():
         color_list.append(wheel_data['primary_color'])
-    # Only add if not empty (Shopify rejects empty list metafields)
+    # Only add if we have valid colors (Shopify rejects empty list metafields)
     if color_list:
         metafields.append({
             "namespace": "convermax",
@@ -214,12 +215,13 @@ def prepare_metafields(wheel_data: Dict) -> List[Dict]:
             "value": json.dumps(color_list)
         })
 
+    # Filter out empty/None/whitespace values from bolt patterns
     raw_patterns = []
-    if wheel_data.get('bolt_pattern'):
+    if wheel_data.get('bolt_pattern') and str(wheel_data.get('bolt_pattern')).strip():
         raw_patterns.append(wheel_data['bolt_pattern'])
-    if wheel_data.get('bolt_pattern2'):
+    if wheel_data.get('bolt_pattern2') and str(wheel_data.get('bolt_pattern2')).strip():
         raw_patterns.append(wheel_data['bolt_pattern2'])
-    # Only add if not empty (Shopify rejects empty list metafields)
+    # Only add if we have valid bolt patterns (Shopify rejects empty list metafields)
     if raw_patterns:
         metafields.append({
             "namespace": "convermax",
