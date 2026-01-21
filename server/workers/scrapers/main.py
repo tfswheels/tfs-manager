@@ -226,10 +226,10 @@ async def run_enhanced_scraper():
             # ================================================================
             try:
                 from .scraping_workflow import initialize_browser_and_cookies, scrape_all_pages, load_checkpoint
-                from .config import BASE_URL, SCRAPE_SPECIFIC_BRANDS, SKIP_BRANDS_NORMALIZED, RESUME_FROM_CHECKPOINT, HEADLESS
+                from .config import BASE_URL, SKIP_BRANDS_NORMALIZED, RESUME_FROM_CHECKPOINT, HEADLESS
             except ImportError:
                 from scraping_workflow import initialize_browser_and_cookies, scrape_all_pages, load_checkpoint
-                from config import BASE_URL, SCRAPE_SPECIFIC_BRANDS, SKIP_BRANDS_NORMALIZED, RESUME_FROM_CHECKPOINT, HEADLESS
+                from config import BASE_URL, SKIP_BRANDS_NORMALIZED, RESUME_FROM_CHECKPOINT, HEADLESS
 
             # Prefetch URL parts to cache (critical for change detection)
             logger.info("")
