@@ -430,34 +430,34 @@ async def batch_upsert_records(db_pool, records: List[Dict]) -> int:
     async with db_pool.acquire() as conn:
         async with conn.cursor() as cur:
             if MODE == 'wheels':
-                # EXACT upsert from original get_non_sdw_wheels.py
+                # EXACT upsert from original get_non_sdw_wheels.py (updated for MySQL 8.0+ syntax)
                 upsert_sql = """
                     INSERT INTO all_shopify_wheels
                     (shopify_id, variant_id, part_number, vendor, model, finish, lug_count,
                      diameter, width, offset, bolt_pattern, tags,
                      short_color, primary_color, load_rating, weight, product_template, hub_bore, status, meta_description, price)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) AS new
                     ON DUPLICATE KEY UPDATE
-                        shopify_id = VALUES(shopify_id),
-                        part_number = VALUES(part_number),
-                        vendor = VALUES(vendor),
-                        model = VALUES(model),
-                        finish = VALUES(finish),
-                        lug_count = VALUES(lug_count),
-                        diameter = VALUES(diameter),
-                        width = VALUES(width),
-                        offset = VALUES(offset),
-                        bolt_pattern = VALUES(bolt_pattern),
-                        tags = VALUES(tags),
-                        short_color = VALUES(short_color),
-                        primary_color = VALUES(primary_color),
-                        load_rating = VALUES(load_rating),
-                        weight = VALUES(weight),
-                        product_template = VALUES(product_template),
-                        hub_bore = VALUES(hub_bore),
-                        status = VALUES(status),
-                        meta_description = VALUES(meta_description),
-                        price = VALUES(price)
+                        shopify_id = new.shopify_id,
+                        part_number = new.part_number,
+                        vendor = new.vendor,
+                        model = new.model,
+                        finish = new.finish,
+                        lug_count = new.lug_count,
+                        diameter = new.diameter,
+                        width = new.width,
+                        offset = new.offset,
+                        bolt_pattern = new.bolt_pattern,
+                        tags = new.tags,
+                        short_color = new.short_color,
+                        primary_color = new.primary_color,
+                        load_rating = new.load_rating,
+                        weight = new.weight,
+                        product_template = new.product_template,
+                        hub_bore = new.hub_bore,
+                        status = new.status,
+                        meta_description = new.meta_description,
+                        price = new.price
                 """
                 params = []
                 for r in records:
@@ -489,14 +489,14 @@ async def batch_upsert_records(db_pool, records: List[Dict]) -> int:
                 upsert_sql = """
                     INSERT INTO shopify_tires
                     (shopify_id, variant_id, part_number, brand, tags, status, price)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s) AS new
                     ON DUPLICATE KEY UPDATE
-                        shopify_id = VALUES(shopify_id),
-                        part_number = VALUES(part_number),
-                        brand = VALUES(brand),
-                        tags = VALUES(tags),
-                        status = VALUES(status),
-                        price = VALUES(price)
+                        shopify_id = new.shopify_id,
+                        part_number = new.part_number,
+                        brand = new.brand,
+                        tags = new.tags,
+                        status = new.status,
+                        price = new.price
                 """
                 params = []
                 for r in records:

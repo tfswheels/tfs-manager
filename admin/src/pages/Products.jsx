@@ -54,8 +54,12 @@ export default function Products() {
     enableShopifySync: true,
     maxProductsPerDay: 1000,
     retryFailed: true,
-    saleOnly: false
+    saleOnly: false,
+    useSpecificBrands: false
   });
+
+  // Specific brands to scrape (comma-separated input)
+  const [specificBrandsInput, setSpecificBrandsInput] = useState('');
 
   const [selectedJob, setSelectedJob] = useState(null);
   const [jobLogsOpen, setJobLogsOpen] = useState(false);
@@ -121,12 +125,19 @@ export default function Products() {
   const startScraping = async (scraperType) => {
     try {
       setLoading(true);
+
+      // Parse specific brands from comma-separated input
+      const specificBrands = config.useSpecificBrands && specificBrandsInput
+        ? specificBrandsInput.split(',').map(b => b.trim()).filter(b => b.length > 0)
+        : [];
+
       await axios.post(`${API_URL}/api/scraping/start`, {
         shop: '2f3d7a-2.myshopify.com',
         scraperType,
         config: {
           ...config,
-          excludedBrands
+          excludedBrands,
+          specificBrands
         }
       });
 
@@ -321,7 +332,24 @@ Job Statistics:
                       checked={config.saleOnly}
                       onChange={(value) => setConfig({...config, saleOnly: value})}
                     />
+                    <Checkbox
+                      label="Scrape specific brands only"
+                      helpText="Only scrape specified brands (ignores excluded brands)"
+                      checked={config.useSpecificBrands}
+                      onChange={(value) => setConfig({...config, useSpecificBrands: value})}
+                    />
                   </div>
+
+                  {config.useSpecificBrands && (
+                    <TextField
+                      label="Specific brands to scrape"
+                      value={specificBrandsInput}
+                      onChange={setSpecificBrandsInput}
+                      placeholder="e.g., Ferrada, Vossen, Rohana"
+                      helpText="Enter brand names separated by commas. Only these brands will be scraped."
+                      autoComplete="off"
+                    />
+                  )}
 
                   <TextField
                     label="Max products per day (cumulative)"

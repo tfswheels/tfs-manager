@@ -118,7 +118,8 @@ router.post('/start', async (req, res) => {
         DB_NAME: 'tfs-db',  // Override to use product database
         // Pass config via environment variables
         MAX_PRODUCTS_PER_DAY: config.maxProductsPerDay?.toString() || '1000',
-        EXCLUDED_BRANDS: config.excludedBrands ? JSON.stringify(config.excludedBrands) : '[]'
+        EXCLUDED_BRANDS: config.excludedBrands ? JSON.stringify(config.excludedBrands) : '[]',
+        SPECIFIC_BRANDS: config.specificBrands ? JSON.stringify(config.specificBrands) : '[]'
       }
     });
 

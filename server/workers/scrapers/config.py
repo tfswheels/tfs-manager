@@ -178,6 +178,17 @@ if os.environ.get('EXCLUDED_BRANDS'):
     except Exception as e:
         logger.warning(f"Failed to parse EXCLUDED_BRANDS from env var: {e}")
 
+# Override SCRAPE_SPECIFIC_BRANDS from environment variables (from Node.js backend)
+if os.environ.get('SPECIFIC_BRANDS'):
+    try:
+        import json
+        specific_brands_from_env = json.loads(os.environ.get('SPECIFIC_BRANDS'))
+        if isinstance(specific_brands_from_env, list):
+            SCRAPE_SPECIFIC_BRANDS = specific_brands_from_env
+            logger.info(f"🎯 SCRAPE_SPECIFIC_BRANDS set from env var: {', '.join(SCRAPE_SPECIFIC_BRANDS)}")
+    except Exception as e:
+        logger.warning(f"Failed to parse SPECIFIC_BRANDS from env var: {e}")
+
 # =============================================================================
 # CONSTRUCT BASE_URL
 # =============================================================================
