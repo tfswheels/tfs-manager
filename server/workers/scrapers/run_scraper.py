@@ -78,7 +78,11 @@ try:
     from main import run_enhanced_scraper
 
     # Run the scraper
-    asyncio.run(run_enhanced_scraper())
+    result = asyncio.run(run_enhanced_scraper())
+
+    # Check if scraper actually succeeded (it returns True on success, False on error)
+    if result is False:
+        raise Exception("Scraper returned failure status")
 
     logger.info("=" * 80)
     logger.info("SCRAPER COMPLETED SUCCESSFULLY")
