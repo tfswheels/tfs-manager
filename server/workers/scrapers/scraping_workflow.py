@@ -661,7 +661,7 @@ async def process_product_batch(products: List[Product]):
         async with updated_lock:
             updated_part_numbers.update(part_numbers)
 
-        logger.debug(f"Batch: {len(products)} products -> {updated_count} updated, {stored_count} stored")
+        # Log is now handled inside batch_update_products_streaming with INFO level
 
     except Exception as e:
         logger.error(f"Error processing product batch: {e}")
