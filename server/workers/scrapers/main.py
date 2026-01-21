@@ -34,6 +34,7 @@ try:
         RETRY_FAILED_PRODUCTS,
         MAX_PRODUCTS_PER_DAY,
         DB_CONFIG,
+        SCRAPE_SPECIFIC_BRANDS,
         logger
     )
     from .gcs_manager import GCSManager
