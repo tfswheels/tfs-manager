@@ -602,39 +602,63 @@ async def sync_shopify_products_table(session: aiohttp.ClientSession, db_pool):
         chunks = [all_product_ids[i:i+chunk_size] for i in range(0, len(all_product_ids), chunk_size)]
         logger.info(f"   Split into {len(chunks)} chunks")
 
-        all_records = []
-        for idx, chunk in enumerate(chunks):
-            logger.info(f"   Processing chunk {idx+1}/{len(chunks)} ({len(chunk)} products)...")
-            records = await fetch_product_details_chunk(session, chunk)
-            all_records.extend(records)
-            logger.info(f"   ✅ Chunk {idx+1}/{len(chunks)}: Extracted {len(records)} variant records")
-
-        logger.info(f"✅ STEP 2 Complete: Extracted {len(all_records)} total variant records")
-
-        # STEP 3: UPSERT to database
-        logger.info("")
-        logger.info(f"💾 STEP 3: Upserting to {table_name}")
-
-        # Get existing variant IDs before upsert
+        # Get existing variant IDs before upsert (for stats calculation)
         async with db_pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(f"SELECT variant_id FROM {table_name}")
                 existing_variant_ids = {row[0] for row in await cur.fetchall()}
 
         logger.info(f"   📊 Found {len(existing_variant_ids)} existing variant records in {table_name}")
+        logger.info(f"   🚀 Starting concurrent fetch + upsert pipeline...")
 
-        # Do the upsert
-        upserted_count = await batch_upsert_records(db_pool, all_records)
+        # Track all records for final stats
+        all_records = []
+        total_upserted = 0
+
+        # Process chunks concurrently: fetch + upsert as soon as chunk arrives
+        async def process_chunk(idx, chunk):
+            nonlocal total_upserted
+            # Fetch chunk from Shopify
+            records = await fetch_product_details_chunk(session, chunk)
+            logger.info(f"   ✅ Chunk {idx+1}/{len(chunks)}: Extracted {len(records)} variant records")
+
+            # Immediately upsert to database (don't wait for other chunks)
+            if records:
+                upserted = await batch_upsert_records(db_pool, records)
+                total_upserted += upserted
+                logger.info(f"   💾 Chunk {idx+1}/{len(chunks)}: Upserted {upserted} records")
+
+            return records
+
+        # Run all chunks concurrently with limited parallelism
+        MAX_CONCURRENT_CHUNKS = 10  # Limit to avoid overwhelming API/DB
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_CHUNKS)
+
+        async def process_with_semaphore(idx, chunk):
+            async with semaphore:
+                return await process_chunk(idx, chunk)
+
+        # Process all chunks concurrently
+        chunk_results = await asyncio.gather(*[
+            process_with_semaphore(idx, chunk)
+            for idx, chunk in enumerate(chunks)
+        ])
+
+        # Flatten all records for stats
+        for records in chunk_results:
+            all_records.extend(records)
 
         # Calculate inserts vs updates
         new_variant_ids = {r["variant_id"] for r in all_records}
         inserted_count = len(new_variant_ids - existing_variant_ids)
-        updated_count = upserted_count - inserted_count
+        updated_count = total_upserted - inserted_count
 
-        logger.info(f"✅ STEP 3 Complete:")
+        logger.info("")
+        logger.info(f"✅ STEP 2 & 3 Complete (concurrent fetch + upsert):")
+        logger.info(f"   📦 Extracted: {len(all_records)} total variant records")
         logger.info(f"   📥 Inserted: {inserted_count} new records")
         logger.info(f"   🔄 Updated: {updated_count} existing records")
-        logger.info(f"   📊 Total upserted: {upserted_count}")
+        logger.info(f"   📊 Total upserted: {total_upserted}")
 
         # STEP 4: Delete stale products
         logger.info("")
