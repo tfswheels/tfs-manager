@@ -355,10 +355,10 @@ async def run_enhanced_scraper():
                 # Import tracking from scraping workflow
                 try:
                     from .scraping_workflow import updated_part_numbers, updated_lock
-                    from .config import SCRAPE_SPECIFIC_BRANDS, SKIP_BRANDS_NORMALIZED
+                    from .config import SKIP_BRANDS_NORMALIZED
                 except ImportError:
                     from scraping_workflow import updated_part_numbers, updated_lock
-                    from config import SCRAPE_SPECIFIC_BRANDS, SKIP_BRANDS_NORMALIZED
+                    from config import SKIP_BRANDS_NORMALIZED
 
                 # Determine which brands to process based on scraping mode
                 if SCRAPE_SPECIFIC_BRANDS:
