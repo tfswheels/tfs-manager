@@ -1534,24 +1534,108 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
     except Exception as e:
         print(f"   ⚠️  Could not uncheck shipping protection: {e}")
 
-    # Set all additional options to "No"
+    # Set all additional options to "No" (CRITICAL: This saves us money!)
     print("\n🔧 Setting additional options to 'No'...")
     try:
-        dropdowns = driver.find_elements(By.CSS_SELECTOR, ".cart-product-dd")
-        for dropdown in dropdowns:
-            select = Select(dropdown)
-            # Try to select first "No" option or option with value "0"
-            for option in select.options:
-                if option.text.startswith("No ") or option.get_attribute('value') == '0':
-                    select.select_by_visible_text(option.text)
-                    break
-        print("   ✅ Additional options set to 'No'")
-    except Exception as e:
-        print(f"   ⚠️  Could not set additional options: {e}")
+        # STEP 1: Wait for "Additional Options" section to load (up to 10 seconds)
+        print("   ⏳ Waiting for Additional Options section to load...")
+        time.sleep(2)  # Initial wait for page to settle
 
-    # Wait a moment for cart to update after changing options
-    print("   ⏳ Waiting for cart to update...")
-    time.sleep(3)
+        options_section_loaded = False
+        for attempt in range(10):
+            dropdowns = driver.find_elements(By.CSS_SELECTOR, ".cart-product-dd")
+            if len(dropdowns) > 0:
+                print(f"   ✅ Found {len(dropdowns)} add-on dropdowns")
+                options_section_loaded = True
+                break
+            time.sleep(1)
+
+        if not options_section_loaded:
+            print("   ⚠️  No add-on dropdowns found - skipping (cart might not have add-ons)")
+        else:
+            # STEP 2: Set each dropdown to "No" option
+            print("   🔧 Setting each add-on to 'No'...")
+            dropdowns = driver.find_elements(By.CSS_SELECTOR, ".cart-product-dd")
+            changes_made = False
+
+            for idx, dropdown in enumerate(dropdowns):
+                try:
+                    select = Select(dropdown)
+                    current_value = select.first_selected_option.get_attribute('value')
+                    current_text = select.first_selected_option.text
+
+                    # Find and select the "No" option
+                    no_option_found = False
+                    for option in select.options:
+                        option_value = option.get_attribute('value')
+                        option_text = option.text
+
+                        # Match "No [option]" or value="0" or value="No"
+                        if (option_text.startswith("No ") or
+                            option_value == '0' or
+                            option_value == 'No' or
+                            option_value == ''):
+
+                            # Only select if not already selected
+                            if current_value != option_value:
+                                select.select_by_visible_text(option_text)
+                                print(f"      [{idx+1}/{len(dropdowns)}] Changed '{current_text}' → '{option_text}'")
+                                changes_made = True
+                            else:
+                                print(f"      [{idx+1}/{len(dropdowns)}] Already set to '{option_text}' ✓")
+
+                            no_option_found = True
+                            break
+
+                    if not no_option_found:
+                        print(f"      ⚠️  Dropdown {idx+1}: Could not find 'No' option!")
+
+                except Exception as e:
+                    print(f"      ⚠️  Error processing dropdown {idx+1}: {e}")
+
+            # STEP 3: Click UPDATE button if changes were made
+            if changes_made:
+                print("   📝 Changes made - clicking UPDATE button...")
+                try:
+                    # Wait for update button to be clickable
+                    update_button = WebDriverWait(driver, 5).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, ".cart-product-update-btn"))
+                    )
+                    update_button.click()
+                    print("   ✅ Clicked UPDATE button")
+
+                    # STEP 4: Wait for cart to update (critical!)
+                    print("   ⏳ Waiting for cart to update...")
+                    time.sleep(5)  # Allow cart to recalculate
+
+                    # STEP 5: Verify add-ons total is $0 or section collapsed
+                    try:
+                        add_ons_total_elem = driver.find_element(By.CSS_SELECTOR, ".cart-product-options-total")
+                        add_ons_total_text = add_ons_total_elem.text.strip()
+
+                        if add_ons_total_text in ['0', '$0', '0.00', '$0.00', '']:
+                            print(f"   ✅ Add-ons total verified: ${add_ons_total_text or '0.00'} (SUCCESS!)")
+                        else:
+                            print(f"   ⚠️  WARNING: Add-ons total is ${add_ons_total_text} (expected $0.00)")
+                            print(f"      This might cost extra money - please review!")
+                    except NoSuchElementException:
+                        print("   ✅ Add-ons section collapsed/removed (all set to No)")
+
+                except TimeoutException:
+                    print("   ⚠️  Could not find UPDATE button - changes may not be saved!")
+                except Exception as e:
+                    print(f"   ⚠️  Error clicking UPDATE button: {e}")
+            else:
+                print("   ✅ All add-ons already set to 'No' - no update needed")
+
+    except Exception as e:
+        print(f"   ⚠️  Error in add-ons processing: {e}")
+        import traceback
+        print(f"      {traceback.format_exc()}")
+
+    # Final wait to ensure cart is fully updated
+    print("   ⏳ Final wait for cart to settle...")
+    time.sleep(2)
 
     # Navigate directly to checkout
     print("\n🛒 Proceeding to checkout...")
