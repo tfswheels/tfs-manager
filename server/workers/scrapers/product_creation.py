@@ -581,7 +581,7 @@ async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_
             }
 
             # Create on Shopify (wheels)
-            shopify_result = await create_product_on_shopify(session, wheel_data, gcs_image_url)
+            shopify_result, shopify_error = await create_product_on_shopify(session, wheel_data, gcs_image_url)
 
         else:  # tires
             # Generate title for tires
@@ -609,7 +609,7 @@ async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_
             }
 
             # Create on Shopify (tires) - uses same function, tires just have fewer metafields
-            shopify_result = await create_product_on_shopify(session, tire_data, tire_data.get('image'))
+            shopify_result, shopify_error = await create_product_on_shopify(session, tire_data, tire_data.get('image'))
 
         # Get retry count from product (0 for new products, >0 for retries)
         retry_count = product.get('retry_count', 0)
@@ -634,14 +634,17 @@ async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_
         else:
             # Failed to create on Shopify - increment retry count
             new_retry_count = retry_count + 1
+            # Use actual Shopify error if available, otherwise generic message
+            error_message = shopify_error if shopify_error else 'Failed to create on Shopify (no error details)'
             await update_product_sync_status(
                 db_pool,
                 product.get('url_part_number'),
                 'error',
-                'Failed to create on Shopify',
+                error_message,
                 retry_count=new_retry_count
             )
             logger.warning(f"❌ Failed to create product (attempt {new_retry_count}): {product.get('url_part_number')}")
+            logger.warning(f"   Error: {error_message}")
             return False
 
     except Exception as e:

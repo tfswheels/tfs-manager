@@ -168,7 +168,8 @@ async def run_enhanced_scraper():
             # ================================================================
             # STEP 0: Retry Failed Products
             # ================================================================
-            if ENABLE_PRODUCT_DISCOVERY and RETRY_FAILED_PRODUCTS:
+            # Skip retry when scraping specific brands (quick targeted scrape)
+            if ENABLE_PRODUCT_DISCOVERY and RETRY_FAILED_PRODUCTS and not SCRAPE_SPECIFIC_BRANDS:
                 logger.info("")
                 logger.info("=" * 80)
                 logger.info("STEP 0: RETRYING FAILED PRODUCTS FROM PREVIOUS RUNS")
@@ -208,9 +209,15 @@ async def run_enhanced_scraper():
             # ================================================================
             # STEP 1: Sync Shopify Product Tables
             # ================================================================
-            if ENABLE_SHOPIFY_SYNC:
+            # Skip Shopify sync when scraping specific brands (quick targeted scrape)
+            if ENABLE_SHOPIFY_SYNC and not SCRAPE_SPECIFIC_BRANDS:
                 synced_count = await sync_shopify_products_table(session, db_pool)
                 stats['shopify_products_synced'] = synced_count
+            elif SCRAPE_SPECIFIC_BRANDS:
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info(f"SKIPPING SHOPIFY SYNC (scraping specific brands: {', '.join(SCRAPE_SPECIFIC_BRANDS)})")
+                logger.info("=" * 80)
 
             # ================================================================
             # STEP 2: Scrape CWO Inventory
