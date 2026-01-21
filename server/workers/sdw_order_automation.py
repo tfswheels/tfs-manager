@@ -2339,35 +2339,8 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
     order_number = order['name'].replace('#', '')
     processed_skus = [item['sku'] for item in cart_items]
 
-    # Create folder and processing log
+    # Tag Shopify order
     if invoice_number:
-        folder_name = f"{order_number}_{invoice_number}"
-
-        print(f"\n📁 Creating order folder: {folder_name}")
-        try:
-            order_folder = BASE_DIR / folder_name
-            order_folder.mkdir(exist_ok=True)
-            print(f"   ✅ Folder created: {order_folder}")
-
-            # Create processing log
-            processing_log = {
-                'shopify_order': order_number,
-                'sdw_invoice': invoice_number,
-                'processed_at': datetime.now().isoformat(),
-                'items': cart_items,
-                'folder': str(order_folder)
-            }
-
-            log_file = order_folder / 'processing_log.json'
-            with open(log_file, 'w') as f:
-                json.dump(processing_log, f, indent=2)
-
-            print(f"   ✅ Processing log saved: {log_file}")
-
-        except Exception as e:
-            print(f"   ⚠️  Error creating folder/log: {e}")
-
-        # Tag Shopify order
         print(f"\n🏷️  Tagging Shopify order...")
         try:
             # Get current tags
@@ -2411,8 +2384,6 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
             for item in cart_items:
                 comment_message += f"  - {item['name']} (SKU: {item['sku']}, Qty: {item['quantity']})\n"
 
-            comment_message += f"\nFolder: {folder_name}"
-
             # Note: This updates the order note field. For timeline events, we'd need a different approach
             # The current GraphQL mutation adds to the note field
             current_note = order.get('note', '')
@@ -2428,7 +2399,7 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
             print(f"   ⚠️  Error adding timeline comment: {e}")
 
     else:
-        print("\n⚠️  Skipping folder creation and Shopify updates (no invoice number)")
+        print("\n⚠️  Skipping Shopify updates (no invoice number)")
 
     # Final summary
     print("\n" + "="*60)
@@ -2437,7 +2408,6 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
     print(f"Shopify Order: #{order_number}")
     if invoice_number:
         print(f"SDW Invoice: {invoice_number}")
-        print(f"Folder: {folder_name}")
     print("="*60)
 
     # Output success details as JSON for UI
@@ -2447,7 +2417,6 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
         "order_number": order_number,
         "invoice_number": invoice_number,
         "invoice_total": invoice_total if invoice_total else None,
-        "folder_name": folder_name if invoice_number else None,
         "processed_items": cart_items
     }
     print(f"\nORDER_COMPLETE_JSON:{json_module.dumps(success_data)}")
@@ -2563,10 +2532,6 @@ def process_custom_quote(driver, order, quote_link, card_info):
     if not cart_loaded:
         print("❌ Failed to load quote page - cart products not found")
         print(f"   Current URL: {driver.current_url}")
-        debug_file = BASE_DIR / "debug_quote_load_failed.html"
-        with open(debug_file, 'w', encoding='utf-8') as f:
-            f.write(driver.page_source)
-        print(f"   💾 Saved page HTML to: {debug_file}")
         return None
 
     print("✅ Quote page loaded successfully")
@@ -2668,11 +2633,12 @@ def process_manual_search(driver, order, card_info, selected_line_items=None):
 
     # Extract vehicle information
     print("\n🚗 Extracting vehicle information...")
-    vehicle_str = extract_vehicle_info(order)
 
-    if vehicle_str:
-        print(f"   ✅ Found vehicle info: {vehicle_str}")
-        vehicle_info = parse_vehicle_info(vehicle_str)
+    # Check if vehicle info was provided via override (from form input)
+    vehicle_info = None
+    if order.get('_override_vehicle'):
+        print(f"   ✅ Using provided vehicle info: {order['_override_vehicle']}")
+        vehicle_info = parse_vehicle_info(order['_override_vehicle'])
         if vehicle_info:
             print(f"      Year: {vehicle_info['year']}")
             print(f"      Make: {vehicle_info['make']}")
@@ -2680,33 +2646,53 @@ def process_manual_search(driver, order, card_info, selected_line_items=None):
             if vehicle_info['trim']:
                 print(f"      Trim: {vehicle_info['trim']}")
         else:
-            print(f"   ⚠️  Could not parse vehicle info")
+            print(f"   ⚠️  Could not parse provided vehicle info")
             vehicle_info = None
-    else:
-        print(f"   ⚠️  No vehicle information found")
-        # Ask if they want to enter manually (only in interactive mode)
-        if is_interactive_mode():
-            while True:
-                try:
-                    response = input("\n   Enter vehicle info manually? (y/n): ").strip().lower()
-                    if response in ['y', 'yes']:
-                        vehicle_input = input("   Vehicle (e.g., '2022 Honda Civic EX'): ").strip()
-                        if vehicle_input:
-                            vehicle_info = parse_vehicle_info(vehicle_input)
-                            if vehicle_info:
-                                print(f"   ✅ Vehicle info added")
-                                break
+
+    # If no override, try to extract from order
+    if not vehicle_info:
+        vehicle_str = extract_vehicle_info(order)
+
+        if vehicle_str:
+            print(f"   ✅ Found vehicle info from order: {vehicle_str}")
+            vehicle_info = parse_vehicle_info(vehicle_str)
+            if vehicle_info:
+                print(f"      Year: {vehicle_info['year']}")
+                print(f"      Make: {vehicle_info['make']}")
+                print(f"      Model: {vehicle_info['model']}")
+                if vehicle_info['trim']:
+                    print(f"      Trim: {vehicle_info['trim']}")
+            else:
+                print(f"   ⚠️  Could not parse vehicle info")
+                vehicle_info = None
+        else:
+            print(f"   ⚠️  No vehicle information found")
+            # Ask if they want to enter manually (only in interactive mode)
+            if is_interactive_mode():
+                while True:
+                    try:
+                        response = input("\n   Enter vehicle info manually? (y/n): ").strip().lower()
+                        if response in ['y', 'yes']:
+                            vehicle_input = input("   Vehicle (e.g., '2022 Honda Civic EX'): ").strip()
+                            if vehicle_input:
+                                vehicle_info = parse_vehicle_info(vehicle_input)
+                                if vehicle_info:
+                                    print(f"   ✅ Vehicle info added")
+                                    break
+                                else:
+                                    print(f"   ⚠️  Could not parse vehicle info, try again")
                             else:
-                                print(f"   ⚠️  Could not parse vehicle info, try again")
-                        else:
-                            vehicle_info = None
-                            break
-                    elif response in ['n', 'no']:
-                        print(f"   ⚠️  Cannot proceed without vehicle info for wheels/tires")
+                                vehicle_info = None
+                                break
+                        elif response in ['n', 'no']:
+                            print(f"   ⚠️  Cannot proceed without vehicle info for wheels/tires")
+                            return None
+                    except KeyboardInterrupt:
+                        print("\n\nOperation cancelled.")
                         return None
-                except KeyboardInterrupt:
-                    print("\n\nOperation cancelled.")
-                    return None
+            else:
+                # Non-interactive mode: vehicle_info remains None (will be handled later)
+                vehicle_info = None
 
     # Collect items to process (wheels and tires only)
     items_to_process = []
