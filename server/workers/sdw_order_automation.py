@@ -387,8 +387,11 @@ def search_product_on_sdw(driver, part_number, url_part_number, product_type):
     """
     Search for product on SDW and return product page URL if found
     part_number: Original part number from order (used for search)
-    url_part_number: URL-formatted part number from database (used for verification)
+    url_part_number: URL-formatted part number from database (used for verification) or None
     product_type: 'wheel' or 'tire'
+
+    If url_part_number is None, will use fallback verification by checking the
+    "Partnumber" field in Wheel Specs on each product page.
     """
     # URL-encode the part number to preserve special characters like +
     encoded_part_number = quote(part_number, safe='')
@@ -418,7 +421,8 @@ def search_product_on_sdw(driver, part_number, url_part_number, product_type):
 
         print(f"   📦 Found {len(product_cards)} product(s)")
 
-        # Check each card for matching url_part_number (verify product URL matches DB)
+        # Collect all product URLs
+        product_urls = []
         for idx, card in enumerate(product_cards, 1):
             try:
                 # Find the product link (a.product-card-a as per improved_scraper.py)
@@ -439,27 +443,67 @@ def search_product_on_sdw(driver, part_number, url_part_number, product_type):
                 match = re.search(pattern, href)
                 if match:
                     found_part_number = match.group(1)
-                    print(f"      [{idx}] Found: {found_part_number}")
+                    print(f"      [{idx}] Found URL: {found_part_number}")
+                    product_urls.append(href)
 
-                    # Verify using URL part number from database (case-insensitive)
-                    if found_part_number.upper() == url_part_number.upper():
+                    # If we have url_part_number from DB, verify using that (fast path)
+                    if url_part_number and found_part_number.upper() == url_part_number.upper():
                         print(f"   ✅ Match verified with URL part number: {href}")
                         return href
             except Exception as e:
                 print(f"      ⚠️  Error checking card {idx}: {e}")
                 continue
 
-        # If no exact match, return the first product URL with a warning
-        if product_cards:
-            try:
-                first_link = product_cards[0].find_element(By.CSS_SELECTOR, "a.product-card-a")
-                first_url = first_link.get_attribute('href')
-                print(f"   ⚠️  No exact match found, using first result: {first_url}")
-                return first_url
-            except:
-                pass
+        # If url_part_number was provided but no match found, warn and continue to fallback
+        if url_part_number:
+            print(f"   ⚠️  No URL match found with database url_part_number")
 
-        print(f"   ❌ Could not find product page URL")
+        # FALLBACK: Open each product page and check the "Partnumber" field in Wheel Specs
+        # This is used when:
+        # 1. url_part_number is None (not in database), OR
+        # 2. url_part_number exists but didn't match any product URLs
+        if product_urls:
+            print(f"   🔄 Using fallback: checking Partnumber field on each product page...")
+
+            for idx, product_url in enumerate(product_urls, 1):
+                try:
+                    print(f"      [{idx}/{len(product_urls)}] Checking product page...")
+                    driver.get(product_url)
+                    time.sleep(2)  # Wait for page to load
+
+                    # Look for the Partnumber field in wheel specs
+                    # <div class="wheel-spec-item Partnumber" data-value="H114-2210817045BB">
+                    try:
+                        partnumber_elem = WebDriverWait(driver, 5).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, ".wheel-spec-item.Partnumber"))
+                        )
+                        page_part_number = partnumber_elem.get_attribute('data-value')
+
+                        if page_part_number:
+                            print(f"         Part number on page: {page_part_number}")
+
+                            # Compare with the original part number (case-insensitive)
+                            if page_part_number.upper() == part_number.upper():
+                                print(f"   ✅ EXACT MATCH found via fallback: {product_url}")
+                                return product_url
+                            else:
+                                print(f"         ❌ No match (expected: {part_number})")
+                        else:
+                            print(f"         ⚠️  Partnumber field has no data-value")
+                    except TimeoutException:
+                        print(f"         ⚠️  Partnumber field not found on page")
+                    except Exception as e:
+                        print(f"         ⚠️  Error extracting partnumber: {e}")
+
+                except Exception as e:
+                    print(f"      ⚠️  Error checking product page {idx}: {e}")
+                    continue
+
+            # If we checked all pages and found no exact match
+            print(f"   ❌ No exact match found after checking all {len(product_urls)} product page(s)")
+        else:
+            print(f"   ❌ No product URLs to check")
+
         return None
 
     except TimeoutException:
@@ -2735,17 +2779,12 @@ def process_manual_search(driver, order, card_info, selected_line_items=None):
         print(f"   📊 Looking up in database...")
         url_part_number = get_url_part_number(item['sku'], item['product_type'])
 
-        if not url_part_number:
-            print(f"   ❌ SKU {item['sku']} not found in database")
-            response = safe_input(f"   Continue without this item? (y/n): ", default='y')
-            if response in ['n', 'no']:
-                print("Order processing cancelled.")
-                return None
-            continue
+        if url_part_number:
+            print(f"   ✅ Found URL part number: {url_part_number}")
+        else:
+            print(f"   ⚠️  SKU {item['sku']} not found in database - will use fallback verification")
 
-        print(f"   ✅ Found URL part number: {url_part_number}")
-
-        # Search for product on SDW using original part number, verify with URL part number
+        # Search for product on SDW using original part number, verify with URL part number (or fallback if None)
         product_url = search_product_on_sdw(driver, item['sku'], url_part_number, item['product_type'])
 
         if not product_url:
