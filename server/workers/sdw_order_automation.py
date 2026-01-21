@@ -1568,14 +1568,17 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
                     no_option_found = False
                     for option in select.options:
                         option_value = option.get_attribute('value')
-                        option_text = option.text
+                        option_text = option.text.strip()
 
-                        # Match "No [option]" or value="0" or value="No"
-                        if (option_text.startswith("No ") or
-                            option_value == '0' or
-                            option_value == 'No' or
-                            option_value == ''):
+                        # CRITICAL: Match ONLY actual "No" options, NOT header placeholders
+                        # Headers like "Valve Stem Options" or "Lug Nut Options" have value=""
+                        # Actual "No" options like "No Spiked Valve Stem Caps" start with "No "
+                        is_no_option = (
+                            option_text.startswith("No ") and  # MUST start with "No "
+                            (option_value == '0' or option_value == 'No')  # MUST have valid value (NOT empty string!)
+                        )
 
+                        if is_no_option:
                             # Only select if not already selected
                             if current_value != option_value:
                                 select.select_by_visible_text(option_text)
