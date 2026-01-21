@@ -205,24 +205,28 @@ def prepare_metafields(wheel_data: Dict) -> List[Dict]:
     color_list = []
     if wheel_data.get('primary_color'):
         color_list.append(wheel_data['primary_color'])
-    metafields.append({
-        "namespace": "convermax",
-        "key": "wheel_color",
-        "type": "list.single_line_text_field",
-        "value": json.dumps(color_list)
-    })
+    # Only add if not empty (Shopify rejects empty list metafields)
+    if color_list:
+        metafields.append({
+            "namespace": "convermax",
+            "key": "wheel_color",
+            "type": "list.single_line_text_field",
+            "value": json.dumps(color_list)
+        })
 
     raw_patterns = []
     if wheel_data.get('bolt_pattern'):
         raw_patterns.append(wheel_data['bolt_pattern'])
     if wheel_data.get('bolt_pattern2'):
         raw_patterns.append(wheel_data['bolt_pattern2'])
-    metafields.append({
-        "namespace": "convermax",
-        "key": "wheel_bolt_pattern",
-        "type": "list.single_line_text_field",
-        "value": json.dumps(raw_patterns)
-    })
+    # Only add if not empty (Shopify rejects empty list metafields)
+    if raw_patterns:
+        metafields.append({
+            "namespace": "convermax",
+            "key": "wheel_bolt_pattern",
+            "type": "list.single_line_text_field",
+            "value": json.dumps(raw_patterns)
+        })
 
     # Custom metafields
     def weight_str(d: Dict) -> str:
@@ -260,6 +264,9 @@ def prepare_metafields(wheel_data: Dict) -> List[Dict]:
     for field, (field_type, source) in custom_map.items():
         value = source(wheel_data) if callable(source) else wheel_data.get(source)
         if value:
+            # Skip empty list metafields (Shopify rejects "[]" as blank)
+            if field_type == 'list.single_line_text_field' and value in ('[]', ''):
+                continue
             metafields.append({
                 "namespace": "custom",
                 "key": field,

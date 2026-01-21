@@ -253,8 +253,8 @@ class DatabaseClient:
             quantities = []
             prices = []
             costs = []
-            
-            for product in matched_products:
+
+            for product in matched_full_update:
                 url_part = product.get('url_part_number')
                 if not url_part:
                     continue
