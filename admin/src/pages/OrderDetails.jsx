@@ -486,9 +486,16 @@ function OrderDetails() {
               <Text variant="headingMd" as="h2">Line Items</Text>
               <BlockStack gap="300">
                 {order.line_items && order.line_items.map((item, index) => {
-                  // Check if item should be skipped (installation kits, shipping protection, hub centric rings, accessories)
-                  const isSkipItem = ['shipping protection', 'installation kit', 'hub centric']
-                    .some(keyword => item.name.toLowerCase().includes(keyword)) ||
+                  // Check if item should be skipped
+                  const itemName = item.name.toLowerCase();
+                  const itemSku = (item.sku || '').toUpperCase();
+
+                  const isSkipItem =
+                    // Check name for keywords
+                    ['shipping protection', 'installation kit', 'hub centric', 'tpms sensors']
+                      .some(keyword => itemName.includes(keyword)) ||
+                    // Check SKU for MOUNT&BALANCE
+                    itemSku === 'MOUNT&BALANCE' ||
                     // Check if product has 'accessories' tag (matches Python script logic)
                     (item.tags && Array.isArray(item.tags) && item.tags.some(tag => tag.toLowerCase() === 'accessories'));
 
