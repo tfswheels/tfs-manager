@@ -1228,17 +1228,11 @@ export default function Orders() {
                       </div>
                     )}
 
-                    {(userInputPrompt.type === 'vehicle_year_selection' ||
-                      userInputPrompt.type === 'vehicle_make_selection' ||
-                      userInputPrompt.type === 'vehicle_model_selection' ||
-                      userInputPrompt.type === 'vehicle_trim_selection') && (
+                    {userInputPrompt.type && userInputPrompt.type.includes('vehicle_') && userInputPrompt.type.includes('_selection') && (
                       <div style={{ padding: '16px', background: '#e3f2fd', borderRadius: '8px' }}>
                         <BlockStack gap="300">
                           <Text variant="headingSm" fontWeight="semibold">
-                            {userInputPrompt.type === 'vehicle_year_selection' && 'Select Vehicle Year'}
-                            {userInputPrompt.type === 'vehicle_make_selection' && 'Select Vehicle Make'}
-                            {userInputPrompt.type === 'vehicle_model_selection' && 'Select Vehicle Model'}
-                            {userInputPrompt.type === 'vehicle_trim_selection' && 'Select Vehicle Trim'}
+                            Select {userInputPrompt.type.replace('vehicle_', '').replace('_selection', '').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
                           </Text>
 
                           {userInputPrompt.data.item && (
@@ -1247,41 +1241,42 @@ export default function Orders() {
                             </Text>
                           )}
 
-                          {userInputPrompt.data.current_selections && (
+                          {userInputPrompt.data.current_selections && Object.keys(userInputPrompt.data.current_selections).length > 0 && (
                             <div style={{ padding: '12px', background: '#f6f6f7', borderRadius: '4px' }}>
                               <Text variant="bodySm" fontWeight="semibold">Current selections:</Text>
                               <div style={{ marginTop: '4px' }}>
-                                {userInputPrompt.data.current_selections.year && (
-                                  <Text variant="bodySm">Year: {userInputPrompt.data.current_selections.year}</Text>
-                                )}
-                                {userInputPrompt.data.current_selections.make && (
-                                  <Text variant="bodySm">Make: {userInputPrompt.data.current_selections.make}</Text>
-                                )}
-                                {userInputPrompt.data.current_selections.model && (
-                                  <Text variant="bodySm">Model: {userInputPrompt.data.current_selections.model}</Text>
-                                )}
+                                {Object.entries(userInputPrompt.data.current_selections).map(([key, value]) => (
+                                  <Text key={key} variant="bodySm">
+                                    {key.charAt(0).toUpperCase() + key.slice(1)}: {value}
+                                  </Text>
+                                ))}
                               </div>
                             </div>
                           )}
 
                           {userInputPrompt.data.available_options && (
-                            <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                              <BlockStack gap="200">
-                                {userInputPrompt.data.available_options.map((option, idx) => (
-                                  <Button
-                                    key={idx}
-                                    onClick={() => handleSubmitUserInput({
-                                      selected_value: option.value || option,
-                                      selected_text: option.text || option
-                                    })}
-                                    fullWidth
-                                    textAlign="start"
-                                  >
-                                    {option.text || option}
-                                  </Button>
-                                ))}
-                              </BlockStack>
-                            </div>
+                            <Select
+                              label="Choose from available options"
+                              options={[
+                                { label: 'Select...', value: '' },
+                                ...userInputPrompt.data.available_options.map(option => ({
+                                  label: option.text || option,
+                                  value: option.value || option
+                                }))
+                              ]}
+                              value={selectedVehicleValue}
+                              onChange={(value) => {
+                                setSelectedVehicleValue(value);
+                                const selectedOption = userInputPrompt.data.available_options.find(
+                                  opt => (opt.value || opt) === value
+                                );
+                                handleSubmitUserInput({
+                                  selected_value: value,
+                                  selected_text: selectedOption ? (selectedOption.text || selectedOption) : value
+                                });
+                                setSelectedVehicleValue('');
+                              }}
+                            />
                           )}
 
                           <Button
