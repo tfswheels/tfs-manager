@@ -486,8 +486,8 @@ function OrderDetails() {
               <Text variant="headingMd" as="h2">Line Items</Text>
               <BlockStack gap="300">
                 {order.line_items && order.line_items.map((item, index) => {
-                  // Check if item should be skipped (installation kits, shipping protection, hub centric rings)
-                  const isSkipItem = ['shipping protection', 'installation kit', 'hub centric']
+                  // Check if item should be skipped (installation kits, shipping protection, hub centric rings, accessories)
+                  const isSkipItem = ['shipping protection', 'installation kit', 'hub centric', 'accessories']
                     .some(keyword => item.name.toLowerCase().includes(keyword));
 
                   // Check if item is removed/cancelled (fulfillable_quantity = 0 or less than quantity)

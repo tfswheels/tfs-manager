@@ -1098,6 +1098,7 @@ router.post('/sdw-job/:jobId/user-input', async (req, res) => {
 router.post('/sdw-job/:jobId/cancel', async (req, res) => {
   try {
     const { jobId } = req.params;
+    const { getJob } = await import('../services/sdwJobManager.js');
     const job = getJob(jobId);
 
     if (!job) {
