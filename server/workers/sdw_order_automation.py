@@ -558,24 +558,36 @@ def fill_vehicle_form_interactive(driver, item_info):
             try:
                 # Check if field exists
                 select_elem = driver.find_element(By.ID, field["id"])
-                select_obj = Select(select_elem)
 
-                # Wait a moment for dropdown to populate (if it needs to load after previous selection)
-                time.sleep(2)
-
-                # Get available options
+                # Wait for dropdown to have real options loaded (max 10 seconds)
+                print(f"   ⏳ Waiting for {field['label'].lower()} dropdown to load...")
                 available_options = []
-                for opt in select_obj.options:
-                    opt_text = opt.text.strip()
-                    opt_value = opt.get_attribute('value')
-                    # Skip placeholder options
-                    if opt_text and opt_text != field["placeholder"] and opt_value:
-                        available_options.append({"text": opt_text, "value": opt_value})
+                max_wait = 10
+                for attempt in range(max_wait):
+                    select_obj = Select(select_elem)
+                    available_options = []
 
-                # If no real options (just placeholder), skip this field
+                    # Get available options
+                    for opt in select_obj.options:
+                        opt_text = opt.text.strip()
+                        opt_value = opt.get_attribute('value')
+                        # Skip placeholder options
+                        if opt_text and opt_text != field["placeholder"] and opt_value:
+                            available_options.append({"text": opt_text, "value": opt_value})
+
+                    # If we have options, break out of wait loop
+                    if available_options:
+                        print(f"   ✅ {field['label']} dropdown loaded with {len(available_options)} options")
+                        break
+
+                    # Otherwise wait and retry
+                    time.sleep(1)
+
+                # If still no options after waiting, skip this field (it may not be required)
                 if not available_options:
-                    print(f"   ℹ️  No {field['label'].lower()} options available, skipping...")
-                    continue
+                    print(f"   ℹ️  No {field['label'].lower()} options available after waiting, skipping...")
+                    # Don't process more fields if we couldn't load this one
+                    break
 
                 # Prompt user for selection
                 print(f"   {field['icon']} Getting available {field['label'].lower()}s...")
@@ -605,6 +617,8 @@ def fill_vehicle_form_interactive(driver, item_info):
                 }}
                 """
                 driver.execute_script(fill_js)
+                # Small delay to let the page process the selection
+                time.sleep(1)
 
             except NoSuchElementException:
                 # Field doesn't exist, that's okay - we're done with vehicle fields
