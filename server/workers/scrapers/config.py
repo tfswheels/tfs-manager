@@ -55,6 +55,7 @@ ENABLE_PRODUCT_DISCOVERY = True  # Enable new product creation
 ENABLE_SHOPIFY_SYNC = True  # Sync Shopify tables before scraping
 MAX_PRODUCTS_PER_DAY = int(os.environ.get('MAX_PRODUCTS_PER_DAY', '1000'))  # Daily creation limit (can be overridden via env var)
 RETRY_FAILED_PRODUCTS = True  # Retry products with product_sync='error'
+USE_ZENROWS = True  # Default to using ZenRows proxy (can be disabled with --no-zenrows)
 
 # =============================================================================
 # COMMAND LINE ARGUMENTS
@@ -96,7 +97,6 @@ CONCURRENT_PAGE_WORKERS = 20
 BATCH_SIZE = 100
 MAX_CONSECUTIVE_NON_IN_STOCK = int(os.environ.get('BACKORDER_COUNT', '30'))
 IN_STOCK_QUANTITY = 131
-USE_ZENROWS = True  # Default to using ZenRows
 
 # =============================================================================
 # PRODUCT DISCOVERY SETTINGS
