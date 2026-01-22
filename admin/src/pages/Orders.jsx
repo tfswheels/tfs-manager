@@ -89,6 +89,17 @@ export default function Orders() {
     fetchTemplates();
   }, [limit, page]);
 
+  // Debounced search - trigger search 500ms after user stops typing
+  useEffect(() => {
+    const debounceTimer = setTimeout(() => {
+      setPage(1); // Reset to page 1 on search
+      fetchOrders();
+    }, 500);
+
+    // Cleanup timer on searchQuery change
+    return () => clearTimeout(debounceTimer);
+  }, [searchQuery]);
+
   // Real-time polling for order updates (every 30 seconds)
   useEffect(() => {
     const pollInterval = setInterval(() => {
@@ -145,15 +156,9 @@ export default function Orders() {
     }
   };
 
-  const handleSearch = () => {
-    setPage(1);
-    fetchOrders();
-  };
-
   const handleSearchClear = () => {
     setSearchQuery('');
-    setPage(1);
-    setTimeout(() => fetchOrders(), 0);
+    // Search will trigger automatically via debounced useEffect
   };
 
   const handleLimitChange = (value) => {
@@ -617,17 +622,13 @@ export default function Orders() {
             <InlineStack gap="400" align="space-between" blockAlign="center">
               <div style={{ flex: 1, maxWidth: '500px' }}>
                 <TextField
-                  placeholder="Search by order #, customer name, or email..."
+                  placeholder="Search by order #, customer name, email, or product..."
                   value={searchQuery}
                   onChange={setSearchQuery}
                   clearButton
                   onClearButtonClick={handleSearchClear}
                   autoComplete="off"
-                  connectedRight={
-                    <Button onClick={handleSearch} loading={loading}>
-                      Search
-                    </Button>
-                  }
+                  helpText={searchQuery ? `Searching... (${loading ? 'loading' : 'ready'})` : 'Start typing to search'}
                 />
               </div>
               <InlineStack gap="200" align="end">
@@ -661,10 +662,8 @@ export default function Orders() {
                 heading="No orders found"
                 image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
               >
-                <p>Try adjusting your search query</p>
-                <div style={{ marginTop: '16px' }}>
-                  <Button onClick={handleSearchClear}>Clear Search</Button>
-                </div>
+                <p>No orders match your search "{searchQuery}"</p>
+                <p>Try different keywords or clear your search</p>
               </EmptyState>
             </Box>
           ) : (

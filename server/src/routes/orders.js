@@ -40,61 +40,78 @@ router.get('/', async (req, res) => {
     const shopId = rows[0].id;
 
     // Build search query
+    // Use DISTINCT when searching line items to avoid duplicate orders
+    const useDistinct = search.trim() ? 'DISTINCT' : '';
+
     let query = `
-      SELECT
-        id,
-        shopify_order_id,
-        order_number,
-        customer_name,
-        customer_email,
-        total_price,
-        financial_status,
-        fulfillment_status,
-        tags,
-        vehicle_year,
-        vehicle_make,
-        vehicle_model,
-        vehicle_trim,
-        vehicle_info_notes,
-        created_at,
-        updated_at
-      FROM orders
-      WHERE shop_id = ?
+      SELECT ${useDistinct}
+        o.id,
+        o.shopify_order_id,
+        o.order_number,
+        o.customer_name,
+        o.customer_email,
+        o.total_price,
+        o.financial_status,
+        o.fulfillment_status,
+        o.tags,
+        o.vehicle_year,
+        o.vehicle_make,
+        o.vehicle_model,
+        o.vehicle_trim,
+        o.vehicle_info_notes,
+        o.created_at,
+        o.updated_at
+      FROM orders o
     `;
 
     const params = [shopId];
 
-    // Add search filter
+    // Add search filter with line items
     if (search.trim()) {
-      query += ` AND (
-        order_number LIKE ? OR
-        customer_name LIKE ? OR
-        customer_email LIKE ?
-      )`;
+      // Left join to search line items, but still return orders without items
+      query += `
+        LEFT JOIN order_items oi ON o.shopify_order_id = oi.shopify_order_id
+        WHERE o.shop_id = ? AND (
+          o.order_number LIKE ? OR
+          o.customer_name LIKE ? OR
+          o.customer_email LIKE ? OR
+          oi.title LIKE ?
+        )
+      `;
       const searchPattern = `%${search.trim()}%`;
-      params.push(searchPattern, searchPattern, searchPattern);
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    } else {
+      query += ` WHERE o.shop_id = ?`;
     }
 
     // Add ordering and pagination
     // Note: LIMIT and OFFSET are safe to insert directly since they're validated integers
     const offset = (page - 1) * limit;
-    query += ` ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`;
+    query += ` ORDER BY o.created_at DESC LIMIT ${limit} OFFSET ${offset}`;
 
     // Fetch orders from database
     const [orders] = await db.execute(query, params);
 
     // Get total count for pagination
-    let countQuery = 'SELECT COUNT(*) as total FROM orders WHERE shop_id = ?';
+    let countQuery = '';
     const countParams = [shopId];
 
     if (search.trim()) {
-      countQuery += ` AND (
-        order_number LIKE ? OR
-        customer_name LIKE ? OR
-        customer_email LIKE ?
-      )`;
+      countQuery = `
+        SELECT COUNT(DISTINCT o.id) as total
+        FROM orders o
+        LEFT JOIN order_items oi ON o.shopify_order_id = oi.shopify_order_id
+        WHERE o.shop_id = ? AND (
+          o.order_number LIKE ? OR
+          o.customer_name LIKE ? OR
+          o.customer_email LIKE ? OR
+          oi.title LIKE ?
+        )
+      `;
       const searchPattern = `%${search.trim()}%`;
-      countParams.push(searchPattern, searchPattern, searchPattern);
+      countParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    } else {
+      countQuery = 'SELECT COUNT(*) as total FROM orders WHERE shop_id = ?';
     }
 
     const [countResult] = await db.execute(countQuery, countParams);
