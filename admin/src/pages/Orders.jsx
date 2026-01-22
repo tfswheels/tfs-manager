@@ -79,6 +79,7 @@ export default function Orders() {
   const [userInputPrompt, setUserInputPrompt] = useState(null);
   const [userInputModalOpen, setUserInputModalOpen] = useState(false);
   const [userInputResponse, setUserInputResponse] = useState({});
+  const [selectedVehicleValue, setSelectedVehicleValue] = useState('');
 
   useEffect(() => {
     fetchOrders();
@@ -239,6 +240,7 @@ export default function Orders() {
       setUserInputPrompt(null);
       setUserInputModalOpen(false);
       setUserInputResponse({});
+      setSelectedVehicleValue('');
 
       const response = await axios.get(`${API_URL}/api/orders/${order.shopify_order_id}/details`, {
         params: {
@@ -429,6 +431,7 @@ export default function Orders() {
         setUserInputModalOpen(false);
         setUserInputPrompt(null);
         setUserInputResponse({});
+        setSelectedVehicleValue('');
 
         // Add progress message
         setSdwProgress(prev => [...prev, {
