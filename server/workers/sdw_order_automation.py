@@ -19,6 +19,13 @@ from selenium.webdriver.support.ui import Select
 from capsolver import Capsolver
 import mysql.connector
 
+# Import interactive prompt module for non-blocking user input
+try:
+    from interactive_prompt import InteractivePrompt
+except ImportError:
+    InteractivePrompt = None
+    print("⚠️  InteractivePrompt module not found - falling back to blocking input")
+
 # Load environment variables
 dotenv_path = "/Users/jeremiah/Desktop/TFS Wheels/Scripts/.env"
 load_dotenv(dotenv_path)
@@ -27,6 +34,13 @@ load_dotenv(dotenv_path)
 def is_interactive_mode():
     """Check if running in interactive mode (has TTY)"""
     return sys.stdin.isatty()
+
+def get_interactive_prompt():
+    """Get InteractivePrompt instance if job_id is available"""
+    job_id = os.environ.get('SDW_JOB_ID')
+    if job_id and InteractivePrompt:
+        return InteractivePrompt(job_id)
+    return None
 
 def safe_input(prompt, default='y'):
     """Get user input if interactive, otherwise return default"""
@@ -2791,36 +2805,113 @@ def process_manual_search(driver, order, card_info, selected_line_items=None):
 
         if not form_filled:
             print(f"   ❌ Failed to fill vehicle form automatically")
-            print(f"\n   💡 Options:")
-            print(f"      1. Fill the form manually in the browser and add to cart")
-            print(f"      2. Skip this item")
-            print(f"      3. Cancel order processing")
 
-            while True:
-                try:
-                    response = input(f"\n   Choose option (1/2/3): ").strip()
-                    if response == '1':
-                        print(f"\n   👉 Please fill the vehicle form manually in the browser window")
-                        print(f"      Then set quantity to {item['quantity']} and click 'Buy Wheels Only'")
-                        input(f"\n   Press Enter once you've added the item to cart...")
-                        # Assume they added it successfully
+            # Try to get available models for better user experience
+            available_models = []
+            try:
+                model_select_elem = driver.find_element(By.ID, "model")
+                model_select = Select(model_select_elem)
+                available_models = [opt.text for opt in model_select.options if opt.text != "Vehicle Model"]
+            except:
+                pass
+
+            # Get interactive prompt handler
+            interactive_prompt = get_interactive_prompt()
+
+            if interactive_prompt:
+                # Non-blocking interactive prompt via frontend
+                prompt_data = {
+                    "item": {
+                        "name": item['name'],
+                        "sku": item.get('sku', ''),
+                        "quantity": item['quantity']
+                    },
+                    "vehicle_info": vehicle_info,
+                    "available_models": available_models,
+                    "options": [
+                        {"value": "manual", "label": "Fill manually in browser"},
+                        {"value": "retry", "label": "Re-enter vehicle info and retry"},
+                        {"value": "skip", "label": "Skip this item"},
+                        {"value": "cancel", "label": "Cancel order processing"}
+                    ]
+                }
+
+                response_data = interactive_prompt.request_user_input("vehicle_form_failed", prompt_data)
+
+                if not response_data or response_data.get('action') == 'cancel':
+                    print("   ❌ Order processing cancelled.")
+                    return None
+                elif response_data.get('action') == 'skip':
+                    print(f"   ⏭️  Skipping this item")
+                    continue
+                elif response_data.get('action') == 'retry':
+                    # User wants to retry with new vehicle info
+                    new_vehicle_str = response_data.get('vehicle_info')
+                    if new_vehicle_str:
+                        print(f"   🔄 Retrying with new vehicle info: {new_vehicle_str}")
+                        vehicle_info = parse_vehicle_info(new_vehicle_str)
+                        # Try filling the form again with new info
+                        form_filled = fill_vehicle_form(driver, vehicle_info)
+                        if not form_filled:
+                            print(f"   ❌ Still failed to fill vehicle form")
+                            print(f"   ⏭️  Skipping this item")
+                            continue
+                        # If successful, proceed with adding to cart below
+                    else:
+                        print(f"   ⏭️  No vehicle info provided, skipping")
+                        continue
+                elif response_data.get('action') == 'manual':
+                    # User will fill manually
+                    print(f"\n   👉 Please fill the vehicle form manually in the browser window")
+                    print(f"      Then set quantity to {item['quantity']} and click 'Buy Wheels Only'")
+                    # Wait for user to indicate they're done (via another prompt)
+                    confirm_data = {"message": "Click 'Done' once you've added the item to cart"}
+                    confirm_response = interactive_prompt.request_user_input("manual_add_confirmation", confirm_data)
+                    if confirm_response and confirm_response.get('confirmed'):
                         cart_items.append(item)
                         print(f"   ✅ Item marked as added to cart")
-                        break
-                    elif response == '2':
-                        print(f"   ⏭️  Skipping this item")
-                        break
-                    elif response == '3':
-                        print("   ❌ Order processing cancelled.")
-                        return None
+                        continue
                     else:
-                        print("   Invalid option. Please enter 1, 2, or 3")
-                except KeyboardInterrupt:
-                    print("\n\n   ❌ Operation cancelled.")
-                    return None
+                        print(f"   ⏭️  Skipping this item")
+                        continue
+            else:
+                # Fallback to blocking console input (for local testing)
+                print(f"\n   💡 Options:")
+                print(f"      1. Fill the form manually in the browser and add to cart")
+                print(f"      2. Skip this item")
+                print(f"      3. Cancel order processing")
 
-            # If they chose to skip (option 2) or filled manually (option 1), continue to next item
-            if response in ['1', '2']:
+                while True:
+                    try:
+                        response = input(f"\n   Choose option (1/2/3): ").strip()
+                        if response == '1':
+                            print(f"\n   👉 Please fill the vehicle form manually in the browser window")
+                            print(f"      Then set quantity to {item['quantity']} and click 'Buy Wheels Only'")
+                            input(f"\n   Press Enter once you've added the item to cart...")
+                            cart_items.append(item)
+                            print(f"   ✅ Item marked as added to cart")
+                            break
+                        elif response == '2':
+                            print(f"   ⏭️  Skipping this item")
+                            break
+                        elif response == '3':
+                            print("   ❌ Order processing cancelled.")
+                            return None
+                        else:
+                            print("   Invalid option. Please enter 1, 2, or 3")
+                    except KeyboardInterrupt:
+                        print("\n\n   ❌ Operation cancelled.")
+                        return None
+
+                if response in ['1', '2']:
+                    continue
+
+            # After manual add or retry success, check if we should skip to next item
+            if form_filled:
+                # Form was filled (either initially or after retry), proceed with auto add to cart
+                pass
+            else:
+                # Form still not filled, item was handled manually or skipped
                 continue
 
         # Automated filling succeeded - proceed with automatic add to cart

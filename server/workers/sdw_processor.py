@@ -7,6 +7,7 @@ Accepts configuration via command-line arguments and runs SDW automation
 import sys
 import json
 import argparse
+import os
 from pathlib import Path
 
 # Import the non-interactive SDW automation library
@@ -27,8 +28,13 @@ def main():
     parser.add_argument('--quote-link', required=False, help='Quote link (required if mode=quote)')
     parser.add_argument('--selected-items', required=False, help='JSON array of line item IDs to process')
     parser.add_argument('--headless', action='store_true', help='Run browser in headless mode')
+    parser.add_argument('--job-id', required=False, help='Job ID for tracking and interactive prompts')
 
     args = parser.parse_args()
+
+    # Set job_id as environment variable for child modules to access
+    if args.job_id:
+        os.environ['SDW_JOB_ID'] = args.job_id
 
     # Validate
     if args.mode == 'quote' and not args.quote_link:

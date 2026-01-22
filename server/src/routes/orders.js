@@ -720,7 +720,8 @@ async function processSDWInBackground(jobId, config) {
     const args = [
       '--order-number', config.orderNumber,
       '--card', config.card,
-      '--mode', config.mode
+      '--mode', config.mode,
+      '--job-id', jobId
     ];
 
     if (config.vehicleString) {
@@ -751,8 +752,23 @@ async function processSDWInBackground(jobId, config) {
       const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
       for (const line of lines) {
+        // Check for interactive prompt events first
+        if (line.startsWith('[JOB_EVENT]')) {
+          try {
+            const jsonStr = line.substring('[JOB_EVENT]'.length).trim();
+            const event = JSON.parse(jsonStr);
+
+            if (event.event === 'user_input_required') {
+              console.log(`🔔 User input required for job ${jobId}: ${event.prompt_type}`);
+              job.setAwaitingUserInput(event.prompt_type, event.prompt_data);
+              updateJobProgress(jobId, 'Waiting for user input...', 'awaiting_user_input');
+            }
+          } catch (e) {
+            console.error(`❌ Failed to parse JOB_EVENT: ${e.message}`);
+          }
+        }
         // Parse output for progress updates based on actual Python script output
-        if (line.includes('Fetching order')) {
+        else if (line.includes('Fetching order')) {
           updateJobProgress(jobId, 'Fetching order from Shopify...', 'fetching_order');
         } else if (line.includes('Initializing browser')) {
           updateJobProgress(jobId, 'Launching browser automation...', 'launching_browser');
@@ -995,6 +1011,65 @@ router.post('/sdw-job/:jobId/confirm', async (req, res) => {
     console.error('❌ Error confirming SDW purchase:', error);
     res.status(500).json({
       error: 'Failed to confirm purchase',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Submit user input response for interactive prompts
+ */
+router.post('/sdw-job/:jobId/user-input', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const { response } = req.body;
+    const { getJob } = await import('../services/sdwJobManager.js');
+    const job = getJob(jobId);
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    if (job.status !== 'awaiting_user_input') {
+      return res.status(400).json({
+        error: 'Job is not awaiting user input',
+        currentStatus: job.status
+      });
+    }
+
+    console.log(`💬 User input received for job ${jobId}:`, response);
+
+    // Write response file for Python to read
+    const fs = await import('fs').then(m => m.promises);
+    const path = await import('path');
+    const promptDir = path.join(__dirname, '../../workers/job_prompts');
+
+    try {
+      await fs.mkdir(promptDir, { recursive: true });
+      const responseFile = path.join(promptDir, `${jobId}_response.json`);
+      await fs.writeFile(responseFile, JSON.stringify(response, null, 2));
+      console.log(`📝 Created response file: ${responseFile}`);
+
+      // Clear the prompt from job state
+      job.clearUserInputPrompt();
+
+      res.json({
+        success: true,
+        message: 'User response received. Resuming processing...'
+      });
+
+    } catch (err) {
+      console.error('❌ Error creating response file:', err);
+      res.status(500).json({
+        error: 'Failed to save response',
+        message: err.message
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Error handling user input:', error);
+    res.status(500).json({
+      error: 'Failed to process user input',
       message: error.message
     });
   }

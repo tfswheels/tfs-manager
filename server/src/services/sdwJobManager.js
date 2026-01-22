@@ -9,7 +9,7 @@ class SDWJob {
   constructor(jobId, orderNumber) {
     this.jobId = jobId;
     this.orderNumber = orderNumber;
-    this.status = 'pending'; // pending, processing, awaiting_confirmation, completing, completed, failed
+    this.status = 'pending'; // pending, processing, awaiting_confirmation, awaiting_user_input, completing, completed, failed
     this.phase = null; // calculate, purchase
     this.progress = [];
     this.currentStep = null;
@@ -21,6 +21,7 @@ class SDWJob {
     this.orderSummary = null; // Order summary (subtotal, shipping, tax, etc.)
     this.completionData = null; // Success data (invoice number, etc.)
     this.failureData = null; // Failure data (error details)
+    this.userInputPrompt = null; // Interactive prompt data (type, options, context)
     this.createdAt = new Date();
     this.updatedAt = new Date();
   }
@@ -62,6 +63,24 @@ class SDWJob {
     this.addProgress(`Error: ${error}`, 'failed');
   }
 
+  setAwaitingUserInput(promptType, promptData) {
+    this.status = 'awaiting_user_input';
+    this.userInputPrompt = {
+      type: promptType,
+      data: promptData,
+      timestamp: new Date()
+    };
+    this.updatedAt = new Date();
+  }
+
+  clearUserInputPrompt() {
+    this.userInputPrompt = null;
+    if (this.status === 'awaiting_user_input') {
+      this.status = 'processing';
+    }
+    this.updatedAt = new Date();
+  }
+
   getStatus() {
     return {
       jobId: this.jobId,
@@ -78,6 +97,7 @@ class SDWJob {
       orderSummary: this.orderSummary,
       completionData: this.completionData,
       failureData: this.failureData,
+      userInputPrompt: this.userInputPrompt,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt
     };

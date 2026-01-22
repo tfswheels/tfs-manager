@@ -75,6 +75,11 @@ export default function Orders() {
   const [sdwCompletionData, setSdwCompletionData] = useState(null);
   const [sdwFailureData, setSdwFailureData] = useState(null);
 
+  // Interactive Prompts
+  const [userInputPrompt, setUserInputPrompt] = useState(null);
+  const [userInputModalOpen, setUserInputModalOpen] = useState(false);
+  const [userInputResponse, setUserInputResponse] = useState({});
+
   useEffect(() => {
     fetchOrders();
     fetchTemplates();
@@ -231,6 +236,9 @@ export default function Orders() {
       setSdwFailureData(null);
       setProcessingMode('manual');
       setQuoteLink('');
+      setUserInputPrompt(null);
+      setUserInputModalOpen(false);
+      setUserInputResponse({});
 
       const response = await axios.get(`${API_URL}/api/orders/${order.shopify_order_id}/details`, {
         params: {
@@ -268,6 +276,15 @@ export default function Orders() {
       console.log(`[Poll] Status: ${status.status}, Progress count: ${status.progress?.length || 0}`);
       setSdwJobStatus(status.status);
       setSdwProgress(status.progress || []);
+
+      // Check for interactive prompt
+      if (status.status === 'awaiting_user_input' && status.userInputPrompt) {
+        console.log('🔔 User input required:', status.userInputPrompt);
+        setUserInputPrompt(status.userInputPrompt);
+        setUserInputModalOpen(true);
+        // Don't continue polling while waiting for input
+        return;
+      }
 
       // Update order items and summary if available
       if (status.orderItems) {
@@ -391,6 +408,41 @@ export default function Orders() {
       console.error('Error confirming purchase:', err);
       alert(err.response?.data?.message || 'Failed to confirm purchase');
       setProcessingSDW(false);
+    }
+  };
+
+  const handleSubmitUserInput = async (response) => {
+    if (!sdwJobId) return;
+
+    try {
+      console.log('📤 Submitting user input:', response);
+
+      const apiResponse = await axios.post(
+        `${API_URL}/api/orders/sdw-job/${sdwJobId}/user-input`,
+        { response }
+      );
+
+      if (apiResponse.data.success) {
+        console.log('✅ User input submitted successfully');
+
+        // Close the modal
+        setUserInputModalOpen(false);
+        setUserInputPrompt(null);
+        setUserInputResponse({});
+
+        // Add progress message
+        setSdwProgress(prev => [...prev, {
+          message: 'User input received. Resuming processing...',
+          timestamp: new Date()
+        }]);
+
+        // Resume polling
+        setTimeout(() => pollSDWJobStatus(sdwJobId), 500);
+      }
+
+    } catch (err) {
+      console.error('Error submitting user input:', err);
+      alert(err.response?.data?.message || 'Failed to submit response');
     }
   };
 
@@ -1021,7 +1073,7 @@ export default function Orders() {
                         </div>
                       ))}
                     </div>
-                    {processingSDW && sdwJobStatus !== 'awaiting_confirmation' && (
+                    {processingSDW && sdwJobStatus !== 'awaiting_confirmation' && sdwJobStatus !== 'awaiting_user_input' && (
                       <div style={{ textAlign: 'center', padding: '12px 0' }}>
                         <Spinner size="small" />
                       </div>
@@ -1112,6 +1164,114 @@ export default function Orders() {
                         Confirm Purchase
                       </Button>
                     </InlineStack>
+                  </BlockStack>
+                </Card>
+              )}
+
+              {/* Interactive User Input Prompt */}
+              {sdwJobStatus === 'awaiting_user_input' && userInputPrompt && (
+                <Card>
+                  <BlockStack gap="400">
+                    <Text variant="headingMd" as="h3">Action Required</Text>
+
+                    <Banner tone="warning">
+                      <p><strong>User input needed to continue processing</strong></p>
+                    </Banner>
+
+                    {userInputPrompt.type === 'vehicle_form_failed' && (
+                      <div style={{ padding: '16px', background: '#fff4e6', borderRadius: '8px' }}>
+                        <BlockStack gap="300">
+                          <Text variant="headingSm" fontWeight="semibold">Vehicle Form Failed</Text>
+
+                          <Text variant="bodyMd">
+                            The vehicle information could not be filled automatically for: <strong>{userInputPrompt.data.item?.name}</strong>
+                          </Text>
+
+                          {userInputPrompt.data.vehicle_info && (
+                            <div style={{ padding: '12px', background: '#f6f6f7', borderRadius: '4px' }}>
+                              <Text variant="bodySm" tone="subdued">
+                                Current vehicle: {userInputPrompt.data.vehicle_info.year} {userInputPrompt.data.vehicle_info.make} {userInputPrompt.data.vehicle_info.model} {userInputPrompt.data.vehicle_info.trim}
+                              </Text>
+                            </div>
+                          )}
+
+                          {userInputPrompt.data.available_models && userInputPrompt.data.available_models.length > 0 && (
+                            <div style={{ padding: '12px', background: '#f6f6f7', borderRadius: '4px' }}>
+                              <Text variant="bodySm" fontWeight="semibold">Available models:</Text>
+                              <div style={{ marginTop: '8px', maxHeight: '100px', overflowY: 'auto' }}>
+                                <Text variant="bodySm" tone="subdued">
+                                  {userInputPrompt.data.available_models.slice(0, 10).join(', ')}
+                                  {userInputPrompt.data.available_models.length > 10 && '...'}
+                                </Text>
+                              </div>
+                            </div>
+                          )}
+
+                          <Text variant="bodyMd" fontWeight="semibold">What would you like to do?</Text>
+
+                          <BlockStack gap="200">
+                            <Button
+                              onClick={() => {
+                                setUserInputResponse({ action: 'retry' });
+                                const newVehicle = prompt(
+                                  'Enter vehicle info (Year Make Model Trim):',
+                                  userInputPrompt.data.vehicle_info ?
+                                    `${userInputPrompt.data.vehicle_info.year} ${userInputPrompt.data.vehicle_info.make} ${userInputPrompt.data.vehicle_info.model} ${userInputPrompt.data.vehicle_info.trim}` :
+                                    ''
+                                );
+                                if (newVehicle) {
+                                  handleSubmitUserInput({ action: 'retry', vehicle_info: newVehicle });
+                                }
+                              }}
+                            >
+                              Re-enter Vehicle Info and Retry
+                            </Button>
+
+                            <Button
+                              onClick={() => handleSubmitUserInput({ action: 'manual' })}
+                            >
+                              Fill Manually in Browser
+                            </Button>
+
+                            <Button
+                              onClick={() => handleSubmitUserInput({ action: 'skip' })}
+                            >
+                              Skip This Item
+                            </Button>
+
+                            <Button
+                              tone="critical"
+                              onClick={() => handleSubmitUserInput({ action: 'cancel' })}
+                            >
+                              Cancel Order Processing
+                            </Button>
+                          </BlockStack>
+                        </BlockStack>
+                      </div>
+                    )}
+
+                    {userInputPrompt.type === 'manual_add_confirmation' && (
+                      <div style={{ padding: '16px', background: '#e3f2fd', borderRadius: '8px' }}>
+                        <BlockStack gap="300">
+                          <Text variant="bodyMd">{userInputPrompt.data.message}</Text>
+
+                          <InlineStack gap="300">
+                            <Button
+                              primary
+                              onClick={() => handleSubmitUserInput({ confirmed: true })}
+                            >
+                              Done - Item Added to Cart
+                            </Button>
+
+                            <Button
+                              onClick={() => handleSubmitUserInput({ confirmed: false })}
+                            >
+                              Cancel
+                            </Button>
+                          </InlineStack>
+                        </BlockStack>
+                      </div>
+                    )}
                   </BlockStack>
                 </Card>
               )}
