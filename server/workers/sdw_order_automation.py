@@ -2897,20 +2897,18 @@ def process_manual_search(driver, order, card_info, selected_line_items=None):
         driver.get(product_url)
         time.sleep(3)
 
-        # Fill vehicle form
-        form_filled = fill_vehicle_form(driver, vehicle_info)
+        # Check if we have vehicle info to attempt auto-fill
+        form_filled = False
+        if vehicle_info and vehicle_info.get('year'):
+            # Try to fill vehicle form automatically
+            form_filled = fill_vehicle_form(driver, vehicle_info)
+        else:
+            print(f"   ℹ️  No vehicle info provided, offering interactive form...")
 
+        # If auto-fill failed or no vehicle info, offer interactive form
         if not form_filled:
-            print(f"   ❌ Failed to fill vehicle form automatically")
-
-            # Try to get available models for better user experience
-            available_models = []
-            try:
-                model_select_elem = driver.find_element(By.ID, "model")
-                model_select = Select(model_select_elem)
-                available_models = [opt.text for opt in model_select.options if opt.text != "Vehicle Model"]
-            except:
-                pass
+            if vehicle_info and vehicle_info.get('year'):
+                print(f"   ❌ Failed to fill vehicle form automatically")
 
             # Get interactive prompt handler
             interactive_prompt = get_interactive_prompt()
@@ -2923,15 +2921,13 @@ def process_manual_search(driver, order, card_info, selected_line_items=None):
                         "sku": item.get('sku', ''),
                         "quantity": item['quantity']
                     },
-                    "vehicle_info": vehicle_info,
-                    "available_models": available_models,
                     "options": [
                         {"value": "interactive_form", "label": "Interactive Vehicle Info Form"},
                         {"value": "cancel", "label": "Cancel order processing"}
                     ]
                 }
 
-                response_data = interactive_prompt.request_user_input("vehicle_form_failed", prompt_data)
+                response_data = interactive_prompt.request_user_input("vehicle_form_needed", prompt_data)
 
                 if not response_data or response_data.get('action') == 'cancel':
                     print("   ❌ Order processing cancelled.")

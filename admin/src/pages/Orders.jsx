@@ -1178,34 +1178,14 @@ export default function Orders() {
                       <p><strong>User input needed to continue processing</strong></p>
                     </Banner>
 
-                    {userInputPrompt.type === 'vehicle_form_failed' && (
-                      <div style={{ padding: '16px', background: '#fff4e6', borderRadius: '8px' }}>
+                    {userInputPrompt.type === 'vehicle_form_needed' && (
+                      <div style={{ padding: '16px', background: '#e3f2fd', borderRadius: '8px' }}>
                         <BlockStack gap="300">
-                          <Text variant="headingSm" fontWeight="semibold">Vehicle Form Failed</Text>
+                          <Text variant="headingSm" fontWeight="semibold">Vehicle Information Required</Text>
 
                           <Text variant="bodyMd">
-                            The vehicle information could not be filled automatically for: <strong>{userInputPrompt.data.item?.name}</strong>
+                            Please fill vehicle information for: <strong>{userInputPrompt.data.item?.name}</strong>
                           </Text>
-
-                          {userInputPrompt.data.vehicle_info && (
-                            <div style={{ padding: '12px', background: '#f6f6f7', borderRadius: '4px' }}>
-                              <Text variant="bodySm" tone="subdued">
-                                Current vehicle: {userInputPrompt.data.vehicle_info.year} {userInputPrompt.data.vehicle_info.make} {userInputPrompt.data.vehicle_info.model} {userInputPrompt.data.vehicle_info.trim}
-                              </Text>
-                            </div>
-                          )}
-
-                          {userInputPrompt.data.available_models && userInputPrompt.data.available_models.length > 0 && (
-                            <div style={{ padding: '12px', background: '#f6f6f7', borderRadius: '4px' }}>
-                              <Text variant="bodySm" fontWeight="semibold">Available models:</Text>
-                              <div style={{ marginTop: '8px', maxHeight: '100px', overflowY: 'auto' }}>
-                                <Text variant="bodySm" tone="subdued">
-                                  {userInputPrompt.data.available_models.slice(0, 10).join(', ')}
-                                  {userInputPrompt.data.available_models.length > 10 && '...'}
-                                </Text>
-                              </div>
-                            </div>
-                          )}
 
                           <Text variant="bodyMd" fontWeight="semibold">What would you like to do?</Text>
 
