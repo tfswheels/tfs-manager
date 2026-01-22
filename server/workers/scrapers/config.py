@@ -76,11 +76,17 @@ if '--no-discovery' in sys.argv:
     ENABLE_PRODUCT_DISCOVERY = False
 if '--no-shopify-sync' in sys.argv:
     ENABLE_SHOPIFY_SYNC = False
+if '--no-zenrows' in sys.argv:
+    USE_ZENROWS = False
 
 # Override from environment variables (from Node.js backend)
 if os.environ.get('MAX_PRODUCTS_PER_DAY'):
     MAX_PRODUCTS_PER_DAY = int(os.environ.get('MAX_PRODUCTS_PER_DAY'))
     logger.info(f"📊 MAX_PRODUCTS_PER_DAY overridden from env var: {MAX_PRODUCTS_PER_DAY}")
+
+if os.environ.get('BACKORDER_COUNT'):
+    MAX_CONSECUTIVE_NON_IN_STOCK = int(os.environ.get('BACKORDER_COUNT'))
+    logger.info(f"🛑 BACKORDER_COUNT overridden from env var: {MAX_CONSECUTIVE_NON_IN_STOCK}")
 
 # =============================================================================
 # SCRAPING SETTINGS
@@ -88,8 +94,9 @@ if os.environ.get('MAX_PRODUCTS_PER_DAY'):
 
 CONCURRENT_PAGE_WORKERS = 20
 BATCH_SIZE = 100
-MAX_CONSECUTIVE_NON_IN_STOCK = 30
+MAX_CONSECUTIVE_NON_IN_STOCK = int(os.environ.get('BACKORDER_COUNT', '30'))
 IN_STOCK_QUANTITY = 131
+USE_ZENROWS = True  # Default to using ZenRows
 
 # =============================================================================
 # PRODUCT DISCOVERY SETTINGS
@@ -239,6 +246,8 @@ logger.info(f"Resume: {RESUME_FROM_CHECKPOINT}")
 logger.info(f"Sale Only: {SALE_ONLY}")
 logger.info(f"Product Discovery: {ENABLE_PRODUCT_DISCOVERY}")
 logger.info(f"Shopify Sync: {ENABLE_SHOPIFY_SYNC}")
+logger.info(f"Use ZenRows: {USE_ZENROWS}")
 logger.info(f"Max Products/Day: {MAX_PRODUCTS_PER_DAY}")
+logger.info(f"Backorder Count: {MAX_CONSECUTIVE_NON_IN_STOCK}")
 logger.info(f"Retry Failed: {RETRY_FAILED_PRODUCTS}")
 logger.info("=" * 80)
