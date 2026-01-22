@@ -556,9 +556,6 @@ def fill_vehicle_form_interactive(driver, item_info):
         # Process each field dynamically
         for field in vehicle_fields:
             try:
-                # Check if field exists
-                select_elem = driver.find_element(By.ID, field["id"])
-
                 # Wait for dropdown to have real options loaded
                 print(f"   ⏳ Waiting for {field['label'].lower()} dropdown to load...")
                 time.sleep(2)  # Initial wait for AJAX
@@ -570,8 +567,11 @@ def fill_vehicle_form_interactive(driver, item_info):
                         lambda d: len(d.find_element(By.ID, field["id"]).find_elements(By.TAG_NAME, "option")) > 1
                     )
 
-                    # Get available options
+                    # Re-find element AFTER wait to avoid stale element reference
+                    select_elem = driver.find_element(By.ID, field["id"])
                     select_obj = Select(select_elem)
+
+                    # Get available options
                     for opt in select_obj.options:
                         opt_text = opt.text.strip()
                         opt_value = opt.get_attribute('value')

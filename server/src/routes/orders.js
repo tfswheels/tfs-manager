@@ -1048,7 +1048,6 @@ router.post('/sdw-job/:jobId/user-input', async (req, res) => {
       await fs.mkdir(promptDir, { recursive: true });
       const responseFile = path.join(promptDir, `${jobId}_response.json`);
       await fs.writeFile(responseFile, JSON.stringify(response, null, 2));
-      console.log(`📝 Created response file: ${responseFile}`);
 
       // Clear the prompt from job state
       job.clearUserInputPrompt();
@@ -1059,7 +1058,6 @@ router.post('/sdw-job/:jobId/user-input', async (req, res) => {
       });
 
     } catch (err) {
-      console.error('❌ Error creating response file:', err);
       res.status(500).json({
         error: 'Failed to save response',
         message: err.message
