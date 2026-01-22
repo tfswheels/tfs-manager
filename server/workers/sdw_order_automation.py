@@ -530,6 +530,172 @@ def search_product_on_sdw(driver, part_number, url_part_number, product_type):
         return None
 
 
+def fill_vehicle_form_interactive(driver, item_info):
+    """
+    Fill vehicle form interactively by prompting user for each field step-by-step.
+    Returns True if successful, False otherwise
+    """
+    interactive_prompt = get_interactive_prompt()
+    if not interactive_prompt:
+        print("   ⚠️  Interactive mode not available")
+        return False
+
+    current_selections = {}
+
+    try:
+        # Step 1: Get and select Year
+        print("   📅 Getting available years...")
+        year_select_elem = driver.find_element(By.ID, "year")
+        year_select = Select(year_select_elem)
+        available_years = [opt.text for opt in year_select.options if opt.text != "Vehicle Year"]
+
+        prompt_data = {
+            "item": item_info,
+            "current_selections": current_selections,
+            "available_options": available_years
+        }
+
+        response = interactive_prompt.request_user_input("vehicle_year_selection", prompt_data)
+        if not response or response.get('action') == 'cancel':
+            print("   ❌ User cancelled")
+            return False
+
+        selected_year = response.get('selected_text')
+        selected_year_value = response.get('selected_value')
+        current_selections['year'] = selected_year
+
+        # Fill year in form
+        print(f"   📅 Filling year: {selected_year}")
+        year_js_set = f"""
+        var select = document.getElementById('year');
+        if (select) {{
+            select.value = '{selected_year_value}';
+            select.dispatchEvent(new Event('change', {{bubbles: true}}));
+            select.dispatchEvent(new Event('blur', {{bubbles: true}}));
+        }}
+        """
+        driver.execute_script(year_js_set)
+        time.sleep(2)  # Wait for make dropdown to load
+
+        # Step 2: Get and select Make
+        print("   🚗 Getting available makes...")
+        make_select_elem = driver.find_element(By.ID, "make")
+        make_select = Select(make_select_elem)
+        available_makes = [{"text": opt.text, "value": opt.get_attribute('value')}
+                          for opt in make_select.options if opt.text != "Vehicle Make"]
+
+        prompt_data = {
+            "item": item_info,
+            "current_selections": current_selections,
+            "available_options": available_makes
+        }
+
+        response = interactive_prompt.request_user_input("vehicle_make_selection", prompt_data)
+        if not response or response.get('action') == 'cancel':
+            print("   ❌ User cancelled")
+            return False
+
+        selected_make = response.get('selected_text')
+        selected_make_value = response.get('selected_value')
+        current_selections['make'] = selected_make
+
+        # Fill make in form
+        print(f"   🚗 Filling make: {selected_make}")
+        make_js_set = f"""
+        var select = document.getElementById('make');
+        if (select) {{
+            select.value = '{selected_make_value}';
+            select.dispatchEvent(new Event('change', {{bubbles: true}}));
+            select.dispatchEvent(new Event('blur', {{bubbles: true}}));
+        }}
+        """
+        driver.execute_script(make_js_set)
+        time.sleep(2)  # Wait for model dropdown to load
+
+        # Step 3: Get and select Model
+        print("   🚙 Getting available models...")
+        model_select_elem = driver.find_element(By.ID, "model")
+        model_select = Select(model_select_elem)
+        available_models = [{"text": opt.text, "value": opt.get_attribute('value')}
+                           for opt in model_select.options if opt.text != "Vehicle Model"]
+
+        prompt_data = {
+            "item": item_info,
+            "current_selections": current_selections,
+            "available_options": available_models
+        }
+
+        response = interactive_prompt.request_user_input("vehicle_model_selection", prompt_data)
+        if not response or response.get('action') == 'cancel':
+            print("   ❌ User cancelled")
+            return False
+
+        selected_model = response.get('selected_text')
+        selected_model_value = response.get('selected_value')
+        current_selections['model'] = selected_model
+
+        # Fill model in form
+        print(f"   🚙 Filling model: {selected_model}")
+        model_js_set = f"""
+        var select = document.getElementById('model');
+        if (select) {{
+            select.value = '{selected_model_value}';
+            select.dispatchEvent(new Event('change', {{bubbles: true}}));
+            select.dispatchEvent(new Event('blur', {{bubbles: true}}));
+        }}
+        """
+        driver.execute_script(model_js_set)
+        time.sleep(2)  # Wait for trim dropdown to load (if exists)
+
+        # Step 4: Check if trim dropdown exists and fill if needed
+        try:
+            trim_select_elem = driver.find_element(By.ID, "trim")
+            trim_select = Select(trim_select_elem)
+            available_trims = [{"text": opt.text, "value": opt.get_attribute('value')}
+                              for opt in trim_select.options if opt.text != "Vehicle Trim"]
+
+            if available_trims:
+                print("   ✨ Getting available trims...")
+                prompt_data = {
+                    "item": item_info,
+                    "current_selections": current_selections,
+                    "available_options": available_trims
+                }
+
+                response = interactive_prompt.request_user_input("vehicle_trim_selection", prompt_data)
+                if not response or response.get('action') == 'cancel':
+                    print("   ❌ User cancelled")
+                    return False
+
+                selected_trim = response.get('selected_text')
+                selected_trim_value = response.get('selected_value')
+                current_selections['trim'] = selected_trim
+
+                # Fill trim in form
+                print(f"   ✨ Filling trim: {selected_trim}")
+                trim_js_set = f"""
+                var select = document.getElementById('trim');
+                if (select) {{
+                    select.value = '{selected_trim_value}';
+                    select.dispatchEvent(new Event('change', {{bubbles: true}}));
+                    select.dispatchEvent(new Event('blur', {{bubbles: true}}));
+                }}
+                """
+                driver.execute_script(trim_js_set)
+                time.sleep(1)
+        except NoSuchElementException:
+            print("   ℹ️  No trim dropdown found, skipping...")
+
+        print("   ✅ Interactive vehicle form filled successfully!")
+        return True
+
+    except Exception as e:
+        print(f"   ❌ Error in interactive form filling: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def fill_vehicle_form(driver, vehicle_info):
     """
     Fill the vehicle form on SDW product page using human-like interactions
@@ -2841,39 +3007,20 @@ def process_manual_search(driver, order, card_info, selected_line_items=None):
                 if not response_data or response_data.get('action') == 'cancel':
                     print("   ❌ Order processing cancelled.")
                     return None
-                elif response_data.get('action') == 'skip':
-                    print(f"   ⏭️  Skipping this item")
-                    continue
-                elif response_data.get('action') == 'retry':
-                    # User wants to retry with new vehicle info
-                    new_vehicle_str = response_data.get('vehicle_info')
-                    if new_vehicle_str:
-                        print(f"   🔄 Retrying with new vehicle info: {new_vehicle_str}")
-                        vehicle_info = parse_vehicle_info(new_vehicle_str)
-                        # Try filling the form again with new info
-                        form_filled = fill_vehicle_form(driver, vehicle_info)
-                        if not form_filled:
-                            print(f"   ❌ Still failed to fill vehicle form")
-                            print(f"   ⏭️  Skipping this item")
-                            continue
-                        # If successful, proceed with adding to cart below
-                    else:
-                        print(f"   ⏭️  No vehicle info provided, skipping")
-                        continue
-                elif response_data.get('action') == 'manual':
-                    # User will fill manually
-                    print(f"\n   👉 Please fill the vehicle form manually in the browser window")
-                    print(f"      Then set quantity to {item['quantity']} and click 'Buy Wheels Only'")
-                    # Wait for user to indicate they're done (via another prompt)
-                    confirm_data = {"message": "Click 'Done' once you've added the item to cart"}
-                    confirm_response = interactive_prompt.request_user_input("manual_add_confirmation", confirm_data)
-                    if confirm_response and confirm_response.get('confirmed'):
-                        cart_items.append(item)
-                        print(f"   ✅ Item marked as added to cart")
-                        continue
-                    else:
+                elif response_data.get('action') == 'interactive_form':
+                    # User wants to fill form interactively step-by-step
+                    print(f"   🎯 Starting interactive vehicle form...")
+                    item_info = {
+                        "name": item['name'],
+                        "sku": item.get('sku', ''),
+                        "quantity": item['quantity']
+                    }
+                    form_filled = fill_vehicle_form_interactive(driver, item_info)
+                    if not form_filled:
+                        print(f"   ❌ Interactive form filling failed or was cancelled")
                         print(f"   ⏭️  Skipping this item")
                         continue
+                    # If successful, proceed with adding to cart below
             else:
                 # Fallback to blocking console input (for local testing)
                 print(f"\n   💡 Options:")

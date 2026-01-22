@@ -274,23 +274,16 @@ export default function Orders() {
       const status = response.data;
 
       console.log(`[Poll] Status: ${status.status}, Progress count: ${status.progress?.length || 0}`);
-      console.log('[Poll] Full status object:', status);
-      console.log('[Poll] userInputPrompt:', status.userInputPrompt);
-
       setSdwJobStatus(status.status);
       setSdwProgress(status.progress || []);
 
       // Check for interactive prompt
       if (status.status === 'awaiting_user_input' && status.userInputPrompt) {
-        console.log('🔔 User input required:', status.userInputPrompt);
-        console.log('🔔 Setting userInputPrompt state...');
+        console.log('🔔 User input required:', status.userInputPrompt.type);
         setUserInputPrompt(status.userInputPrompt);
         setUserInputModalOpen(true);
-        console.log('🔔 States set, returning early from poll');
         // Don't continue polling while waiting for input
         return;
-      } else if (status.status === 'awaiting_user_input') {
-        console.log('⚠️  Status is awaiting_user_input but userInputPrompt is missing!');
       }
 
       // Update order items and summary if available
@@ -1176,14 +1169,6 @@ export default function Orders() {
               )}
 
               {/* Interactive User Input Prompt */}
-              {(() => {
-                console.log('[Render] Checking interactive prompt conditions:', {
-                  sdwJobStatus,
-                  userInputPrompt,
-                  shouldShow: sdwJobStatus === 'awaiting_user_input' && userInputPrompt
-                });
-                return null;
-              })()}
               {sdwJobStatus === 'awaiting_user_input' && userInputPrompt && (
                 <Card>
                   <BlockStack gap="400">
@@ -1226,32 +1211,10 @@ export default function Orders() {
 
                           <BlockStack gap="200">
                             <Button
-                              onClick={() => {
-                                setUserInputResponse({ action: 'retry' });
-                                const newVehicle = prompt(
-                                  'Enter vehicle info (Year Make Model Trim):',
-                                  userInputPrompt.data.vehicle_info ?
-                                    `${userInputPrompt.data.vehicle_info.year} ${userInputPrompt.data.vehicle_info.make} ${userInputPrompt.data.vehicle_info.model} ${userInputPrompt.data.vehicle_info.trim}` :
-                                    ''
-                                );
-                                if (newVehicle) {
-                                  handleSubmitUserInput({ action: 'retry', vehicle_info: newVehicle });
-                                }
-                              }}
+                              primary
+                              onClick={() => handleSubmitUserInput({ action: 'interactive_form' })}
                             >
-                              Re-enter Vehicle Info and Retry
-                            </Button>
-
-                            <Button
-                              onClick={() => handleSubmitUserInput({ action: 'manual' })}
-                            >
-                              Fill Manually in Browser
-                            </Button>
-
-                            <Button
-                              onClick={() => handleSubmitUserInput({ action: 'skip' })}
-                            >
-                              Skip This Item
+                              Interactive Vehicle Info Form
                             </Button>
 
                             <Button
@@ -1261,6 +1224,72 @@ export default function Orders() {
                               Cancel Order Processing
                             </Button>
                           </BlockStack>
+                        </BlockStack>
+                      </div>
+                    )}
+
+                    {(userInputPrompt.type === 'vehicle_year_selection' ||
+                      userInputPrompt.type === 'vehicle_make_selection' ||
+                      userInputPrompt.type === 'vehicle_model_selection' ||
+                      userInputPrompt.type === 'vehicle_trim_selection') && (
+                      <div style={{ padding: '16px', background: '#e3f2fd', borderRadius: '8px' }}>
+                        <BlockStack gap="300">
+                          <Text variant="headingSm" fontWeight="semibold">
+                            {userInputPrompt.type === 'vehicle_year_selection' && 'Select Vehicle Year'}
+                            {userInputPrompt.type === 'vehicle_make_selection' && 'Select Vehicle Make'}
+                            {userInputPrompt.type === 'vehicle_model_selection' && 'Select Vehicle Model'}
+                            {userInputPrompt.type === 'vehicle_trim_selection' && 'Select Vehicle Trim'}
+                          </Text>
+
+                          {userInputPrompt.data.item && (
+                            <Text variant="bodyMd" tone="subdued">
+                              For: <strong>{userInputPrompt.data.item.name}</strong>
+                            </Text>
+                          )}
+
+                          {userInputPrompt.data.current_selections && (
+                            <div style={{ padding: '12px', background: '#f6f6f7', borderRadius: '4px' }}>
+                              <Text variant="bodySm" fontWeight="semibold">Current selections:</Text>
+                              <div style={{ marginTop: '4px' }}>
+                                {userInputPrompt.data.current_selections.year && (
+                                  <Text variant="bodySm">Year: {userInputPrompt.data.current_selections.year}</Text>
+                                )}
+                                {userInputPrompt.data.current_selections.make && (
+                                  <Text variant="bodySm">Make: {userInputPrompt.data.current_selections.make}</Text>
+                                )}
+                                {userInputPrompt.data.current_selections.model && (
+                                  <Text variant="bodySm">Model: {userInputPrompt.data.current_selections.model}</Text>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {userInputPrompt.data.available_options && (
+                            <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                              <BlockStack gap="200">
+                                {userInputPrompt.data.available_options.map((option, idx) => (
+                                  <Button
+                                    key={idx}
+                                    onClick={() => handleSubmitUserInput({
+                                      selected_value: option.value || option,
+                                      selected_text: option.text || option
+                                    })}
+                                    fullWidth
+                                    textAlign="start"
+                                  >
+                                    {option.text || option}
+                                  </Button>
+                                ))}
+                              </BlockStack>
+                            </div>
+                          )}
+
+                          <Button
+                            tone="critical"
+                            onClick={() => handleSubmitUserInput({ action: 'cancel' })}
+                          >
+                            Cancel
+                          </Button>
                         </BlockStack>
                       </div>
                     )}
