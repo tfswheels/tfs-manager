@@ -3,6 +3,7 @@ import {
   Page,
   Tabs
 } from '@shopify/polaris';
+import ManualScrapingTab from '../components/ManualScrapingTab';
 import ScheduledScrapingTab from '../components/ScheduledScrapingTab';
 import ProductCreationTab from '../components/ProductCreationTab';
 
@@ -10,6 +11,11 @@ export default function Products() {
   const [selectedTab, setSelectedTab] = useState(0);
 
   const tabs = [
+    {
+      id: 'manual-scraping',
+      content: 'Manual Scraping',
+      panelID: 'manual-scraping-panel'
+    },
     {
       id: 'scheduled-scraping',
       content: 'Scheduled Scraping',
@@ -28,8 +34,9 @@ export default function Products() {
       subtitle="Automated scraping and product creation management"
     >
       <Tabs tabs={tabs} selected={selectedTab} onSelect={setSelectedTab}>
-        {selectedTab === 0 && <ScheduledScrapingTab />}
-        {selectedTab === 1 && <ProductCreationTab />}
+        {selectedTab === 0 && <ManualScrapingTab />}
+        {selectedTab === 1 && <ScheduledScrapingTab />}
+        {selectedTab === 2 && <ProductCreationTab />}
       </Tabs>
     </Page>
   );

@@ -37,6 +37,8 @@ export default function ScheduledScrapingTab() {
   const [interval, setInterval] = useState('24');
   const [saleOnly, setSaleOnly] = useState(false);
   const [specificBrands, setSpecificBrands] = useState('');
+  const [enableDiscovery, setEnableDiscovery] = useState(true);
+  const [maxProducts, setMaxProducts] = useState('1000');
 
   useEffect(() => {
     fetchScheduledJobs();
@@ -60,6 +62,8 @@ export default function ScheduledScrapingTab() {
     setInterval('24');
     setSaleOnly(false);
     setSpecificBrands('');
+    setEnableDiscovery(true);
+    setMaxProducts('1000');
     setModalOpen(true);
   };
 
@@ -70,6 +74,8 @@ export default function ScheduledScrapingTab() {
     setInterval(job.schedule_interval.toString());
     setSaleOnly(job.config?.saleOnly || false);
     setSpecificBrands(job.config?.specificBrands?.join(', ') || '');
+    setEnableDiscovery(job.config?.enableDiscovery !== false);
+    setMaxProducts((job.config?.maxProductsPerDay || 1000).toString());
     setModalOpen(true);
   };
 
@@ -77,9 +83,10 @@ export default function ScheduledScrapingTab() {
     try {
       const config = {
         headless: true,
-        enableDiscovery: true,
+        enableDiscovery,
         enableShopifySync: false, // Always false for scheduled jobs
         saleOnly,
+        maxProductsPerDay: parseInt(maxProducts) || 1000,
         specificBrands: specificBrands ? specificBrands.split(',').map(b => b.trim()) : []
       };
 
@@ -244,9 +251,24 @@ export default function ScheduledScrapingTab() {
             />
 
             <Checkbox
+              label="Enable product discovery (find new products)"
+              checked={enableDiscovery}
+              onChange={setEnableDiscovery}
+            />
+
+            <Checkbox
               label="Sale items only"
               checked={saleOnly}
               onChange={setSaleOnly}
+            />
+
+            <TextField
+              label="Max products to scrape"
+              type="number"
+              value={maxProducts}
+              onChange={setMaxProducts}
+              autoComplete="off"
+              helpText="Maximum products to process per run"
             />
 
             <TextField
