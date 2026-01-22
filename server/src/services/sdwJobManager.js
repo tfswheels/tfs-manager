@@ -9,7 +9,7 @@ class SDWJob {
   constructor(jobId, orderNumber) {
     this.jobId = jobId;
     this.orderNumber = orderNumber;
-    this.status = 'pending'; // pending, processing, awaiting_confirmation, awaiting_user_input, completing, completed, failed
+    this.status = 'pending'; // pending, processing, awaiting_confirmation, awaiting_user_input, completing, completed, failed, cancelled
     this.phase = null; // calculate, purchase
     this.progress = [];
     this.currentStep = null;
@@ -22,6 +22,7 @@ class SDWJob {
     this.completionData = null; // Success data (invoice number, etc.)
     this.failureData = null; // Failure data (error details)
     this.userInputPrompt = null; // Interactive prompt data (type, options, context)
+    this.pythonProcess = null; // Reference to Python process for cancellation
     this.createdAt = new Date();
     this.updatedAt = new Date();
   }
@@ -79,6 +80,16 @@ class SDWJob {
       this.status = 'processing';
     }
     this.updatedAt = new Date();
+  }
+
+  cancel() {
+    // Kill the Python process if it's running
+    if (this.pythonProcess && !this.pythonProcess.killed) {
+      this.pythonProcess.kill('SIGTERM');
+    }
+
+    this.status = 'cancelled';
+    this.addProgress('Processing cancelled by user', 'cancelled');
   }
 
   getStatus() {

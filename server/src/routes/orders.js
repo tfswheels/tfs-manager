@@ -743,6 +743,9 @@ async function processSDWInBackground(jobId, config) {
       cwd: path.join(__dirname, '../../workers')
     });
 
+    // Store process reference for cancellation
+    job.pythonProcess = pythonProcess;
+
     // Capture output and update progress
     pythonProcess.stdout.on('data', (data) => {
       const text = data.toString().trim();
@@ -1068,6 +1071,39 @@ router.post('/sdw-job/:jobId/user-input', async (req, res) => {
     console.error('❌ Error handling user input:', error);
     res.status(500).json({
       error: 'Failed to process user input',
+      message: error.message
+    });
+  }
+});
+
+// Cancel SDW job processing
+router.post('/sdw-job/:jobId/cancel', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const job = getJob(jobId);
+
+    if (!job) {
+      return res.status(404).json({
+        error: 'Job not found',
+        message: `Job ${jobId} does not exist`
+      });
+    }
+
+    // Cancel the job
+    job.cancel();
+
+    console.log(`❌ Job ${jobId} cancelled by user`);
+
+    res.json({
+      success: true,
+      message: 'Job cancelled successfully',
+      status: job.getStatus()
+    });
+
+  } catch (error) {
+    console.error('❌ Error cancelling job:', error);
+    res.status(500).json({
+      error: 'Failed to cancel job',
       message: error.message
     });
   }
