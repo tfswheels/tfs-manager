@@ -872,7 +872,8 @@ async function processSDWInBackground(jobId, config) {
     });
 
     pythonProcess.on('close', (code) => {
-      if (code !== 0 && job.status !== 'awaiting_confirmation') {
+      // Don't mark as failed if job was cancelled by user or is awaiting confirmation
+      if (code !== 0 && job.status !== 'awaiting_confirmation' && job.status !== 'cancelled') {
         job.setFailed(`Process exited with code ${code}`);
       }
       console.log(`✅ Job ${jobId} Python process exited with code ${code}`);

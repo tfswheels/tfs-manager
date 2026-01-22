@@ -487,8 +487,9 @@ function OrderDetails() {
               <BlockStack gap="300">
                 {order.line_items && order.line_items.map((item, index) => {
                   // Check if item should be skipped (installation kits, shipping protection, hub centric rings, accessories)
-                  const isSkipItem = ['shipping protection', 'installation kit', 'hub centric', 'accessories']
-                    .some(keyword => item.name.toLowerCase().includes(keyword));
+                  const isSkipItem = ['shipping protection', 'installation kit', 'hub centric']
+                    .some(keyword => item.name.toLowerCase().includes(keyword)) ||
+                    (item.product_type && item.product_type.toLowerCase() === 'accessories');
 
                   // Check if item is removed/cancelled (fulfillable_quantity = 0 or less than quantity)
                   const isRemoved = item.fulfillable_quantity === 0 ||
