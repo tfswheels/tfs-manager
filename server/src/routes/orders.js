@@ -541,9 +541,9 @@ router.get('/:shopifyOrderId/details', async (req, res) => {
 
     console.log(`📋 Fetching order details for ${shopifyOrderId}...`);
 
-    // Get access token
+    // Get shop ID and access token
     const [rows] = await db.execute(
-      'SELECT access_token FROM shops WHERE shop_name = ?',
+      'SELECT id, access_token FROM shops WHERE shop_name = ?',
       [shop]
     );
 
@@ -554,6 +554,7 @@ router.get('/:shopifyOrderId/details', async (req, res) => {
     }
 
     const accessToken = rows[0].access_token;
+    const shopId = rows[0].id;
 
     // Fetch full order details from Shopify using REST API
     const client = new shopify.clients.Rest({
@@ -570,6 +571,23 @@ router.get('/:shopifyOrderId/details', async (req, res) => {
     const order = response.body.order;
 
     console.log(`✅ Retrieved order ${order.name} with ${order.line_items?.length || 0} items`);
+
+    // Fetch vehicle info from database
+    const [dbOrders] = await db.execute(
+      `SELECT vehicle_year, vehicle_make, vehicle_model, vehicle_trim, vehicle_info_notes
+       FROM orders
+       WHERE shopify_order_id = ? AND shop_id = ?`,
+      [shopifyOrderId, shopId]
+    );
+
+    // Merge vehicle info from database into order object
+    if (dbOrders.length > 0) {
+      order.vehicle_year = dbOrders[0].vehicle_year;
+      order.vehicle_make = dbOrders[0].vehicle_make;
+      order.vehicle_model = dbOrders[0].vehicle_model;
+      order.vehicle_trim = dbOrders[0].vehicle_trim;
+      order.vehicle_info_notes = dbOrders[0].vehicle_info_notes;
+    }
 
     res.json({
       success: true,

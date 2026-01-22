@@ -12,7 +12,9 @@ import {
   Badge,
   Select,
   TextField,
-  Checkbox
+  Checkbox,
+  Divider,
+  Box
 } from '@shopify/polaris';
 import axios from 'axios';
 
@@ -334,168 +336,215 @@ function OrderDetails() {
 
   return (
     <Page
-      title={`Order #${order.order_number}`}
+      title={`Order ${order.name}`}
       backAction={{ content: 'Orders', onAction: () => navigate('/') }}
       subtitle={`${order.customer?.first_name || ''} ${order.customer?.last_name || ''}`}
     >
-      <BlockStack gap="400">
+      <BlockStack gap="500">
         {/* Order Info Card */}
         <Card>
-          <BlockStack gap="300">
-            <Text variant="headingMd" as="h2">Order Information</Text>
-            <InlineStack gap="400">
-              <div>
-                <Text variant="bodySm" tone="subdued">Order Number</Text>
-                <Text variant="bodyMd" fontWeight="bold">{order.order_number}</Text>
-              </div>
-              <div>
-                <Text variant="bodySm" tone="subdued">Created</Text>
-                <Text variant="bodyMd">{new Date(order.created_at).toLocaleDateString()}</Text>
-              </div>
-              <div>
-                <Text variant="bodySm" tone="subdued">Total</Text>
-                <Text variant="bodyMd" fontWeight="bold">${order.total_price}</Text>
-              </div>
-            </InlineStack>
-          </BlockStack>
+          <Box padding="400">
+            <BlockStack gap="400">
+              <Text variant="headingMd" as="h2">Order Information</Text>
+              <InlineStack gap="600" wrap={false}>
+                <Box minWidth="200px">
+                  <BlockStack gap="100">
+                    <Text variant="bodySm" tone="subdued">Order Number</Text>
+                    <Text variant="headingSm" fontWeight="bold">{order.name}</Text>
+                  </BlockStack>
+                </Box>
+                <Box minWidth="150px">
+                  <BlockStack gap="100">
+                    <Text variant="bodySm" tone="subdued">Created</Text>
+                    <Text variant="bodyMd">{new Date(order.created_at).toLocaleDateString()}</Text>
+                  </BlockStack>
+                </Box>
+                <Box minWidth="120px">
+                  <BlockStack gap="100">
+                    <Text variant="bodySm" tone="subdued">Total</Text>
+                    <Text variant="headingSm" fontWeight="bold">${order.total_price}</Text>
+                  </BlockStack>
+                </Box>
+              </InlineStack>
+            </BlockStack>
+          </Box>
         </Card>
 
         {/* Line Items Card */}
         <Card>
-          <BlockStack gap="300">
-            <Text variant="headingMd" as="h2">Line Items</Text>
-            {order.line_items && order.line_items.map((item) => (
-              <div key={item.id} style={{ padding: '12px', background: '#f6f6f7', borderRadius: '8px' }}>
-                <InlineStack align="space-between">
-                  <BlockStack gap="100">
-                    <Text variant="bodyMd" fontWeight="semibold">{item.name}</Text>
-                    <Text variant="bodySm" tone="subdued">SKU: {item.sku} | Qty: {item.quantity}</Text>
-                  </BlockStack>
-                  <Checkbox
-                    label="Process"
-                    checked={selectedLineItems.includes(item.id)}
-                    onChange={(checked) => {
-                      if (checked) {
-                        setSelectedLineItems([...selectedLineItems, item.id]);
-                      } else {
-                        setSelectedLineItems(selectedLineItems.filter(id => id !== item.id));
-                      }
-                    }}
-                  />
-                </InlineStack>
-              </div>
-            ))}
-          </BlockStack>
+          <Box padding="400">
+            <BlockStack gap="400">
+              <Text variant="headingMd" as="h2">Line Items</Text>
+              <BlockStack gap="300">
+                {order.line_items && order.line_items.map((item, index) => (
+                  <div key={item.id}>
+                    {index > 0 && <Divider />}
+                    <Box paddingBlock="300">
+                      <InlineStack gap="400" blockAlign="center">
+                        <Checkbox
+                          label=""
+                          checked={selectedLineItems.includes(item.id)}
+                          onChange={(checked) => {
+                            if (checked) {
+                              setSelectedLineItems([...selectedLineItems, item.id]);
+                            } else {
+                              setSelectedLineItems(selectedLineItems.filter(id => id !== item.id));
+                            }
+                          }}
+                        />
+                        <BlockStack gap="200">
+                          <Text variant="bodyLg" fontWeight="semibold">{item.name}</Text>
+                          <InlineStack gap="300">
+                            <Text variant="bodySm" tone="subdued">SKU: {item.sku}</Text>
+                            <Text variant="bodySm" tone="subdued">•</Text>
+                            <Text variant="bodySm" tone="subdued">Qty: {item.quantity}</Text>
+                          </InlineStack>
+                        </BlockStack>
+                      </InlineStack>
+                    </Box>
+                  </div>
+                ))}
+              </BlockStack>
+            </BlockStack>
+          </Box>
         </Card>
 
         {/* SDW Processing Card */}
         <Card>
-          <BlockStack gap="400">
-            <Text variant="headingMd" as="h2">Process on SDW</Text>
+          <Box padding="400">
+            <BlockStack gap="500">
+              <Text variant="headingMd" as="h2">Process on SDW</Text>
 
-            {/* Vehicle Info */}
-            <BlockStack gap="300">
-              <Text variant="bodyMd" fontWeight="semibold">Vehicle Information</Text>
-              <InlineStack gap="200">
-                <TextField
-                  label="Year"
-                  value={vehicleYear}
-                  onChange={setVehicleYear}
-                  autoComplete="off"
-                />
-                <TextField
-                  label="Make"
-                  value={vehicleMake}
-                  onChange={setVehicleMake}
-                  autoComplete="off"
-                />
-                <TextField
-                  label="Model"
-                  value={vehicleModel}
-                  onChange={setVehicleModel}
-                  autoComplete="off"
-                />
-                <TextField
-                  label="Trim"
-                  value={vehicleTrim}
-                  onChange={setVehicleTrim}
-                  autoComplete="off"
-                />
-              </InlineStack>
-            </BlockStack>
-
-            {/* Payment Card */}
-            <Select
-              label="Credit Card"
-              options={[
-                { label: 'Card 1', value: '1' },
-                { label: 'Card 2', value: '2' },
-                { label: 'Card 3', value: '3' },
-                { label: 'Card 4', value: '4' },
-                { label: 'Card 5', value: '5' },
-              ]}
-              value={selectedCard}
-              onChange={setSelectedCard}
-            />
-
-            {/* Processing Mode */}
-            <BlockStack gap="200">
-              <Checkbox
-                label="Use custom quote link"
-                checked={processingMode === 'quote'}
-                onChange={(checked) => setProcessingMode(checked ? 'quote' : 'manual')}
-              />
-              {processingMode === 'quote' && (
-                <TextField
-                  label="Quote Link"
-                  value={quoteLink}
-                  onChange={setQuoteLink}
-                  placeholder="https://www.sdwheelwholesale.com/quote/..."
-                  autoComplete="off"
-                />
-              )}
-            </BlockStack>
-
-            {/* Action Buttons */}
-            <InlineStack gap="200">
-              {processingSDW ? (
-                <Button
-                  tone="critical"
-                  onClick={handleCancelProcessing}
-                >
-                  Cancel Processing
-                </Button>
-              ) : (
-                <Button
-                  primary
-                  onClick={handleProcessSDW}
-                  disabled={selectedLineItems.length === 0}
-                >
-                  Process on SDW
-                </Button>
-              )}
-            </InlineStack>
-
-            {/* Processing Spinner */}
-            {processingSDW && sdwJobStatus !== 'awaiting_confirmation' && sdwJobStatus !== 'awaiting_user_input' && (
-              <div style={{ textAlign: 'center', padding: '20px' }}>
-                <Spinner size="large" />
-                <Text variant="bodyMd" tone="subdued">Processing order on SDW...</Text>
-              </div>
-            )}
-
-            {/* Progress */}
-            {sdwProgress.length > 0 && (
-              <BlockStack gap="200">
-                <Text variant="bodyMd" fontWeight="semibold">Progress</Text>
-                <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                  {sdwProgress.map((item, idx) => (
-                    <Text key={idx} variant="bodySm">{item.message}</Text>
-                  ))}
-                </div>
+              {/* Vehicle Info */}
+              <BlockStack gap="300">
+                <Text variant="headingSm" fontWeight="medium">Vehicle Information</Text>
+                <InlineStack gap="300" wrap={true}>
+                  <Box minWidth="150px">
+                    <TextField
+                      label="Year"
+                      value={vehicleYear}
+                      onChange={setVehicleYear}
+                      autoComplete="off"
+                    />
+                  </Box>
+                  <Box minWidth="200px">
+                    <TextField
+                      label="Make"
+                      value={vehicleMake}
+                      onChange={setVehicleMake}
+                      autoComplete="off"
+                    />
+                  </Box>
+                  <Box minWidth="200px">
+                    <TextField
+                      label="Model"
+                      value={vehicleModel}
+                      onChange={setVehicleModel}
+                      autoComplete="off"
+                    />
+                  </Box>
+                  <Box minWidth="200px">
+                    <TextField
+                      label="Trim"
+                      value={vehicleTrim}
+                      onChange={setVehicleTrim}
+                      autoComplete="off"
+                    />
+                  </Box>
+                </InlineStack>
               </BlockStack>
-            )}
-          </BlockStack>
+
+              <Divider />
+
+              {/* Payment Card */}
+              <Box maxWidth="400px">
+                <Select
+                  label="Credit Card"
+                  options={[
+                    { label: 'Card ending 3438', value: '1' },
+                    { label: 'Card ending 3364', value: '2' },
+                    { label: 'Card ending 5989', value: '3' },
+                    { label: 'Card ending 7260', value: '4' },
+                    { label: 'WISE', value: '5' },
+                  ]}
+                  value={selectedCard}
+                  onChange={setSelectedCard}
+                />
+              </Box>
+
+              {/* Processing Mode */}
+              <BlockStack gap="300">
+                <Checkbox
+                  label="Use custom quote link"
+                  checked={processingMode === 'quote'}
+                  onChange={(checked) => setProcessingMode(checked ? 'quote' : 'manual')}
+                />
+                {processingMode === 'quote' && (
+                  <TextField
+                    label="Quote Link"
+                    value={quoteLink}
+                    onChange={setQuoteLink}
+                    placeholder="https://www.sdwheelwholesale.com/quote/..."
+                    autoComplete="off"
+                  />
+                )}
+              </BlockStack>
+
+              <Divider />
+
+              {/* Action Buttons */}
+              <InlineStack gap="300">
+                {processingSDW ? (
+                  <Button
+                    tone="critical"
+                    onClick={handleCancelProcessing}
+                    size="large"
+                  >
+                    Cancel Processing
+                  </Button>
+                ) : (
+                  <Button
+                    variant="primary"
+                    onClick={handleProcessSDW}
+                    disabled={selectedLineItems.length === 0}
+                    size="large"
+                  >
+                    Process on SDW
+                  </Button>
+                )}
+              </InlineStack>
+
+              {/* Processing Spinner */}
+              {processingSDW && sdwJobStatus !== 'awaiting_confirmation' && sdwJobStatus !== 'awaiting_user_input' && (
+                <Box paddingBlock="400">
+                  <BlockStack gap="300" align="center">
+                    <Spinner size="large" />
+                    <Text variant="bodyMd" tone="subdued" alignment="center">Processing order on SDW...</Text>
+                  </BlockStack>
+                </Box>
+              )}
+
+              {/* Progress */}
+              {sdwProgress.length > 0 && (
+                <BlockStack gap="300">
+                  <Text variant="headingSm" fontWeight="medium">Progress</Text>
+                  <Box
+                    background="bg-surface-secondary"
+                    padding="300"
+                    borderRadius="200"
+                    maxHeight="250px"
+                    style={{ overflowY: 'auto' }}
+                  >
+                    <BlockStack gap="200">
+                      {sdwProgress.map((item, idx) => (
+                        <Text key={idx} variant="bodySm">{item.message}</Text>
+                      ))}
+                    </BlockStack>
+                  </Box>
+                </BlockStack>
+              )}
+            </BlockStack>
+          </Box>
         </Card>
 
         {/* Confirmation UI */}
