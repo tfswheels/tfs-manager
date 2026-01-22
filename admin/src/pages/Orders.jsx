@@ -89,6 +89,19 @@ export default function Orders() {
     fetchTemplates();
   }, [limit, page]);
 
+  // Real-time polling for order updates (every 30 seconds)
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      // Only poll if not currently loading, syncing, or processing SDW
+      if (!loading && !syncing && !processingSDW) {
+        fetchOrders();
+      }
+    }, 30000); // Poll every 30 seconds
+
+    // Cleanup interval on unmount
+    return () => clearInterval(pollInterval);
+  }, [loading, syncing, processingSDW, limit, page, searchQuery]);
+
   const fetchTemplates = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/email-templates`, {
@@ -582,7 +595,8 @@ export default function Orders() {
       }}
       secondaryActions={[
         {
-          content: 'Sync from Shopify',
+          content: syncing ? 'Syncing...' : 'Manual Sync',
+          helpText: 'Auto-refresh enabled (updates every 30s)',
           onAction: handleSyncOrders,
           loading: syncing
         },

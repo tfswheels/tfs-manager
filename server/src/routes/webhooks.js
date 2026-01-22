@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import db from '../config/database.js';
+import { shopify } from '../config/shopify.js';
 
 const router = express.Router();
 
@@ -25,7 +26,10 @@ const verifyWebhook = (req, res, next) => {
       .update(rawBody, 'utf8')
       .digest('base64');
 
-    if (hash !== hmacHeader) {
+    // Use timing-safe comparison to prevent timing attacks
+    const isValid = shopify.auth.safeCompare(hash, hmacHeader);
+
+    if (!isValid) {
       console.error('HMAC verification failed');
       return res.status(401).json({ error: 'Unauthorized - Invalid HMAC' });
     }
@@ -267,6 +271,38 @@ router.post('/updated', verifyWebhook, async (req, res) => {
         order.id
       ]
     );
+
+    // Sync line items (delete old ones and re-insert to handle additions/removals)
+    if (order.line_items && order.line_items.length > 0) {
+      // Delete existing line items for this order
+      await db.execute(
+        'DELETE FROM order_items WHERE shopify_order_id = ?',
+        [order.id]
+      );
+
+      // Re-insert all current line items
+      for (const item of order.line_items) {
+        await db.execute(
+          `INSERT INTO order_items (
+            shopify_order_id,
+            product_id,
+            variant_id,
+            title,
+            quantity,
+            price
+          ) VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            order.id,
+            item.product_id,
+            item.variant_id,
+            item.title,
+            item.quantity,
+            parseFloat(item.price)
+          ]
+        );
+      }
+      console.log(`  ✓ Synced ${order.line_items.length} line items`);
+    }
 
     console.log(`✅ Order ${order.name} updated successfully`);
 
