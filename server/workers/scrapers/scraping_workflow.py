@@ -35,7 +35,7 @@ try:
         Product,
         parse_product_card,
         handle_initial_captcha,
-        fetch_page_with_zenrows
+        fetch_page
     )
 except ImportError:
     from config import (
@@ -58,7 +58,7 @@ except ImportError:
         Product,
         parse_product_card,
         handle_initial_captcha,
-        fetch_page_with_zenrows
+        fetch_page
     )
 
 
@@ -129,7 +129,7 @@ async def scrape_page(page_number: int, session: aiohttp.ClientSession, cookies:
         logger.debug(f"Scraping page {page_number}: {url}")
 
         # Fetch page via ZenRows
-        html = await fetch_page_with_zenrows(session, url, cookies)
+        html = await fetch_page(session, url, cookies)
 
         if not html:
             logger.error(f"Failed to get HTML for page {page_number}")

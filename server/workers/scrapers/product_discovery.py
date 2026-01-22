@@ -17,14 +17,14 @@ try:
         MAX_CONCURRENT_PRODUCT_EXTRACTIONS,
         logger
     )
-    from .scraper_core import extract_klaviyo_product, fetch_page_with_zenrows
+    from .scraper_core import extract_klaviyo_product, fetch_page
 except ImportError:
     from config import (
         MODE,
         MAX_CONCURRENT_PRODUCT_EXTRACTIONS,
         logger
     )
-    from scraper_core import extract_klaviyo_product, fetch_page_with_zenrows
+    from scraper_core import extract_klaviyo_product, fetch_page
 
 
 # =============================================================================
@@ -227,7 +227,7 @@ async def extract_product_page_data(session: aiohttp.ClientSession, product_url:
         logger.debug(f"Fetching product page: {product_url}")
 
         # Fetch page HTML
-        html = await fetch_page_with_zenrows(session, product_url, cookies)
+        html = await fetch_page(session, product_url, cookies)
 
         if not html:
             logger.warning(f"Failed to fetch product page: {product_url}")

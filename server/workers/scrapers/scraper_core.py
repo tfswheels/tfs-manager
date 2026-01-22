@@ -32,6 +32,7 @@ try:
         CAPSOLVER_API_KEY,
         SKIP_BRANDS_NORMALIZED,
         SALE_ONLY,
+        USE_ZENROWS,
         logger
     )
 except ImportError:
@@ -43,6 +44,7 @@ except ImportError:
         CAPSOLVER_API_KEY,
         SKIP_BRANDS_NORMALIZED,
         SALE_ONLY,
+        USE_ZENROWS,
         logger
     )
 
@@ -469,6 +471,109 @@ async def fetch_page_with_zenrows(session: aiohttp.ClientSession, url: str, cook
             return None
 
     return None
+
+
+async def fetch_page_direct(session: aiohttp.ClientSession, url: str, cookies: List[Dict], max_retries: int = 3) -> Optional[str]:
+    """
+    Fetch a page directly without ZenRows (no proxy).
+    Uses the same validation logic as ZenRows version.
+    """
+    for attempt in range(max_retries):
+        try:
+            # Format cookies for request
+            cookie_str = '; '.join(f"{c['name']}={c['value']}" for c in cookies)
+
+            # Tires pages have 4x more products and need longer timeout
+            timeout = 90 if MODE == 'tires' else 45
+
+            headers = {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Cookie': cookie_str,
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Cache-Control': 'max-age=0'
+            }
+
+            logger.debug(f"Fetching directly (attempt {attempt + 1}/{max_retries}): {url}")
+
+            async with session.get(url,
+                                 headers=headers,
+                                 timeout=aiohttp.ClientTimeout(total=timeout),
+                                 allow_redirects=True) as resp:
+
+                if resp.status != 200:
+                    logger.warning(f"Direct fetch returned status {resp.status} for {url}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2 * (attempt + 1))  # Exponential backoff
+                        continue
+                    return None
+
+                text = await resp.text()
+
+                # Validate response based on page type (same validation as ZenRows)
+                is_product_page = '/buy-wheel-offset' in url or '/store/product/' in url
+                is_valid = False
+
+                if is_product_page:
+                    # Product detail page - check for Klaviyo data
+                    has_klaviyo = 'klaviyoProduct' in text
+                    is_valid = has_klaviyo
+
+                    if not is_valid:
+                        logger.warning(f"Product page missing Klaviyo data: {url}")
+                else:
+                    # Listing page - check for product cards or no-results
+                    has_products = '.product-card-a' in text or 'product-card' in text
+                    has_no_results = 'no-results-container' in text
+                    is_valid = has_products or has_no_results
+
+                    if not is_valid:
+                        logger.warning(f"Listing page missing product cards or no-results: {url}")
+
+                if is_valid:
+                    logger.debug(f"Successfully fetched page directly")
+                    return text
+                else:
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2 * (attempt + 1))
+                        continue
+                    return None
+
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout fetching {url} directly (attempt {attempt + 1}/{max_retries})")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 * (attempt + 1))
+                continue
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching directly (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 * (attempt + 1))
+                continue
+            return None
+
+    return None
+
+
+async def fetch_page(session: aiohttp.ClientSession, url: str, cookies: List[Dict], max_retries: int = 3) -> Optional[str]:
+    """
+    Fetch a page using ZenRows or direct fetch based on USE_ZENROWS config.
+
+    This is the main fetch function that should be used throughout the codebase.
+    It automatically chooses between ZenRows and direct fetch.
+    """
+    if USE_ZENROWS:
+        logger.debug(f"Using ZenRows for: {url}")
+        return await fetch_page_with_zenrows(session, url, cookies, max_retries)
+    else:
+        logger.debug(f"Using direct fetch (no proxy) for: {url}")
+        return await fetch_page_direct(session, url, cookies, max_retries)
 
 
 # =============================================================================
