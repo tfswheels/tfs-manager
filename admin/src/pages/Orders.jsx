@@ -274,16 +274,23 @@ export default function Orders() {
       const status = response.data;
 
       console.log(`[Poll] Status: ${status.status}, Progress count: ${status.progress?.length || 0}`);
+      console.log('[Poll] Full status object:', status);
+      console.log('[Poll] userInputPrompt:', status.userInputPrompt);
+
       setSdwJobStatus(status.status);
       setSdwProgress(status.progress || []);
 
       // Check for interactive prompt
       if (status.status === 'awaiting_user_input' && status.userInputPrompt) {
         console.log('🔔 User input required:', status.userInputPrompt);
+        console.log('🔔 Setting userInputPrompt state...');
         setUserInputPrompt(status.userInputPrompt);
         setUserInputModalOpen(true);
+        console.log('🔔 States set, returning early from poll');
         // Don't continue polling while waiting for input
         return;
+      } else if (status.status === 'awaiting_user_input') {
+        console.log('⚠️  Status is awaiting_user_input but userInputPrompt is missing!');
       }
 
       // Update order items and summary if available
@@ -1169,6 +1176,14 @@ export default function Orders() {
               )}
 
               {/* Interactive User Input Prompt */}
+              {(() => {
+                console.log('[Render] Checking interactive prompt conditions:', {
+                  sdwJobStatus,
+                  userInputPrompt,
+                  shouldShow: sdwJobStatus === 'awaiting_user_input' && userInputPrompt
+                });
+                return null;
+              })()}
               {sdwJobStatus === 'awaiting_user_input' && userInputPrompt && (
                 <Card>
                   <BlockStack gap="400">
