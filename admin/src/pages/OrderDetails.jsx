@@ -49,6 +49,7 @@ function OrderDetails() {
   const [sdwOrderSummary, setSdwOrderSummary] = useState(null);
   const [sdwCompletionData, setSdwCompletionData] = useState(null);
   const [sdwFailureData, setSdwFailureData] = useState(null);
+  const [isConfirming, setIsConfirming] = useState(false);
 
   // Interactive Prompts
   const [userInputPrompt, setUserInputPrompt] = useState(null);
@@ -136,6 +137,7 @@ function OrderDetails() {
       if (status.status === 'completed') {
         setSdwCompletionData(status.completionData);
         setProcessingSDW(false);
+        setIsConfirming(false);
         return; // Stop polling
       }
 
@@ -143,17 +145,21 @@ function OrderDetails() {
       if (status.status === 'failed') {
         setSdwFailureData(status.failureData || { error_message: status.error });
         setProcessingSDW(false);
+        setIsConfirming(false);
         return; // Stop polling
       }
 
       // If cancelled, stop
       if (status.status === 'cancelled') {
         setProcessingSDW(false);
+        setIsConfirming(false);
         return;
       }
 
       // Continue polling if still processing (poll every 1 second)
       if (status.status === 'processing' || status.status === 'pending') {
+        // Reset confirming state if we're back to processing (after confirmation)
+        setIsConfirming(false);
         setTimeout(() => pollSDWJobStatus(jobId), 1000);
       }
 
@@ -192,6 +198,7 @@ function OrderDetails() {
 
     try {
       setProcessingSDW(true);
+      setIsConfirming(false);
       setSdwProgress([]);
       setSdwJobStatus(null);
       setCalculatedTotal(null);
@@ -235,7 +242,7 @@ function OrderDetails() {
     if (!sdwJobId) return;
 
     try {
-      setProcessingSDW(true);
+      setIsConfirming(true);
       setSdwProgress(prev => [...prev, { message: 'User confirmed. Completing purchase...', timestamp: new Date() }]);
 
       const response = await axios.post(`${API_URL}/api/orders/sdw-job/${sdwJobId}/confirm`);
@@ -248,6 +255,7 @@ function OrderDetails() {
     } catch (err) {
       console.error('Error confirming purchase:', err);
       alert(err.response?.data?.message || 'Failed to confirm purchase');
+      setIsConfirming(false);
       setProcessingSDW(false);
     }
   };
@@ -641,7 +649,7 @@ function OrderDetails() {
                 <Button onClick={handleCancelProcessing}>
                   Cancel
                 </Button>
-                <Button primary onClick={handleConfirmPurchase} loading={processingSDW}>
+                <Button variant="primary" onClick={handleConfirmPurchase} loading={isConfirming}>
                   Confirm Purchase
                 </Button>
               </InlineStack>
