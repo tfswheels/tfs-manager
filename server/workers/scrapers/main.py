@@ -193,14 +193,15 @@ async def run_enhanced_scraper():
 
                         logger.info(f"✅ Loaded {len(failed_batch)} products from database (skipping re-scrape)")
 
-                        # Create products on Shopify directly (table data already exists)
+                        # Save products to database (Shopify creation handled separately)
                         if len(failed_batch) > 0:
                             await create_products_batch(
                                 session,
                                 gcs_manager,
                                 db_pool,
                                 failed_batch,  # Already has extracted_data from DB
-                                stats
+                                stats,
+                                skip_shopify_creation=True  # Only save to DB during scraping
                             )
                             stats['retried_products'] = len(failed_batch)
                     else:
@@ -325,12 +326,12 @@ async def run_enhanced_scraper():
                         )
 
                         # ================================================================
-                        # STEP 5: Create Products
+                        # STEP 5: Save Products to Database
                         # ================================================================
                         if len(extracted_products) > 0:
                             logger.info("")
                             logger.info("=" * 80)
-                            logger.info("STEP 5: CREATING PRODUCTS")
+                            logger.info("STEP 5: SAVING PRODUCTS TO DATABASE")
                             logger.info("=" * 80)
 
                             await create_products_batch(
@@ -338,7 +339,8 @@ async def run_enhanced_scraper():
                                 gcs_manager,
                                 db_pool,
                                 extracted_products,
-                                stats
+                                stats,
+                                skip_shopify_creation=True  # Only save to DB during scraping
                             )
                     else:
                         logger.warning("Daily limit reached - cannot create new products")

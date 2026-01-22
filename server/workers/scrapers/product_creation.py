@@ -402,7 +402,7 @@ async def insert_into_shopify_products(db_pool, product_data: Dict, shopify_resu
         logger.error(traceback.format_exc())
 
 
-async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_pool, product: Dict) -> bool:
+async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_pool, product: Dict, skip_shopify_creation: bool = False) -> bool:
     """
     Create a single product end-to-end using EXACT implementation from create_wheels_2025-01.py.
 
@@ -410,7 +410,7 @@ async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_
     1. Extract Klaviyo data (already done in discovery)
     2. Process and upload image to GCS
     3. Insert into wheels/tires table
-    4. Create on Shopify with FULL functionality:
+    4. Create on Shopify with FULL functionality (UNLESS skip_shopify_creation=True):
        - Proper metafields (global, convermax, custom, google)
        - Category/taxonomy
        - Product options and variants with weight/shipping
@@ -419,6 +419,9 @@ async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_
        - Publishing to all sales channels
     5. If successful, insert into shopify_products and update status
     6. If failed, update status to error
+
+    Args:
+        skip_shopify_creation: If True, only save to database without creating on Shopify
 
     Returns:
         True if successful, False if failed
@@ -580,9 +583,6 @@ async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_
                 'custom_build': None,
             }
 
-            # Create on Shopify (wheels)
-            shopify_result, shopify_error = await create_product_on_shopify(session, wheel_data, gcs_image_url)
-
         else:  # tires
             # Generate title for tires
             title = f"{klaviyo_data.get('brand', '')} {klaviyo_data.get('model', '')} {klaviyo_data.get('size', '')}"
@@ -608,7 +608,24 @@ async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_
                 'image': gcs_image_urls[0] if gcs_image_urls else None,
             }
 
-            # Create on Shopify (tires) - uses same function, tires just have fewer metafields
+        # If skip_shopify_creation is True, just save to database and mark as 'pending'
+        if skip_shopify_creation:
+            # Set status to 'pending' so the product creation job can pick it up later
+            await update_product_sync_status(
+                db_pool,
+                product.get('url_part_number'),
+                'pending'
+            )
+
+            # Get part number based on mode
+            part_number = wheel_data['part_number'] if MODE == 'wheels' else tire_data['part_number']
+            logger.info(f"✅ Saved {part_number} to database (pending Shopify creation)")
+            return True
+
+        # Otherwise, create on Shopify
+        if MODE == 'wheels':
+            shopify_result, shopify_error = await create_product_on_shopify(session, wheel_data, gcs_image_url)
+        else:  # tires
             shopify_result, shopify_error = await create_product_on_shopify(session, tire_data, tire_data.get('image'))
 
         # Get retry count from product (0 for new products, >0 for retries)
@@ -665,7 +682,7 @@ async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_
         return False
 
 
-async def create_products_batch(session: aiohttp.ClientSession, gcs_manager, db_pool, products: List[Dict], stats: Dict):
+async def create_products_batch(session: aiohttp.ClientSession, gcs_manager, db_pool, products: List[Dict], stats: Dict, skip_shopify_creation: bool = False):
     """
     Create a batch of products.
 
@@ -675,14 +692,18 @@ async def create_products_batch(session: aiohttp.ClientSession, gcs_manager, db_
         db_pool: Database pool
         products: List of products with extracted data
         stats: Stats dict to update
+        skip_shopify_creation: If True, only save to database without creating on Shopify
     """
-    logger.info(f"Creating {len(products)} products...")
+    if skip_shopify_creation:
+        logger.info(f"Saving {len(products)} products to database (Shopify creation skipped)...")
+    else:
+        logger.info(f"Creating {len(products)} products...")
 
     successful = 0
     failed = 0
 
     for product in products:
-        success = await create_single_product(session, gcs_manager, db_pool, product)
+        success = await create_single_product(session, gcs_manager, db_pool, product, skip_shopify_creation=skip_shopify_creation)
 
         if success:
             successful += 1
@@ -693,7 +714,8 @@ async def create_products_batch(session: aiohttp.ClientSession, gcs_manager, db_
 
     # Update stats
     stats['products_created_wheels_table'] += successful
-    stats['products_created_shopify'] += successful
-    stats['failed_shopify_creations'] += failed
+    if not skip_shopify_creation:
+        stats['products_created_shopify'] += successful
+        stats['failed_shopify_creations'] += failed
 
     return successful, failed
