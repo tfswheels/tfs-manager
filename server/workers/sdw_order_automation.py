@@ -550,7 +550,6 @@ def fill_vehicle_form_interactive(driver, item_info):
             {"id": "make", "name": "make", "label": "Make", "icon": "🚗", "placeholder": "Vehicle Make"},
             {"id": "model", "name": "model", "label": "Model", "icon": "🚙", "placeholder": "Vehicle Model"},
             {"id": "trim", "name": "trim", "label": "Trim", "icon": "✨", "placeholder": "Vehicle Trim"},
-            {"id": "drivetrain", "name": "drivetrain", "label": "Drivetrain", "icon": "⚙️", "placeholder": "Select Drivetrain"},
         ]
 
         # Process each field dynamically
@@ -645,6 +644,94 @@ def fill_vehicle_form_interactive(driver, item_info):
                 print(f"   ⚠️  Error processing {field['label'].lower()}: {e}")
                 # Continue to next field
                 continue
+
+        # Handle drivetrain field (appears AFTER trim is selected)
+        print(f"   ⏳ Checking for drivetrain field (appears after trim)...")
+        time.sleep(3)  # Drivetrain takes longer to appear
+
+        # Search for drivetrain field dynamically (ID varies)
+        drivetrain_check_js = """
+        // Try common IDs for drivetrain field
+        var possibleIds = ['drive', 'drivetrain', 'drive_train', 'driveTrain', 'vehicle_drivetrain', 'vehicle_drive'];
+        var select = null;
+
+        for (var i = 0; i < possibleIds.length; i++) {
+            var elem = document.getElementById(possibleIds[i]);
+            if (elem && elem.tagName === 'SELECT') {
+                return {exists: true, id: possibleIds[i]};
+            }
+        }
+
+        // Search all select elements for one with "drive" in name/placeholder
+        var allSelects = document.getElementsByTagName('select');
+        for (var i = 0; i < allSelects.length; i++) {
+            var sel = allSelects[i];
+            if (sel.name && (sel.name.toLowerCase().includes('drive') || sel.name.toLowerCase().includes('drivetrain'))) {
+                return {exists: true, id: sel.id || sel.name};
+            }
+            var firstOption = sel.options[0];
+            if (firstOption && firstOption.text) {
+                var optText = firstOption.text.toLowerCase();
+                if (optText.includes('drivetrain') || optText.includes('drive train')) {
+                    return {exists: true, id: sel.id};
+                }
+            }
+        }
+        return {exists: false, id: null};
+        """
+
+        drivetrain_info = driver.execute_script(drivetrain_check_js)
+
+        if drivetrain_info['exists']:
+            print(f"   ⚙️  Drivetrain field detected (ID: {drivetrain_info['id']})")
+
+            # Wait for options to load
+            time.sleep(2)
+
+            try:
+                # Get drivetrain options
+                drivetrain_elem = driver.find_element(By.ID, drivetrain_info['id'])
+                drivetrain_select = Select(drivetrain_elem)
+                available_drivetrains = [{"text": opt.text.strip(), "value": opt.get_attribute('value')}
+                                        for opt in drivetrain_select.options
+                                        if opt.text.strip() and opt.get_attribute('value')]
+
+                if available_drivetrains:
+                    print(f"   ✅ Found {len(available_drivetrains)} drivetrain options")
+                    prompt_data = {
+                        "item": item_info,
+                        "current_selections": current_selections,
+                        "available_options": available_drivetrains
+                    }
+
+                    response = interactive_prompt.request_user_input("vehicle_drivetrain_selection", prompt_data)
+                    if response and response.get('action') != 'cancel':
+                        selected_text = response.get('selected_text')
+                        selected_value = response.get('selected_value')
+                        current_selections['drivetrain'] = selected_text
+
+                        print(f"   ⚙️  Filling drivetrain: {selected_text}")
+                        fill_js = f"""
+                        var select = document.getElementById('{drivetrain_info['id']}');
+                        if (select) {{
+                            select.scrollIntoView({{block: 'center', behavior: 'smooth'}});
+                            select.focus();
+                            select.value = '{selected_value}';
+                            var events = ['change', 'input', 'select', 'blur'];
+                            events.forEach(function(eventType) {{
+                                var event = new Event(eventType, {{bubbles: true, cancelable: true}});
+                                select.dispatchEvent(event);
+                            }});
+                            if (typeof jQuery !== 'undefined') {{
+                                jQuery(select).trigger('change').trigger('blur');
+                            }}
+                        }}
+                        """
+                        driver.execute_script(fill_js)
+            except Exception as e:
+                print(f"   ⚠️  Error with drivetrain: {e}")
+        else:
+            print(f"   ℹ️  No drivetrain field found")
 
         # Give page time to update after all selections
         time.sleep(2)
