@@ -107,6 +107,7 @@ router.post('/start', async (req, res) => {
     if (config.saleOnly) args.push('--sale-only');
     if (!config.enableDiscovery) args.push('--no-discovery');
     if (!config.enableShopifySync) args.push('--no-shopify-sync');
+    if (config.useZenrows === false) args.push('--no-zenrows');
 
     console.log(`🔧 Python args:`, args.join(' '));
 
@@ -119,7 +120,8 @@ router.post('/start', async (req, res) => {
         // Pass config via environment variables
         MAX_PRODUCTS_PER_DAY: config.maxProductsPerDay?.toString() || '1000',
         EXCLUDED_BRANDS: config.excludedBrands ? JSON.stringify(config.excludedBrands) : '[]',
-        SPECIFIC_BRANDS: config.specificBrands ? JSON.stringify(config.specificBrands) : '[]'
+        SPECIFIC_BRANDS: config.specificBrands ? JSON.stringify(config.specificBrands) : '[]',
+        BACKORDER_COUNT: config.backorderCount?.toString() || '5'
       }
     });
 

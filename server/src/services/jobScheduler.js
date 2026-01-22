@@ -172,6 +172,7 @@ class JobScheduler {
       if (!config.enableDiscovery) args.push('--no-discovery');
       // Always disable Shopify sync for scheduled scrapes
       args.push('--no-shopify-sync');
+      if (config.useZenrows === false) args.push('--no-zenrows');
 
       const pythonProcess = spawn('python3', args, {
         cwd: scraperPath,
@@ -180,7 +181,8 @@ class JobScheduler {
           DB_NAME: 'tfs-db',
           MAX_PRODUCTS_PER_DAY: config.maxProductsPerDay?.toString() || '1000',
           EXCLUDED_BRANDS: config.excludedBrands ? JSON.stringify(config.excludedBrands) : '[]',
-          SPECIFIC_BRANDS: config.specificBrands ? JSON.stringify(config.specificBrands) : '[]'
+          SPECIFIC_BRANDS: config.specificBrands ? JSON.stringify(config.specificBrands) : '[]',
+          BACKORDER_COUNT: config.backorderCount?.toString() || '5'
         }
       });
 

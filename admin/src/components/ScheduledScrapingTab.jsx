@@ -38,7 +38,8 @@ export default function ScheduledScrapingTab() {
   const [saleOnly, setSaleOnly] = useState(false);
   const [specificBrands, setSpecificBrands] = useState('');
   const [enableDiscovery, setEnableDiscovery] = useState(true);
-  const [maxProducts, setMaxProducts] = useState('1000');
+  const [useZenrows, setUseZenrows] = useState(true);
+  const [backorderCount, setBackorderCount] = useState('5');
 
   useEffect(() => {
     fetchScheduledJobs();
@@ -63,7 +64,8 @@ export default function ScheduledScrapingTab() {
     setSaleOnly(false);
     setSpecificBrands('');
     setEnableDiscovery(true);
-    setMaxProducts('1000');
+    setUseZenrows(true);
+    setBackorderCount('5');
     setModalOpen(true);
   };
 
@@ -75,7 +77,8 @@ export default function ScheduledScrapingTab() {
     setSaleOnly(job.config?.saleOnly || false);
     setSpecificBrands(job.config?.specificBrands?.join(', ') || '');
     setEnableDiscovery(job.config?.enableDiscovery !== false);
-    setMaxProducts((job.config?.maxProductsPerDay || 1000).toString());
+    setUseZenrows(job.config?.useZenrows !== false);
+    setBackorderCount((job.config?.backorderCount || 5).toString());
     setModalOpen(true);
   };
 
@@ -85,8 +88,9 @@ export default function ScheduledScrapingTab() {
         headless: true,
         enableDiscovery,
         enableShopifySync: false, // Always false for scheduled jobs
+        useZenrows,
+        backorderCount: parseInt(backorderCount) || 5,
         saleOnly,
-        maxProductsPerDay: parseInt(maxProducts) || 1000,
         specificBrands: specificBrands ? specificBrands.split(',').map(b => b.trim()) : []
       };
 
@@ -257,18 +261,25 @@ export default function ScheduledScrapingTab() {
             />
 
             <Checkbox
+              label="Use ZenRows (proxy service for scraping)"
+              checked={useZenrows}
+              onChange={setUseZenrows}
+              helpText="When disabled, scrapes without ZenRows proxy"
+            />
+
+            <Checkbox
               label="Sale items only"
               checked={saleOnly}
               onChange={setSaleOnly}
             />
 
             <TextField
-              label="Max products to scrape"
+              label="Backorder/Made-to-order count"
               type="number"
-              value={maxProducts}
-              onChange={setMaxProducts}
+              value={backorderCount}
+              onChange={setBackorderCount}
               autoComplete="off"
-              helpText="Maximum products to process per run"
+              helpText="Stop after N consecutive backorder-only products"
             />
 
             <TextField

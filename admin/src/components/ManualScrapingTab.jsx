@@ -25,12 +25,21 @@ const SKIP_BRANDS_DEFAULT = [
   "DUB", "Dropstars", "Fuel", "ICON Alloys", "KMC", "Luxxx", "Mayhem",
   "Moto Metal", "XD Series", "Ultra Wheel", "Milanni", "Red Dirt Road",
   "RTX", "Seventy7", "Status", "TIS", "TSW", "Vision Wheel", "XF Off-Road",
-  "Lexani", "Factory Reproductions", "Grid Off-Road"
+  "Lexani", "Factory Reproductions", "Grid Off-Road", "17x9 Matte Black",
+  "17x9 Gloss Black Milled", "Cali Off-Road", "OE Creations", "Helo",
+  "Alliance", "Foose", "Rotiform", "Verde", "US Mags", "DPR Off-Road",
+  "American Force", "American Racing Custom", "Asanti Off-Road", "ATX",
+  "Ballistic", "Black Label", "BMF Off-Road", "Brute", "Contrast",
+  "Cruiser Alloy", "Dick Cepek", "Dirty Life", "DLUX", "Dropstar", "F1R",
+  "F1R Wheels", "Forgiato", "Fuel Off-Road", "HE Wheels", "ION", "Kansei",
+  "Konig", "Konig Wheels", "Mayhem Wheels", "Method Race", "OE Performance",
+  "Offroad Monster", "RBP", "Red Sport", "Rosso"
 ];
 
 export default function ManualScrapingTab() {
   const [loading, setLoading] = useState(false);
   const [jobs, setJobs] = useState([]);
+  const [brands, setBrands] = useState([]);
   const [configOpen, setConfigOpen] = useState(false);
   const [brandsOpen, setBrandsOpen] = useState(false);
 
@@ -39,7 +48,8 @@ export default function ManualScrapingTab() {
     headless: true,
     enableDiscovery: true,
     enableShopifySync: true, // Can be enabled for manual scrapes
-    maxProductsPerDay: 1000,
+    useZenrows: true,
+    backorderCount: 5,
     retryFailed: true,
     saleOnly: false,
     useSpecificBrands: false
@@ -51,9 +61,21 @@ export default function ManualScrapingTab() {
 
   useEffect(() => {
     fetchJobs();
+    fetchBrands();
     const interval = setInterval(fetchJobs, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  const fetchBrands = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/brands`, {
+        params: { shop: '2f3d7a-2.myshopify.com' }
+      });
+      setBrands(response.data.brands || []);
+    } catch (error) {
+      console.error('Failed to fetch brands:', error);
+    }
+  };
 
   const fetchJobs = async () => {
     try {
@@ -226,6 +248,12 @@ export default function ManualScrapingTab() {
                 helpText="When disabled, only saves to database"
               />
               <Checkbox
+                label="Use ZenRows (proxy service for scraping)"
+                checked={config.useZenrows}
+                onChange={(val) => setConfig({...config, useZenrows: val})}
+                helpText="When disabled, scrapes without ZenRows proxy"
+              />
+              <Checkbox
                 label="Sale items only"
                 checked={config.saleOnly}
                 onChange={(val) => setConfig({...config, saleOnly: val})}
@@ -249,11 +277,12 @@ export default function ManualScrapingTab() {
               )}
 
               <TextField
-                label="Max products per day"
+                label="Backorder/Made-to-order count"
                 type="number"
-                value={config.maxProductsPerDay.toString()}
-                onChange={(val) => setConfig({...config, maxProductsPerDay: parseInt(val) || 1000})}
+                value={config.backorderCount.toString()}
+                onChange={(val) => setConfig({...config, backorderCount: parseInt(val) || 5})}
                 autoComplete="off"
+                helpText="Stop after N consecutive backorder-only products"
               />
             </BlockStack>
           </Collapsible>
@@ -273,7 +302,7 @@ export default function ManualScrapingTab() {
           >
             <InlineStack align="space-between" blockAlign="center">
               <Text variant="headingMd" as="h2">
-                Excluded Brands ({excludedBrands.length})
+                Excluded Brands ({excludedBrands.length} selected)
               </Text>
             </InlineStack>
           </Button>
@@ -283,32 +312,73 @@ export default function ManualScrapingTab() {
             id="excluded-brands"
             transition={{duration: '200ms', timingFunction: 'ease-in-out'}}
           >
-            <BlockStack gap="200">
+            <BlockStack gap="400">
               <Text tone="subdued">
-                These brands will be skipped during scraping:
+                Select brands to exclude from scraping:
               </Text>
+
+              <InlineStack gap="200">
+                <Button
+                  size="slim"
+                  onClick={() => {
+                    const allBrands = brands.length > 0 ? brands : SKIP_BRANDS_DEFAULT;
+                    setExcludedBrands(allBrands);
+                  }}
+                >
+                  Select All
+                </Button>
+                <Button
+                  size="slim"
+                  onClick={() => setExcludedBrands([])}
+                >
+                  Deselect All
+                </Button>
+              </InlineStack>
+
               <div style={{
-                maxHeight: '200px',
+                maxHeight: '400px',
                 overflowY: 'auto',
-                padding: '8px',
+                padding: '16px',
                 backgroundColor: '#f6f6f7',
-                borderRadius: '4px'
+                borderRadius: '8px'
               }}>
-                {excludedBrands.map((brand, index) => (
-                  <Text key={index} as="p">{brand}</Text>
-                ))}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '12px'
+                }}>
+                  {(brands.length > 0 ? brands : SKIP_BRANDS_DEFAULT).map((brand) => (
+                    <Checkbox
+                      key={brand}
+                      label={brand}
+                      checked={excludedBrands.includes(brand)}
+                      onChange={(checked) => {
+                        if (checked) {
+                          setExcludedBrands([...excludedBrands, brand]);
+                        } else {
+                          setExcludedBrands(excludedBrands.filter(b => b !== brand));
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
               </div>
-              <Button
-                size="slim"
-                onClick={() => {
-                  const newBrand = prompt('Add brand to exclude:');
-                  if (newBrand) {
-                    setExcludedBrands([...excludedBrands, newBrand.trim()]);
+
+              <TextField
+                label="Add custom brand to exclude (comma-separated)"
+                placeholder="e.g., Brand1, Brand2, Brand3"
+                autoComplete="off"
+                onBlur={(e) => {
+                  const newBrands = e.target.value
+                    .split(',')
+                    .map(b => b.trim())
+                    .filter(b => b && !excludedBrands.includes(b));
+                  if (newBrands.length > 0) {
+                    setExcludedBrands([...excludedBrands, ...newBrands]);
+                    e.target.value = '';
                   }
                 }}
-              >
-                Add Brand
-              </Button>
+              />
             </BlockStack>
           </Collapsible>
         </BlockStack>
