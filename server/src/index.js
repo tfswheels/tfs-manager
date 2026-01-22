@@ -18,6 +18,7 @@ import customerEmailsRoutes from './routes/customer-emails.js';
 import brandsRoutes from './routes/brands.js';
 import { applyAllSecurityHeaders } from './middleware/securityHeaders.js';
 import './config/database.js';
+import { jobScheduler } from './services/jobScheduler.js';
 
 dotenv.config();
 
@@ -129,15 +130,20 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🏪 Shopify Store: 2f3d7a-2.myshopify.com`);
   console.log(`🌐 CORS enabled for:`, ['http://localhost:5173', 'https://tfs-manager.vercel.app']);
+
+  // Start job scheduler
+  jobScheduler.start();
 });
 
 // Handle graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully');
+  jobScheduler.stop();
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
   console.log('SIGINT received, shutting down gracefully');
+  jobScheduler.stop();
   process.exit(0);
 });
