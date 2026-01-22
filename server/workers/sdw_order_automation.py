@@ -559,15 +559,19 @@ def fill_vehicle_form_interactive(driver, item_info):
                 # Check if field exists
                 select_elem = driver.find_element(By.ID, field["id"])
 
-                # Wait for dropdown to have real options loaded (max 10 seconds)
+                # Wait for dropdown to have real options loaded
                 print(f"   ⏳ Waiting for {field['label'].lower()} dropdown to load...")
+                time.sleep(2)  # Initial wait for AJAX
+
+                # Wait for options to appear (checks frequently, continues as soon as ready)
                 available_options = []
-                max_wait = 10
-                for attempt in range(max_wait):
-                    select_obj = Select(select_elem)
-                    available_options = []
+                try:
+                    WebDriverWait(driver, 8).until(
+                        lambda d: len(d.find_element(By.ID, field["id"]).find_elements(By.TAG_NAME, "option")) > 1
+                    )
 
                     # Get available options
+                    select_obj = Select(select_elem)
                     for opt in select_obj.options:
                         opt_text = opt.text.strip()
                         opt_value = opt.get_attribute('value')
@@ -575,18 +579,16 @@ def fill_vehicle_form_interactive(driver, item_info):
                         if opt_text and opt_text != field["placeholder"] and opt_value:
                             available_options.append({"text": opt_text, "value": opt_value})
 
-                    # If we have options, break out of wait loop
-                    if available_options:
-                        print(f"   ✅ {field['label']} dropdown loaded with {len(available_options)} options")
-                        break
+                    print(f"   ✅ {field['label']} dropdown loaded with {len(available_options)} options")
 
-                    # Otherwise wait and retry
-                    time.sleep(1)
-
-                # If still no options after waiting, skip this field (it may not be required)
-                if not available_options:
-                    print(f"   ℹ️  No {field['label'].lower()} options available after waiting, skipping...")
+                except TimeoutException:
+                    print(f"   ℹ️  No {field['label'].lower()} options loaded after waiting")
                     # Don't process more fields if we couldn't load this one
+                    break
+
+                # Double check we have options
+                if not available_options:
+                    print(f"   ℹ️  No {field['label'].lower()} options available, stopping...")
                     break
 
                 # Prompt user for selection
@@ -611,14 +613,29 @@ def fill_vehicle_form_interactive(driver, item_info):
                 fill_js = f"""
                 var select = document.getElementById('{field['id']}');
                 if (select) {{
+                    // Scroll into view
+                    select.scrollIntoView({{block: 'center', behavior: 'smooth'}});
+
+                    // Focus the element
+                    select.focus();
+
+                    // Set the value
                     select.value = '{selected_value}';
-                    select.dispatchEvent(new Event('change', {{bubbles: true}}));
-                    select.dispatchEvent(new Event('blur', {{bubbles: true}}));
+
+                    // Trigger all possible events that SDW might be listening for
+                    var events = ['change', 'input', 'select', 'blur'];
+                    events.forEach(function(eventType) {{
+                        var event = new Event(eventType, {{bubbles: true, cancelable: true}});
+                        select.dispatchEvent(event);
+                    }});
+
+                    // Also try jQuery trigger if jQuery is available
+                    if (typeof jQuery !== 'undefined') {{
+                        jQuery(select).trigger('change').trigger('blur');
+                    }}
                 }}
                 """
                 driver.execute_script(fill_js)
-                # Small delay to let the page process the selection
-                time.sleep(1)
 
             except NoSuchElementException:
                 # Field doesn't exist, that's okay - we're done with vehicle fields
