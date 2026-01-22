@@ -572,6 +572,25 @@ router.get('/:shopifyOrderId/details', async (req, res) => {
 
     console.log(`✅ Retrieved order ${order.name} with ${order.line_items?.length || 0} items`);
 
+    // Fetch product tags for each line item
+    if (order.line_items && order.line_items.length > 0) {
+      for (const item of order.line_items) {
+        if (item.product_id) {
+          try {
+            const productResponse = await client.get({
+              path: `products/${item.product_id}`,
+              query: { fields: 'tags' }
+            });
+            // Add tags to line item
+            item.tags = productResponse.body.product.tags ? productResponse.body.product.tags.split(', ') : [];
+          } catch (error) {
+            console.error(`Error fetching tags for product ${item.product_id}:`, error.message);
+            item.tags = [];
+          }
+        }
+      }
+    }
+
     // Fetch vehicle info from database
     const [dbOrders] = await db.execute(
       `SELECT vehicle_year, vehicle_make, vehicle_model, vehicle_trim, vehicle_info_notes

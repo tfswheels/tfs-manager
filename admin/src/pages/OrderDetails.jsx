@@ -489,7 +489,8 @@ function OrderDetails() {
                   // Check if item should be skipped (installation kits, shipping protection, hub centric rings, accessories)
                   const isSkipItem = ['shipping protection', 'installation kit', 'hub centric']
                     .some(keyword => item.name.toLowerCase().includes(keyword)) ||
-                    (item.product_type && item.product_type.toLowerCase() === 'accessories');
+                    // Check if product has 'accessories' tag (matches Python script logic)
+                    (item.tags && Array.isArray(item.tags) && item.tags.some(tag => tag.toLowerCase() === 'accessories'));
 
                   // Check if item is removed/cancelled (fulfillable_quantity = 0 or less than quantity)
                   const isRemoved = item.fulfillable_quantity === 0 ||
