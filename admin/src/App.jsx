@@ -4,6 +4,7 @@ import { AppProvider, Frame, Navigation } from '@shopify/polaris';
 
 // Pages
 import Orders from './pages/Orders';
+import OrderDetails from './pages/OrderDetails';
 import Products from './pages/Products';
 import EmailTemplates from './pages/EmailTemplates';
 import Settings from './pages/Settings';
@@ -49,6 +50,7 @@ function AppContent() {
     <Frame navigation={navigationMarkup}>
       <Routes>
         <Route path="/" element={<Orders />} />
+        <Route path="/orders/:orderId" element={<OrderDetails />} />
         <Route path="/products" element={<Products />} />
         <Route path="/email" element={<EmailTemplates />} />
         <Route path="/settings" element={<Settings />} />

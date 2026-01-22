@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Page,
   Card,
@@ -23,6 +24,8 @@ import axios from 'axios';
 const API_URL = import.meta.env.VITE_API_URL || 'https://tfs-manager-server-production.up.railway.app';
 
 export default function Orders() {
+  const navigate = useNavigate();
+
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -219,54 +222,9 @@ export default function Orders() {
     openSendEmailModal(selectedOrders);
   };
 
-  const handleRowClick = async (order) => {
-    try {
-      setLoadingOrderDetails(true);
-      setOrderDetailsModalOpen(true);
-
-      // Reset SDW state for new order
-      setSdwJobId(null);
-      setSdwJobStatus(null);
-      setSdwProgress([]);
-      setProcessingSDW(false);
-      setCalculatedTotal(null);
-      setCalculatedShipping(null);
-      setSdwOrderItems([]);
-      setSdwOrderSummary(null);
-      setSdwCompletionData(null);
-      setSdwFailureData(null);
-      setProcessingMode('manual');
-      setQuoteLink('');
-      setUserInputPrompt(null);
-      setUserInputModalOpen(false);
-      setUserInputResponse({});
-      setSelectedVehicleValue('');
-
-      const response = await axios.get(`${API_URL}/api/orders/${order.shopify_order_id}/details`, {
-        params: {
-          shop: '2f3d7a-2.myshopify.com'
-        }
-      });
-
-      const orderData = response.data.order;
-      setSelectedOrderDetails(orderData);
-
-      // Pre-fill vehicle info
-      setVehicleYear(order.vehicle_year || '');
-      setVehicleMake(order.vehicle_make || '');
-      setVehicleModel(order.vehicle_model || '');
-      setVehicleTrim(order.vehicle_trim || '');
-
-      // Start with NO items selected - user must explicitly select items to process
-      setSelectedLineItems([]);
-
-    } catch (err) {
-      console.error('Error fetching order details:', err);
-      alert('Failed to load order details');
-      setOrderDetailsModalOpen(false);
-    } finally {
-      setLoadingOrderDetails(false);
-    }
+  const handleRowClick = (order) => {
+    // Navigate to dedicated order details page
+    navigate(`/orders/${order.shopify_order_id}`);
   };
 
   // Poll for SDW job status
