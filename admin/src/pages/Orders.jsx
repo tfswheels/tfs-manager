@@ -229,6 +229,8 @@ export default function Orders() {
       setSdwOrderSummary(null);
       setSdwCompletionData(null);
       setSdwFailureData(null);
+      setProcessingMode('manual');
+      setQuoteLink('');
 
       const response = await axios.get(`${API_URL}/api/orders/${order.shopify_order_id}/details`, {
         params: {
