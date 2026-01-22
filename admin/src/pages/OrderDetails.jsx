@@ -60,6 +60,11 @@ function OrderDetails() {
     fetchOrderDetails();
   }, [orderId]);
 
+  // Debug: Log when sdwJobStatus changes
+  useEffect(() => {
+    console.log('🔔 sdwJobStatus changed to:', sdwJobStatus);
+  }, [sdwJobStatus]);
+
   const fetchOrderDetails = async () => {
     try {
       setLoading(true);
@@ -98,10 +103,11 @@ function OrderDetails() {
       setSdwJobStatus(status.status);
       setSdwProgress(status.progress || []);
 
-      // Check for interactive prompt
+      // Check for interactive prompt (keep processingSDW true so cancel button stays)
       if (status.status === 'awaiting_user_input' && status.userInputPrompt) {
         console.log('🔔 User input required:', status.userInputPrompt.type);
         setUserInputPrompt(status.userInputPrompt);
+        // Keep processingSDW true so cancel button remains visible
         // Don't continue polling while waiting for input
         return;
       }
@@ -114,12 +120,15 @@ function OrderDetails() {
         setSdwOrderSummary(status.orderSummary);
       }
 
-      // If awaiting confirmation, update pricing
+      // If awaiting confirmation, update pricing (keep processingSDW true so cancel button stays)
       if (status.status === 'awaiting_confirmation') {
         console.log(`[Poll] Awaiting confirmation! Total: $${status.totalPrice}, Shipping: $${status.shippingCost}`);
+        console.log('[Poll] Order Summary:', status.orderSummary);
+        console.log('[Poll] Order Items:', status.orderItems);
         setCalculatedTotal(status.totalPrice);
         setCalculatedShipping(status.shippingCost);
-        setProcessingSDW(false); // Stop spinner, show confirmation UI
+        console.log('[Poll] State updated - should show confirmation UI now');
+        // Keep processingSDW true so cancel button remains visible
         return; // Stop polling until user confirms
       }
 
@@ -280,10 +289,10 @@ function OrderDetails() {
 
   const getCardName = (cardId) => {
     const cards = {
-      '1': 'Card ending 3438',
-      '2': 'Card ending 3364',
-      '3': 'Card ending 5989',
-      '4': 'Card ending 7260',
+      '1': 'xxxx-xxxx-xxxx-3438',
+      '2': 'xxxx-xxxx-xxxx-3364',
+      '3': 'xxxx-xxxx-xxxx-5989',
+      '4': 'xxxx-xxxx-xxxx-7260',
       '5': 'WISE'
     };
     return cards[cardId] || 'Unknown';
@@ -370,6 +379,88 @@ function OrderDetails() {
           </Box>
         </Card>
 
+        {/* Customer Info Card */}
+        <Card>
+          <Box padding="400">
+            <BlockStack gap="500">
+              <Text variant="headingMd" as="h2">Customer Information</Text>
+
+              {/* Shipping Address */}
+              {order.shipping_address && (
+                <BlockStack gap="300">
+                  <Text variant="headingSm" fontWeight="medium">Shipping Address</Text>
+                  <Box
+                    background="bg-surface-secondary"
+                    padding="300"
+                    borderRadius="200"
+                  >
+                    <BlockStack gap="100">
+                      <Text variant="bodyMd">
+                        {order.shipping_address.first_name} {order.shipping_address.last_name}
+                      </Text>
+                      {order.shipping_address.company && (
+                        <Text variant="bodyMd">{order.shipping_address.company}</Text>
+                      )}
+                      <Text variant="bodyMd">{order.shipping_address.address1}</Text>
+                      {order.shipping_address.address2 && (
+                        <Text variant="bodyMd">{order.shipping_address.address2}</Text>
+                      )}
+                      <Text variant="bodyMd">
+                        {order.shipping_address.city}, {order.shipping_address.province_code} {order.shipping_address.zip}
+                      </Text>
+                      <Text variant="bodyMd">{order.shipping_address.country}</Text>
+                      {order.shipping_address.phone && (
+                        <Text variant="bodyMd">Phone: {order.shipping_address.phone}</Text>
+                      )}
+                    </BlockStack>
+                  </Box>
+                </BlockStack>
+              )}
+
+              <Divider />
+
+              {/* Vehicle Info */}
+              <BlockStack gap="300">
+                <Text variant="headingSm" fontWeight="medium">Vehicle Information</Text>
+                <InlineStack gap="300" wrap={true}>
+                  <Box minWidth="150px">
+                    <TextField
+                      label="Year"
+                      value={vehicleYear}
+                      onChange={setVehicleYear}
+                      autoComplete="off"
+                    />
+                  </Box>
+                  <Box minWidth="200px">
+                    <TextField
+                      label="Make"
+                      value={vehicleMake}
+                      onChange={setVehicleMake}
+                      autoComplete="off"
+                    />
+                  </Box>
+                  <Box minWidth="200px">
+                    <TextField
+                      label="Model"
+                      value={vehicleModel}
+                      onChange={setVehicleModel}
+                      autoComplete="off"
+                    />
+                  </Box>
+                  <Box minWidth="200px">
+                    <TextField
+                      label="Trim"
+                      value={vehicleTrim}
+                      onChange={setVehicleTrim}
+                      autoComplete="off"
+                    />
+                  </Box>
+                </InlineStack>
+              </BlockStack>
+            </BlockStack>
+          </Box>
+        </Card>
+
         {/* Line Items Card */}
         <Card>
           <Box padding="400">
@@ -415,56 +506,15 @@ function OrderDetails() {
             <BlockStack gap="500">
               <Text variant="headingMd" as="h2">Process on SDW</Text>
 
-              {/* Vehicle Info */}
-              <BlockStack gap="300">
-                <Text variant="headingSm" fontWeight="medium">Vehicle Information</Text>
-                <InlineStack gap="300" wrap={true}>
-                  <Box minWidth="150px">
-                    <TextField
-                      label="Year"
-                      value={vehicleYear}
-                      onChange={setVehicleYear}
-                      autoComplete="off"
-                    />
-                  </Box>
-                  <Box minWidth="200px">
-                    <TextField
-                      label="Make"
-                      value={vehicleMake}
-                      onChange={setVehicleMake}
-                      autoComplete="off"
-                    />
-                  </Box>
-                  <Box minWidth="200px">
-                    <TextField
-                      label="Model"
-                      value={vehicleModel}
-                      onChange={setVehicleModel}
-                      autoComplete="off"
-                    />
-                  </Box>
-                  <Box minWidth="200px">
-                    <TextField
-                      label="Trim"
-                      value={vehicleTrim}
-                      onChange={setVehicleTrim}
-                      autoComplete="off"
-                    />
-                  </Box>
-                </InlineStack>
-              </BlockStack>
-
-              <Divider />
-
               {/* Payment Card */}
-              <Box maxWidth="400px">
+              <Box maxWidth="300px">
                 <Select
                   label="Credit Card"
                   options={[
-                    { label: 'Card ending 3438', value: '1' },
-                    { label: 'Card ending 3364', value: '2' },
-                    { label: 'Card ending 5989', value: '3' },
-                    { label: 'Card ending 7260', value: '4' },
+                    { label: 'xxxx-xxxx-xxxx-3438', value: '1' },
+                    { label: 'xxxx-xxxx-xxxx-3364', value: '2' },
+                    { label: 'xxxx-xxxx-xxxx-5989', value: '3' },
+                    { label: 'xxxx-xxxx-xxxx-7260', value: '4' },
                     { label: 'WISE', value: '5' },
                   ]}
                   value={selectedCard}
@@ -509,12 +559,12 @@ function OrderDetails() {
                     disabled={selectedLineItems.length === 0}
                     size="large"
                   >
-                    Process on SDW
+                    Process Order
                   </Button>
                 )}
               </InlineStack>
 
-              {/* Processing Spinner */}
+              {/* Processing Spinner - Only show when actively processing */}
               {processingSDW && sdwJobStatus !== 'awaiting_confirmation' && sdwJobStatus !== 'awaiting_user_input' && (
                 <Box paddingBlock="400">
                   <BlockStack gap="300" align="center">
@@ -522,26 +572,6 @@ function OrderDetails() {
                     <Text variant="bodyMd" tone="subdued" alignment="center">Processing order on SDW...</Text>
                   </BlockStack>
                 </Box>
-              )}
-
-              {/* Progress */}
-              {sdwProgress.length > 0 && (
-                <BlockStack gap="300">
-                  <Text variant="headingSm" fontWeight="medium">Progress</Text>
-                  <Box
-                    background="bg-surface-secondary"
-                    padding="300"
-                    borderRadius="200"
-                    maxHeight="250px"
-                    style={{ overflowY: 'auto' }}
-                  >
-                    <BlockStack gap="200">
-                      {sdwProgress.map((item, idx) => (
-                        <Text key={idx} variant="bodySm">{item.message}</Text>
-                      ))}
-                    </BlockStack>
-                  </Box>
-                </BlockStack>
               )}
             </BlockStack>
           </Box>
