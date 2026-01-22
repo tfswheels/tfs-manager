@@ -307,19 +307,29 @@ function OrderDetails() {
   };
 
   const handleCancelProcessing = async () => {
-    if (!sdwJobId) return;
+    console.log('🚫 Cancel Processing clicked. JobId:', sdwJobId);
+
+    if (!sdwJobId) {
+      console.error('❌ Cannot cancel: No job ID');
+      alert('Cannot cancel: No active processing job');
+      return;
+    }
 
     try {
-      await axios.post(`${API_URL}/api/orders/sdw-job/${sdwJobId}/cancel`, null, {
+      console.log('📡 Sending cancel request...');
+      const response = await axios.post(`${API_URL}/api/orders/sdw-job/${sdwJobId}/cancel`, null, {
         params: {
           shop: '2f3d7a-2.myshopify.com'
         }
       });
 
+      console.log('✅ Cancel response:', response.data);
       setSdwJobStatus('cancelled');
       setProcessingSDW(false);
+      setIsConfirming(false);
     } catch (error) {
-      console.error('Error cancelling processing:', error);
+      console.error('❌ Error cancelling processing:', error);
+      alert(`Failed to cancel: ${error.response?.data?.message || error.message}`);
     }
   };
 
@@ -475,34 +485,72 @@ function OrderDetails() {
             <BlockStack gap="400">
               <Text variant="headingMd" as="h2">Line Items</Text>
               <BlockStack gap="300">
-                {order.line_items && order.line_items.map((item, index) => (
-                  <div key={item.id}>
-                    {index > 0 && <Divider />}
-                    <Box paddingBlock="300">
-                      <InlineStack gap="400" blockAlign="center">
-                        <Checkbox
-                          label=""
-                          checked={selectedLineItems.includes(item.id)}
-                          onChange={(checked) => {
-                            if (checked) {
-                              setSelectedLineItems([...selectedLineItems, item.id]);
-                            } else {
-                              setSelectedLineItems(selectedLineItems.filter(id => id !== item.id));
-                            }
-                          }}
-                        />
-                        <BlockStack gap="200">
-                          <Text variant="bodyLg" fontWeight="semibold">{item.name}</Text>
-                          <InlineStack gap="300">
-                            <Text variant="bodySm" tone="subdued">SKU: {item.sku}</Text>
-                            <Text variant="bodySm" tone="subdued">•</Text>
-                            <Text variant="bodySm" tone="subdued">Qty: {item.quantity}</Text>
-                          </InlineStack>
-                        </BlockStack>
-                      </InlineStack>
-                    </Box>
-                  </div>
-                ))}
+                {order.line_items && order.line_items.map((item, index) => {
+                  // Check if item should be skipped (installation kits, shipping protection, hub centric rings)
+                  const isSkipItem = ['shipping protection', 'installation kit', 'hub centric']
+                    .some(keyword => item.name.toLowerCase().includes(keyword));
+
+                  // Check if item is removed/cancelled (fulfillable_quantity = 0 or less than quantity)
+                  const isRemoved = item.fulfillable_quantity === 0 ||
+                                   (item.fulfillable_quantity && item.fulfillable_quantity < item.quantity);
+
+                  const isSelected = selectedLineItems.includes(item.id);
+                  const isDisabled = isSkipItem || isRemoved;
+
+                  return (
+                    <div key={item.id}>
+                      {index > 0 && <Divider />}
+                      <Box
+                        paddingBlock="300"
+                        style={{
+                          opacity: isRemoved ? 0.6 : (isSkipItem ? 0.7 : 1),
+                          background: isRemoved ? '#f5f5f5' : (isSkipItem ? '#f9f9f9' : 'transparent')
+                        }}
+                      >
+                        <InlineStack gap="400" blockAlign="center">
+                          <Checkbox
+                            label=""
+                            checked={isSelected}
+                            onChange={(checked) => {
+                              if (checked) {
+                                setSelectedLineItems([...selectedLineItems, item.id]);
+                              } else {
+                                setSelectedLineItems(selectedLineItems.filter(id => id !== item.id));
+                              }
+                            }}
+                            disabled={isDisabled}
+                          />
+                          <BlockStack gap="200">
+                            <Text
+                              variant="bodyLg"
+                              fontWeight="semibold"
+                              tone={isRemoved ? 'subdued' : undefined}
+                            >
+                              {item.name}
+                            </Text>
+                            <InlineStack gap="300">
+                              <Text variant="bodySm" tone="subdued">SKU: {item.sku}</Text>
+                              <Text variant="bodySm" tone="subdued">•</Text>
+                              <Text variant="bodySm" tone="subdued">Qty: {item.quantity}</Text>
+                              {isRemoved && item.fulfillable_quantity !== undefined && (
+                                <>
+                                  <Text variant="bodySm" tone="subdued">•</Text>
+                                  <Text variant="bodySm" tone="subdued">Fulfillable: {item.fulfillable_quantity}</Text>
+                                </>
+                              )}
+                              {isSkipItem && (
+                                <>
+                                  <Text variant="bodySm" tone="subdued">•</Text>
+                                  <Text variant="bodySm" tone="critical">Auto-skipped</Text>
+                                </>
+                              )}
+                            </InlineStack>
+                          </BlockStack>
+                        </InlineStack>
+                      </Box>
+                    </div>
+                  );
+                })}
               </BlockStack>
             </BlockStack>
           </Box>
