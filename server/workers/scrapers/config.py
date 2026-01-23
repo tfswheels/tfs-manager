@@ -51,7 +51,6 @@ SALE_ONLY = False
 # =============================================================================
 
 MAX_PRODUCTS_PER_DAY = int(os.environ.get('MAX_PRODUCTS_PER_DAY', '1000'))  # Daily creation limit (can be overridden via env var)
-RETRY_FAILED_PRODUCTS = True  # Retry products with product_sync='error'
 USE_ZENROWS = True  # Default to using ZenRows proxy (can be disabled with --no-zenrows)
 
 # =============================================================================
@@ -237,5 +236,4 @@ logger.info(f"Sale Only: {SALE_ONLY}")
 logger.info(f"Use ZenRows: {USE_ZENROWS}")
 logger.info(f"Max Products/Day: {MAX_PRODUCTS_PER_DAY}")
 logger.info(f"Backorder Count: {MAX_CONSECUTIVE_NON_IN_STOCK}")
-logger.info(f"Retry Failed: {RETRY_FAILED_PRODUCTS}")
 logger.info("=" * 80)

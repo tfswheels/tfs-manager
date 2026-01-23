@@ -29,7 +29,6 @@ try:
     from . import config
     from .config import (
         MODE,
-        RETRY_FAILED_PRODUCTS,
         MAX_PRODUCTS_PER_DAY,
         DB_CONFIG,
         SCRAPE_SPECIFIC_BRANDS,
@@ -38,8 +37,7 @@ try:
     from .gcs_manager import GCSManager
     from .product_discovery import (
         discover_new_products,
-        extract_product_data_batch,
-        get_failed_products_for_retry
+        extract_product_data_batch
     )
     from .product_creation import (
         check_daily_creation_limit,
@@ -50,7 +48,6 @@ except ImportError:
     import config
     from config import (
         MODE,
-        RETRY_FAILED_PRODUCTS,
         MAX_PRODUCTS_PER_DAY,
         DB_CONFIG,
         SCRAPE_SPECIFIC_BRANDS,
@@ -59,8 +56,7 @@ except ImportError:
     from gcs_manager import GCSManager
     from product_discovery import (
         discover_new_products,
-        extract_product_data_batch,
-        get_failed_products_for_retry
+        extract_product_data_batch
     )
     from product_creation import (
         check_daily_creation_limit,
@@ -89,7 +85,6 @@ stats = {
     'products_created_wheels_table': 0,
     'products_created_shopify': 0,
     'failed_shopify_creations': 0,
-    'retried_products': 0,
     'images_processed': 0,
 }
 
@@ -156,48 +151,6 @@ async def run_enhanced_scraper():
         logger.info("✅ GCS manager initialized")
 
         async with aiohttp.ClientSession() as session:
-
-            # ================================================================
-            # STEP 0: Retry Failed Products
-            # ================================================================
-            # Skip retry when scraping specific brands (quick targeted scrape)
-            if RETRY_FAILED_PRODUCTS and not SCRAPE_SPECIFIC_BRANDS:
-                logger.info("")
-                logger.info("=" * 80)
-                logger.info("STEP 0: RETRYING FAILED PRODUCTS FROM PREVIOUS RUNS")
-                logger.info("=" * 80)
-
-                failed_products = await get_failed_products_for_retry(db_pool)
-
-                if len(failed_products) > 0:
-                    # Check daily limit
-                    remaining_limit = await check_daily_creation_limit(db_pool)
-                    logger.info(f"Daily limit: {remaining_limit} products can be created today")
-
-                    if remaining_limit > 0:
-                        retry_count = min(len(failed_products), remaining_limit)
-                        logger.info(f"Retrying {retry_count} failed products...")
-
-                        # Failed products already have full data in database - no need to re-scrape
-                        failed_batch = failed_products[:retry_count]
-
-                        logger.info(f"✅ Loaded {len(failed_batch)} products from database (skipping re-scrape)")
-
-                        # Save products to database (Shopify creation handled separately)
-                        if len(failed_batch) > 0:
-                            await create_products_batch(
-                                session,
-                                gcs_manager,
-                                db_pool,
-                                failed_batch,  # Already has extracted_data from DB
-                                stats,
-                                skip_shopify_creation=True  # Only save to DB during scraping
-                            )
-                            stats['retried_products'] = len(failed_batch)
-                    else:
-                        logger.warning("Daily limit reached - cannot retry products")
-                else:
-                    logger.info("No failed products to retry")
 
             # ================================================================
             # STEP 1: Scrape CWO Inventory
@@ -455,7 +408,6 @@ async def run_enhanced_scraper():
         logger.info(f"  Products Created (Table): {stats['products_created_wheels_table']}")
         logger.info(f"  Products Created (Shopify): {stats['products_created_shopify']}")
         logger.info(f"  Failed Creations: {stats['failed_shopify_creations']}")
-        logger.info(f"  Products Retried: {stats['retried_products']}")
         logger.info(f"  Images Processed: {stats['images_processed']}")
         logger.info("")
         logger.info(f"  Pages Scraped: {stats['pages_scraped']}")

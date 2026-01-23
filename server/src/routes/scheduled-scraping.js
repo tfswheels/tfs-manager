@@ -101,7 +101,7 @@ router.post('/', async (req, res) => {
         name,
         scraper_type: scraperType,
         schedule_interval: scheduleInterval,
-        config: finalConfig,
+        config: config,
         next_run_at: nextRunAt
       }
     });
