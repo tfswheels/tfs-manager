@@ -304,6 +304,11 @@ class JobScheduler {
         `--max-products=${job.max_products_per_run || 1000}`
       ];
 
+      console.log(`  📦 Spawning Python worker...`);
+      console.log(`  📂 Working directory: ${workerPath}`);
+      console.log(`  🐍 Python script: ${pythonScript}`);
+      console.log(`  📋 Arguments: ${JSON.stringify(args)}`);
+
       const pythonProcess = spawn('python3', args, {
         cwd: workerPath,
         env: {
@@ -312,21 +317,28 @@ class JobScheduler {
         }
       });
 
+      console.log(`  ✅ Python process spawned with PID: ${pythonProcess.pid}`);
+
       // Track the process
       runningJobs.set(`product_creation_${job.id}`, pythonProcess);
 
       // Handle output
       pythonProcess.stdout.on('data', (data) => {
-        console.log(`[Product Creation #${newJobId}] ${data.toString().trim()}`);
+        const output = data.toString().trim();
+        console.log(`[Product Creation #${newJobId} STDOUT] ${output}`);
       });
 
       pythonProcess.stderr.on('data', (data) => {
         const output = data.toString().trim();
+        console.log(`[Product Creation #${newJobId} STDERR] ${output}`);
         if (output.includes('ERROR') || output.includes('WARNING') || output.includes('Traceback')) {
-          console.error(`[Product Creation #${newJobId} ERROR] ${output}`);
-        } else {
-          console.log(`[Product Creation #${newJobId}] ${output}`);
+          console.error(`[Product Creation #${newJobId} ⚠️  ERROR] ${output}`);
         }
+      });
+
+      pythonProcess.on('error', (error) => {
+        console.error(`[Product Creation #${newJobId}] ❌ Process error:`, error);
+        runningJobs.delete(`product_creation_${job.id}`);
       });
 
       pythonProcess.on('close', (code) => {
@@ -337,13 +349,8 @@ class JobScheduler {
         } else if (code === null) {
           console.log(`⚠️  Product creation job #${newJobId} was terminated`);
         } else {
-          console.error(`❌ Product creation job #${newJobId} failed with code ${code}`);
+          console.error(`❌ Product creation job #${newJobId} failed with exit code ${code}`);
         }
-      });
-
-      pythonProcess.on('error', (error) => {
-        console.error(`❌ Failed to start product creation job #${newJobId}:`, error);
-        runningJobs.delete(`product_creation_${job.id}`);
       });
 
     } catch (error) {

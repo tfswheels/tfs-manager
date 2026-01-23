@@ -592,11 +592,28 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
 async def main():
     """Main entry point."""
 
+    # Startup banner
+    print("=" * 80)
+    print("🚀 SHOPIFY PRODUCT CREATION WORKER STARTING...")
+    print("=" * 80)
+    print(f"Script path: {os.path.abspath(__file__)}")
+    print(f"Working directory: {os.getcwd()}")
+    print(f"Python version: {sys.version}")
+    print(f"Arguments: {sys.argv}")
+    print("=" * 80)
+    sys.stdout.flush()
+
     parser = argparse.ArgumentParser(description='Create products on Shopify from database')
     parser.add_argument('--job-id', type=int, required=True, help='Product creation job ID')
     parser.add_argument('--max-products', type=int, default=DEFAULT_MAX_PRODUCTS, help='Max products to create')
 
+    print("📋 Parsing command line arguments...")
+    sys.stdout.flush()
+
     args = parser.parse_args()
+
+    print(f"✅ Arguments parsed: job_id={args.job_id}, max_products={args.max_products}")
+    sys.stdout.flush()
 
     # Create TWO database connection pools
     db_pool_manager = None
@@ -607,7 +624,9 @@ async def main():
         manager_config = DB_CONFIG.copy()
         manager_config['db'] = os.getenv('DB_NAME', 'tfs-manager')
 
+        print(f"🔌 Connecting to manager database: {manager_config['host']}/{manager_config['db']}")
         logger.info(f"Connecting to manager database: {manager_config['host']}/{manager_config['db']}")
+        sys.stdout.flush()
 
         db_pool_manager = await aiomysql.create_pool(
             host=manager_config['host'],
@@ -620,13 +639,17 @@ async def main():
             autocommit=True
         )
 
+        print("✅ Manager database connected")
         logger.info("✅ Manager database connected")
+        sys.stdout.flush()
 
         # Pool 2: tfs-db database (for product tables)
         inventory_config = DB_CONFIG.copy()
         inventory_config['db'] = 'tfs-db'
 
+        print(f"🔌 Connecting to inventory database: {inventory_config['host']}/{inventory_config['db']}")
         logger.info(f"Connecting to inventory database: {inventory_config['host']}/{inventory_config['db']}")
+        sys.stdout.flush()
 
         db_pool_inventory = await aiomysql.create_pool(
             host=inventory_config['host'],
@@ -639,17 +662,31 @@ async def main():
             autocommit=True
         )
 
+        print("✅ Inventory database connected")
         logger.info("✅ Inventory database connected")
+        sys.stdout.flush()
 
         # Run product creation with both pools
+        print(f"🎯 Starting product creation for job #{args.job_id}...")
+        sys.stdout.flush()
+
         await create_products_on_shopify(db_pool_manager, db_pool_inventory, args.job_id, args.max_products)
 
+        print("✅ Product creation completed successfully")
+        sys.stdout.flush()
+
     except KeyboardInterrupt:
+        print("⚠️ Interrupted by user")
         logger.info("Interrupted by user")
+        sys.stdout.flush()
     except Exception as e:
+        print(f"❌ FATAL ERROR: {e}")
         logger.error(f"Fatal error: {e}")
         import traceback
-        logger.error(traceback.format_exc())
+        error_trace = traceback.format_exc()
+        print(error_trace)
+        logger.error(error_trace)
+        sys.stdout.flush()
         sys.exit(1)
     finally:
         if db_pool_manager:
@@ -663,4 +700,16 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    print("\n" + "=" * 80)
+    print("🔥 PYTHON SCRIPT LOADED - __main__ block executing")
+    print("=" * 80)
+    sys.stdout.flush()
+
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        print(f"\n❌ ASYNCIO ERROR: {e}")
+        import traceback
+        print(traceback.format_exc())
+        sys.stdout.flush()
+        sys.exit(1)
