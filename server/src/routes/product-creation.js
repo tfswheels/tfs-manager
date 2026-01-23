@@ -1,5 +1,11 @@
 import express from 'express';
 import db from '../config/database.js';
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
@@ -266,14 +272,67 @@ router.post('/run-now', async (req, res) => {
       ]
     );
 
-    console.log(`✅ Started manual product creation run #${result.insertId}`);
+    const newJobId = result.insertId;
+    console.log(`✅ Started manual product creation run #${newJobId}`);
 
-    // TODO: Trigger actual product creation worker process here
-    // For now, just return success
+    // Spawn Python product creation worker
+    const workerPath = path.join(__dirname, '../../workers/product-creator');
+    const pythonScript = path.join(workerPath, 'create_shopify_products.py');
+
+    const args = [
+      pythonScript,
+      `--job-id=${newJobId}`,
+      `--max-products=${config.max_products_per_run || 1000}`
+    ];
+
+    console.log(`📦 Spawning Python worker for manual run...`);
+    console.log(`📂 Working directory: ${workerPath}`);
+    console.log(`🐍 Python script: ${pythonScript}`);
+    console.log(`📋 Arguments: ${JSON.stringify(args)}`);
+
+    const pythonProcess = spawn('python3', args, {
+      cwd: workerPath,
+      env: {
+        ...process.env,
+        DB_NAME: 'tfs-manager'
+      },
+      detached: false
+    });
+
+    console.log(`✅ Python process spawned with PID: ${pythonProcess.pid}`);
+
+    // Handle output
+    pythonProcess.stdout.on('data', (data) => {
+      const output = data.toString().trim();
+      console.log(`[Manual Run #${newJobId} STDOUT] ${output}`);
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      const output = data.toString().trim();
+      console.log(`[Manual Run #${newJobId} STDERR] ${output}`);
+      if (output.includes('ERROR') || output.includes('WARNING') || output.includes('Traceback')) {
+        console.error(`[Manual Run #${newJobId} ⚠️  ERROR] ${output}`);
+      }
+    });
+
+    pythonProcess.on('error', (error) => {
+      console.error(`[Manual Run #${newJobId}] ❌ Process error:`, error);
+    });
+
+    pythonProcess.on('close', (code) => {
+      if (code === 0) {
+        console.log(`✅ Manual product creation run #${newJobId} completed successfully`);
+      } else if (code === null) {
+        console.log(`⚠️  Manual product creation run #${newJobId} was terminated`);
+      } else {
+        console.error(`❌ Manual product creation run #${newJobId} failed with exit code ${code}`);
+      }
+    });
+
     res.json({
       success: true,
-      jobId: result.insertId,
-      message: 'Product creation started. This will create products from scraped data.'
+      jobId: newJobId,
+      message: 'Product creation started. Check server logs for progress.'
     });
   } catch (error) {
     console.error('❌ Run product creation error:', error);
