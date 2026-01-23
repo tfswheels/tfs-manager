@@ -14,16 +14,12 @@ import sys
 import os
 import argparse
 import aiomysql
+import aiohttp
 from datetime import datetime, date
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Import from scrapers directory
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../scrapers'))
-
-from scrapers.shopify_create_product import create_product_on_shopify
-from scrapers.config import logger, SHOPIFY_STORE_URL, SHOPIFY_ACCESS_TOKEN, DB_CONFIG
+# Import from local directory
+from shopify_create_product import create_product_on_shopify
+from config import logger, SHOPIFY_STORE_URL, SHOPIFY_ACCESS_TOKEN, PLACEHOLDER_IMAGE, DB_CONFIG
 
 # =============================================================================
 # CONFIGURATION
@@ -231,6 +227,128 @@ async def update_job_status(db_pool, job_id, status, products_created=None, whee
 # PRODUCT CREATION LOGIC
 # =============================================================================
 
+# =============================================================================
+# DATA FORMATTING FUNCTIONS
+# =============================================================================
+
+def format_offset(offset):
+    """Format offset with + sign if positive and append 'mm', e.g. +35mm."""
+    if not offset:
+        return ""
+    try:
+        val = float(offset)
+        if val >= 0:
+            return f"+{int(val)}mm"
+        else:
+            return f"{int(val)}mm"
+    except (ValueError, TypeError):
+        return str(offset)
+
+
+def format_wheel_data(product_row):
+    """
+    Format wheel database row into structure expected by create_product_on_shopify().
+
+    Args:
+        product_row: Dict from wheels table
+
+    Returns:
+        Dict with formatted wheel data for Shopify creation
+    """
+    # Generate title
+    title = f"{product_row.get('brand', '')} {product_row.get('model', '')}"
+    if product_row.get('model_other'):
+        title += f" {product_row['model_other']}"
+    title += f" {product_row.get('size', '')}"
+    if product_row.get('offset'):
+        title += f" {format_offset(product_row['offset'])}"
+    title += f" {product_row.get('finish', '')}"
+    title = title.strip()
+
+    # Generate handle (URL-friendly)
+    handle = f"{product_row.get('brand', '')}-{product_row.get('model', '')}-{product_row.get('size', '')}-{product_row.get('offset', '')}-{product_row.get('short_color', '')}-{product_row.get('part_number', '')}"
+    handle = handle.replace(' ', '-').replace('/', '-').lower()
+
+    # Get image URL (use placeholder if none)
+    image_url = product_row.get('image') or PLACEHOLDER_IMAGE
+
+    # Format wheel data with all metafields
+    wheel_data = {
+        'part_number': product_row.get('part_number', product_row.get('url_part_number')),
+        'url_part_number': product_row.get('url_part_number'),
+        'brand': product_row.get('brand', ''),
+        'model': product_row.get('model', ''),
+        'model_other': product_row.get('model_other', ''),
+        'size': product_row.get('size', ''),
+        'title': title,
+        'handle': handle,
+        'map_price': float(product_row.get('map_price')) if product_row.get('map_price') else 0,
+        'quantity': int(product_row.get('quantity', 0)),
+        # Convert numeric values to strings for Shopify metafields
+        'diameter': str(product_row.get('diameter', '')) if product_row.get('diameter') else '',
+        'width': str(product_row.get('width', '')) if product_row.get('width') else '',
+        'bolt_pattern': product_row.get('bolt_pattern', ''),
+        'bolt_pattern2': product_row.get('bolt_pattern2', ''),
+        'offset': product_row.get('offset', ''),
+        'backspace': product_row.get('backspace'),
+        'finish': product_row.get('finish', ''),
+        'short_color': product_row.get('short_color', ''),
+        'primary_color': product_row.get('primary_color', ''),
+        'hub_bore': product_row.get('hub_bore', ''),
+        'load_rating': product_row.get('load_rating'),
+        'weight': product_row.get('weight'),
+        'available_finishes': product_row.get('available_finishes'),
+        'available_bolt_patterns': product_row.get('available_bolt_patterns'),
+        'image': image_url,
+        'custom_build': product_row.get('custom_build'),
+    }
+
+    return wheel_data
+
+
+def format_tire_data(product_row):
+    """
+    Format tire database row into structure expected by create_product_on_shopify().
+
+    Args:
+        product_row: Dict from tires table
+
+    Returns:
+        Dict with formatted tire data for Shopify creation
+    """
+    # Generate title
+    title = f"{product_row.get('brand', '')} {product_row.get('model', '')} {product_row.get('size', '')}"
+    title = title.strip()
+
+    # Generate handle (URL-friendly)
+    handle = f"{product_row.get('brand', '')}-{product_row.get('model', '')}-{product_row.get('size', '')}-{product_row.get('part_number', '')}"
+    handle = handle.replace(' ', '-').replace('/', '-').lower()
+
+    # Get first image URL (tires have image1, image2, image3)
+    image_url = product_row.get('image1') or product_row.get('image2') or product_row.get('image3') or PLACEHOLDER_IMAGE
+
+    # Format tire data (tires have fewer metafields than wheels)
+    tire_data = {
+        'part_number': product_row.get('part_number', product_row.get('url_part_number')),
+        'url_part_number': product_row.get('url_part_number'),
+        'brand': product_row.get('brand', ''),
+        'model': product_row.get('model', ''),
+        'size': product_row.get('size', ''),
+        'title': title,
+        'handle': handle,
+        'map_price': float(product_row.get('map_price')) if product_row.get('map_price') else 0,
+        'quantity': int(product_row.get('quantity', 0)),
+        'weight': product_row.get('weight'),
+        'image': image_url,
+    }
+
+    return tire_data
+
+
+# =============================================================================
+# MAIN PRODUCT CREATION FUNCTION
+# =============================================================================
+
 async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id, max_products):
     """
     Main product creation workflow.
@@ -342,86 +460,98 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
         logger.info("STEP 4: Creating products on Shopify...")
         logger.info("")
 
-        # Create wheels
-        if wheels_target > 0:
-            logger.info(f"Creating {wheels_target} wheels...")
-            for i, product in enumerate(wheels_products[:wheels_target], 1):
-                try:
-                    logger.info(f"  [{i}/{wheels_target}] Creating wheel: {product.get('title', 'Unknown')}")
+        # Create aiohttp session for Shopify API calls
+        async with aiohttp.ClientSession() as session:
+            # Create wheels
+            if wheels_target > 0:
+                logger.info(f"Creating {wheels_target} wheels...")
+                for i, product in enumerate(wheels_products[:wheels_target], 1):
+                    try:
+                        # Format wheel data
+                        wheel_data = format_wheel_data(product)
 
-                    # Create on Shopify
-                    shopify_product_id = await create_product_on_shopify(product, 'wheel')
+                        logger.info(f"  [{i}/{wheels_target}] Creating wheel: {wheel_data.get('title', 'Unknown')}")
 
-                    if shopify_product_id:
-                        # Update database (tfs-db) - mark as synced
-                        await update_product_sync_status(
-                            db_pool_inventory, 'wheels', product['url_part_number'],
-                            status='synced', shopify_id=shopify_product_id
-                        )
+                        # Create on Shopify
+                        shopify_result = await create_product_on_shopify(session, wheel_data, wheel_data.get('image'))
 
-                        # Increment daily limit (tfs-manager)
-                        await increment_daily_limit(db_pool_manager, 'wheel')
+                        if shopify_result and shopify_result.get('shopify_id'):
+                            shopify_product_id = shopify_result['shopify_id']
 
-                        stats['wheels_created'] += 1
-                        stats['total_created'] += 1
+                            # Update database (tfs-db) - mark as synced
+                            await update_product_sync_status(
+                                db_pool_inventory, 'wheels', product['url_part_number'],
+                                status='synced', shopify_id=shopify_product_id
+                            )
 
-                        logger.info(f"  ✅ Created wheel with Shopify ID: {shopify_product_id}")
-                    else:
-                        # Mark as error
-                        await update_product_sync_status(
-                            db_pool_inventory, 'wheels', product['url_part_number'],
-                            status='error', error_message='Failed to create on Shopify'
-                        )
+                            # Increment daily limit (tfs-manager)
+                            await increment_daily_limit(db_pool_manager, 'wheel')
 
+                            stats['wheels_created'] += 1
+                            stats['total_created'] += 1
+
+                            logger.info(f"  ✅ Created wheel with Shopify ID: {shopify_product_id}")
+                        else:
+                            # Mark as error
+                            await update_product_sync_status(
+                                db_pool_inventory, 'wheels', product['url_part_number'],
+                                status='error', error_message='Failed to create on Shopify'
+                            )
+
+                            stats['wheels_failed'] += 1
+                            stats['total_failed'] += 1
+                            logger.warning(f"  ❌ Failed to create wheel")
+
+                    except Exception as e:
                         stats['wheels_failed'] += 1
                         stats['total_failed'] += 1
-                        logger.warning(f"  ❌ Failed to create wheel")
+                        logger.error(f"  ❌ Error creating wheel: {e}")
 
-                except Exception as e:
-                    stats['wheels_failed'] += 1
-                    stats['total_failed'] += 1
-                    logger.error(f"  ❌ Error creating wheel: {e}")
+            # Create tires
+            if tires_target > 0:
+                logger.info("")
+                logger.info(f"Creating {tires_target} tires...")
+                for i, product in enumerate(tires_products[:tires_target], 1):
+                    try:
+                        # Format tire data
+                        tire_data = format_tire_data(product)
 
-        # Create tires
-        if tires_target > 0:
-            logger.info("")
-            logger.info(f"Creating {tires_target} tires...")
-            for i, product in enumerate(tires_products[:tires_target], 1):
-                try:
-                    logger.info(f"  [{i}/{tires_target}] Creating tire: {product.get('title', 'Unknown')}")
+                        logger.info(f"  [{i}/{tires_target}] Creating tire: {tire_data.get('title', 'Unknown')}")
 
-                    # Create on Shopify
-                    shopify_product_id = await create_product_on_shopify(product, 'tire')
+                        # Create on Shopify
+                        shopify_result = await create_product_on_shopify(session, tire_data, tire_data.get('image'))
 
-                    if shopify_product_id:
-                        # Update database (tfs-db) - mark as synced
-                        await update_product_sync_status(
-                            db_pool_inventory, 'tires', product['url_part_number'],
-                            status='synced', shopify_id=shopify_product_id
-                        )
+                        if shopify_result and shopify_result.get('shopify_id'):
+                            shopify_product_id = shopify_result['shopify_id']
 
-                        # Increment daily limit (tfs-manager)
-                        await increment_daily_limit(db_pool_manager, 'tire')
+                            # Update database (tfs-db) - mark as synced
+                            await update_product_sync_status(
+                                db_pool_inventory, 'tires', product['url_part_number'],
+                                status='synced', shopify_id=shopify_product_id
+                            )
 
-                        stats['tires_created'] += 1
-                        stats['total_created'] += 1
+                            # Increment daily limit (tfs-manager)
+                            await increment_daily_limit(db_pool_manager, 'tire')
 
-                        logger.info(f"  ✅ Created tire with Shopify ID: {shopify_product_id}")
-                    else:
-                        # Mark as error
-                        await update_product_sync_status(
-                            db_pool_inventory, 'tires', product['url_part_number'],
-                            status='error', error_message='Failed to create on Shopify'
-                        )
+                            stats['tires_created'] += 1
+                            stats['total_created'] += 1
 
+                            logger.info(f"  ✅ Created tire with Shopify ID: {shopify_product_id}")
+                        else:
+                            # Mark as error
+                            await update_product_sync_status(
+                                db_pool_inventory, 'tires', product['url_part_number'],
+                                status='error', error_message='Failed to create on Shopify'
+                            )
+
+                            stats['tires_failed'] += 1
+                            stats['total_failed'] += 1
+                            logger.warning(f"  ❌ Failed to create tire")
+
+                    except Exception as e:
                         stats['tires_failed'] += 1
                         stats['total_failed'] += 1
-                        logger.warning(f"  ❌ Failed to create tire")
-
-                except Exception as e:
-                    stats['tires_failed'] += 1
-                    stats['total_failed'] += 1
-                    logger.error(f"  ❌ Error creating tire: {e}")
+                        logger.error(f"  ❌ Error creating tire: {e}")
 
         # ================================================================
         # FINAL SUMMARY
