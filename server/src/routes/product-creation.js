@@ -160,7 +160,7 @@ router.put('/config', async (req, res) => {
 router.get('/history', async (req, res) => {
   try {
     const shop = req.query.shop || '2f3d7a-2.myshopify.com';
-    const limit = parseInt(req.query.limit) || 50;
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 500); // Ensure valid range 1-500
 
     // Get shop ID
     const [rows] = await db.execute(
@@ -174,12 +174,13 @@ router.get('/history', async (req, res) => {
 
     const shopId = rows[0].id;
 
+    // Use string interpolation for LIMIT since MySQL doesn't support placeholders for LIMIT in prepared statements
     const [history] = await db.execute(
       `SELECT * FROM product_creation_jobs
        WHERE shop_id = ?
        ORDER BY created_at DESC
-       LIMIT ?`,
-      [shopId, limit]
+       LIMIT ${limit}`,
+      [shopId]
     );
 
     res.json({ history });
