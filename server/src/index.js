@@ -16,6 +16,7 @@ import emailRoutes from './routes/email.js';
 import emailTemplatesRoutes from './routes/email-templates.js';
 import customerEmailsRoutes from './routes/customer-emails.js';
 import brandsRoutes from './routes/brands.js';
+import migrationsRoutes from './routes/migrations.js';
 import { applyAllSecurityHeaders } from './middleware/securityHeaders.js';
 import './config/database.js';
 import { jobScheduler } from './services/jobScheduler.js';
@@ -65,6 +66,7 @@ app.use('/api/email', emailRoutes);
 app.use('/api/email-templates', emailTemplatesRoutes);
 app.use('/api/customer-emails', customerEmailsRoutes);
 app.use('/api/brands', brandsRoutes);
+app.use('/api/migrations', migrationsRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

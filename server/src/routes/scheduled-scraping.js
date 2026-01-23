@@ -72,12 +72,6 @@ router.post('/', async (req, res) => {
     const nextRunAt = new Date();
     nextRunAt.setHours(nextRunAt.getHours() + parseInt(scheduleInterval));
 
-    // Ensure scraping is disabled for product creation (we handle that separately now)
-    const finalConfig = {
-      ...config,
-      enableShopifySync: false // ALWAYS false - scraping only saves to DB
-    };
-
     const [result] = await db.execute(
       `INSERT INTO scheduled_scrape_jobs (
         shop_id,
@@ -93,7 +87,7 @@ router.post('/', async (req, res) => {
         name,
         scraperType,
         scheduleInterval,
-        JSON.stringify(finalConfig),
+        JSON.stringify(config),
         nextRunAt
       ]
     );
@@ -142,13 +136,8 @@ router.put('/:jobId', async (req, res) => {
       params.push(scheduleInterval);
     }
     if (config !== undefined) {
-      // Ensure enableShopifySync is always false
-      const finalConfig = {
-        ...config,
-        enableShopifySync: false
-      };
       updates.push('config = ?');
-      params.push(JSON.stringify(finalConfig));
+      params.push(JSON.stringify(config));
     }
     if (enabled !== undefined) {
       updates.push('enabled = ?');

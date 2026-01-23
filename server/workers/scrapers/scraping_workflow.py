@@ -18,7 +18,6 @@ try:
     from .config import (
         MODE,
         BASE_URL,
-        HEADLESS,
         CONCURRENT_PAGE_WORKERS,
         BATCH_SIZE,
         CHECKPOINT_FILE,
@@ -41,7 +40,6 @@ except ImportError:
     from config import (
         MODE,
         BASE_URL,
-        HEADLESS,
         CONCURRENT_PAGE_WORKERS,
         BATCH_SIZE,
         CHECKPOINT_FILE,
@@ -671,7 +669,7 @@ async def process_product_batch(products: List[Product]):
 async def initialize_browser_and_cookies(base_url: str) -> tuple:
     """Initialize browser, solve CAPTCHA, and get cookies."""
     logger.info("Initializing browser...")
-    driver = Driver(uc=True, headless=HEADLESS)
+    driver = Driver(uc=True, headless=True)
 
     try:
         logger.info("Navigating to base URL and handling CAPTCHA...")

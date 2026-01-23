@@ -29,8 +29,6 @@ try:
     from . import config
     from .config import (
         MODE,
-        ENABLE_PRODUCT_DISCOVERY,
-        ENABLE_SHOPIFY_SYNC,
         RETRY_FAILED_PRODUCTS,
         MAX_PRODUCTS_PER_DAY,
         DB_CONFIG,
@@ -38,7 +36,6 @@ try:
         logger
     )
     from .gcs_manager import GCSManager
-    from .shopify_ops_new import sync_shopify_products_table
     from .product_discovery import (
         discover_new_products,
         extract_product_data_batch,
@@ -53,8 +50,6 @@ except ImportError:
     import config
     from config import (
         MODE,
-        ENABLE_PRODUCT_DISCOVERY,
-        ENABLE_SHOPIFY_SYNC,
         RETRY_FAILED_PRODUCTS,
         MAX_PRODUCTS_PER_DAY,
         DB_CONFIG,
@@ -62,7 +57,6 @@ except ImportError:
         logger
     )
     from gcs_manager import GCSManager
-    from shopify_ops_new import sync_shopify_products_table
     from product_discovery import (
         discover_new_products,
         extract_product_data_batch,
@@ -113,8 +107,6 @@ async def run_enhanced_scraper():
     logger.info("ENHANCED CWO SCRAPER - STARTING")
     logger.info("=" * 80)
     logger.info(f"Mode: {MODE}")
-    logger.info(f"Product Discovery: {ENABLE_PRODUCT_DISCOVERY}")
-    logger.info(f"Shopify Sync: {ENABLE_SHOPIFY_SYNC}")
     logger.info("=" * 80)
 
     # CRITICAL: Check for orphaned trigger backup (from previous crash)
@@ -159,11 +151,9 @@ async def run_enhanced_scraper():
         logger.info("✅ Database connected")
 
         # Initialize GCS manager (for image uploads)
-        gcs_manager = None
-        if ENABLE_PRODUCT_DISCOVERY:
-            logger.info("Initializing GCS manager...")
-            gcs_manager = await GCSManager.create()
-            logger.info("✅ GCS manager initialized")
+        logger.info("Initializing GCS manager...")
+        gcs_manager = await GCSManager.create()
+        logger.info("✅ GCS manager initialized")
 
         async with aiohttp.ClientSession() as session:
 
@@ -171,7 +161,7 @@ async def run_enhanced_scraper():
             # STEP 0: Retry Failed Products
             # ================================================================
             # Skip retry when scraping specific brands (quick targeted scrape)
-            if ENABLE_PRODUCT_DISCOVERY and RETRY_FAILED_PRODUCTS and not SCRAPE_SPECIFIC_BRANDS:
+            if RETRY_FAILED_PRODUCTS and not SCRAPE_SPECIFIC_BRANDS:
                 logger.info("")
                 logger.info("=" * 80)
                 logger.info("STEP 0: RETRYING FAILED PRODUCTS FROM PREVIOUS RUNS")
@@ -210,27 +200,14 @@ async def run_enhanced_scraper():
                     logger.info("No failed products to retry")
 
             # ================================================================
-            # STEP 1: Sync Shopify Product Tables
-            # ================================================================
-            # Skip Shopify sync when scraping specific brands (quick targeted scrape)
-            if ENABLE_SHOPIFY_SYNC and not SCRAPE_SPECIFIC_BRANDS:
-                synced_count = await sync_shopify_products_table(session, db_pool)
-                stats['shopify_products_synced'] = synced_count
-            elif SCRAPE_SPECIFIC_BRANDS:
-                logger.info("")
-                logger.info("=" * 80)
-                logger.info(f"SKIPPING SHOPIFY SYNC (scraping specific brands: {', '.join(SCRAPE_SPECIFIC_BRANDS)})")
-                logger.info("=" * 80)
-
-            # ================================================================
-            # STEP 2: Scrape CWO Inventory
+            # STEP 1: Scrape CWO Inventory
             # ================================================================
             try:
                 from .scraping_workflow import initialize_browser_and_cookies, scrape_all_pages, load_checkpoint
-                from .config import BASE_URL, SKIP_BRANDS_NORMALIZED, RESUME_FROM_CHECKPOINT, HEADLESS
+                from .config import BASE_URL, SKIP_BRANDS_NORMALIZED, RESUME_FROM_CHECKPOINT
             except ImportError:
                 from scraping_workflow import initialize_browser_and_cookies, scrape_all_pages, load_checkpoint
-                from config import BASE_URL, SKIP_BRANDS_NORMALIZED, RESUME_FROM_CHECKPOINT, HEADLESS
+                from config import BASE_URL, SKIP_BRANDS_NORMALIZED, RESUME_FROM_CHECKPOINT
 
             # Prefetch URL parts to cache (critical for change detection)
             logger.info("")
@@ -267,7 +244,7 @@ async def run_enhanced_scraper():
                 logger.info("Using cookies from checkpoint (skipping CAPTCHA)")
                 # Still create driver for potential refresh cycles
                 from seleniumbase import Driver
-                driver = Driver(uc=True, headless=HEADLESS)
+                driver = Driver(uc=True, headless=True)
             else:
                 driver, cookies = await initialize_browser_and_cookies(BASE_URL)
 
@@ -286,9 +263,9 @@ async def run_enhanced_scraper():
                     pass
 
             # ================================================================
-            # STEP 3: Discover New Products
+            # STEP 2: Discover New Products
             # ================================================================
-            if ENABLE_PRODUCT_DISCOVERY and len(scraped_products) > 0:
+            if len(scraped_products) > 0:
                 discovery_queue, _ = await discover_new_products(
                     session,
                     db_pool,
@@ -299,12 +276,12 @@ async def run_enhanced_scraper():
                 stats['new_products_discovered'] = len(discovery_queue)
 
                 # ================================================================
-                # STEP 4: Extract Product Data
+                # STEP 3: Extract Product Data
                 # ================================================================
                 if len(discovery_queue) > 0:
                     logger.info("")
                     logger.info("=" * 80)
-                    logger.info("STEP 4: EXTRACTING PRODUCT DATA")
+                    logger.info("STEP 3: EXTRACTING PRODUCT DATA")
                     logger.info("=" * 80)
 
                     # Check daily limit

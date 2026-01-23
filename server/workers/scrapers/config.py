@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 MODE = 'wheels'  # 'wheels' or 'tires'
-HEADLESS = True
 RESUME_FROM_CHECKPOINT = False
 STOP_ON_BACKORDER_ONLY = False
 SALE_ONLY = False
@@ -51,8 +50,6 @@ SALE_ONLY = False
 # NEW FEATURES CONFIGURATION
 # =============================================================================
 
-ENABLE_PRODUCT_DISCOVERY = True  # Enable new product creation
-ENABLE_SHOPIFY_SYNC = True  # Sync Shopify tables before scraping
 MAX_PRODUCTS_PER_DAY = int(os.environ.get('MAX_PRODUCTS_PER_DAY', '1000'))  # Daily creation limit (can be overridden via env var)
 RETRY_FAILED_PRODUCTS = True  # Retry products with product_sync='error'
 USE_ZENROWS = True  # Default to using ZenRows proxy (can be disabled with --no-zenrows)
@@ -65,18 +62,12 @@ if '--wheels' in sys.argv:
     MODE = 'wheels'
 if '--tires' in sys.argv:
     MODE = 'tires'
-if '--headed' in sys.argv:
-    HEADLESS = False
 if '--resume' in sys.argv:
     RESUME_FROM_CHECKPOINT = True
 if '--stop-on-backorder-only' in sys.argv:
     STOP_ON_BACKORDER_ONLY = True
 if '--sale-only' in sys.argv:
     SALE_ONLY = True
-if '--no-discovery' in sys.argv:
-    ENABLE_PRODUCT_DISCOVERY = False
-if '--no-shopify-sync' in sys.argv:
-    ENABLE_SHOPIFY_SYNC = False
 if '--no-zenrows' in sys.argv:
     USE_ZENROWS = False
 
@@ -241,11 +232,8 @@ logger.info("=" * 80)
 logger.info("ENHANCED CWO SCRAPER - CONFIGURATION")
 logger.info("=" * 80)
 logger.info(f"Mode: {MODE}")
-logger.info(f"Headless: {HEADLESS}")
 logger.info(f"Resume: {RESUME_FROM_CHECKPOINT}")
 logger.info(f"Sale Only: {SALE_ONLY}")
-logger.info(f"Product Discovery: {ENABLE_PRODUCT_DISCOVERY}")
-logger.info(f"Shopify Sync: {ENABLE_SHOPIFY_SYNC}")
 logger.info(f"Use ZenRows: {USE_ZENROWS}")
 logger.info(f"Max Products/Day: {MAX_PRODUCTS_PER_DAY}")
 logger.info(f"Backorder Count: {MAX_CONSECUTIVE_NON_IN_STOCK}")

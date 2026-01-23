@@ -45,9 +45,6 @@ export default function ManualScrapingTab() {
 
   const [excludedBrands, setExcludedBrands] = useState(SKIP_BRANDS_DEFAULT);
   const [config, setConfig] = useState({
-    headless: true,
-    enableDiscovery: true,
-    enableShopifySync: true, // Can be enabled for manual scrapes
     useZenrows: true,
     backorderCount: 5,
     retryFailed: true,
@@ -231,22 +228,6 @@ export default function ManualScrapingTab() {
             transition={{duration: '200ms', timingFunction: 'ease-in-out'}}
           >
             <BlockStack gap="400">
-              <Checkbox
-                label="Run in headless mode (no browser window)"
-                checked={config.headless}
-                onChange={(val) => setConfig({...config, headless: val})}
-              />
-              <Checkbox
-                label="Enable product discovery (find new products)"
-                checked={config.enableDiscovery}
-                onChange={(val) => setConfig({...config, enableDiscovery: val})}
-              />
-              <Checkbox
-                label="Enable Shopify sync (create products immediately)"
-                checked={config.enableShopifySync}
-                onChange={(val) => setConfig({...config, enableShopifySync: val})}
-                helpText="When disabled, only saves to database"
-              />
               <Checkbox
                 label="Use ZenRows (proxy service for scraping)"
                 checked={config.useZenrows}

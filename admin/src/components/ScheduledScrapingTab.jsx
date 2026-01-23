@@ -12,7 +12,8 @@ import {
   InlineStack,
   Text,
   Banner,
-  EmptyState
+  EmptyState,
+  Collapsible
 } from '@shopify/polaris';
 import axios from 'axios';
 
@@ -26,10 +27,28 @@ const INTERVALS = [
   { label: 'Every 24 hours', value: '24' }
 ];
 
+const SKIP_BRANDS_DEFAULT = [
+  "4 Play", "American Racing", "American Truxx", "Asanti", "Black Rhino",
+  "DUB", "Dropstars", "Fuel", "ICON Alloys", "KMC", "Luxxx", "Mayhem",
+  "Moto Metal", "XD Series", "Ultra Wheel", "Milanni", "Red Dirt Road",
+  "RTX", "Seventy7", "Status", "TIS", "TSW", "Vision Wheel", "XF Off-Road",
+  "Lexani", "Factory Reproductions", "Grid Off-Road", "17x9 Matte Black",
+  "17x9 Gloss Black Milled", "Cali Off-Road", "OE Creations", "Helo",
+  "Alliance", "Foose", "Rotiform", "Verde", "US Mags", "DPR Off-Road",
+  "American Force", "American Racing Custom", "Asanti Off-Road", "ATX",
+  "Ballistic", "Black Label", "BMF Off-Road", "Brute", "Contrast",
+  "Cruiser Alloy", "Dick Cepek", "Dirty Life", "DLUX", "Dropstar", "F1R",
+  "F1R Wheels", "Forgiato", "Fuel Off-Road", "HE Wheels", "ION", "Kansei",
+  "Konig", "Konig Wheels", "Mayhem Wheels", "Method Race", "OE Performance",
+  "Offroad Monster", "RBP", "Red Sport", "Rosso"
+];
+
 export default function ScheduledScrapingTab() {
   const [scheduledJobs, setScheduledJobs] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState(null);
+  const [brands, setBrands] = useState([]);
+  const [brandsOpen, setBrandsOpen] = useState(false);
 
   // Form state
   const [jobName, setJobName] = useState('');
@@ -37,13 +56,25 @@ export default function ScheduledScrapingTab() {
   const [interval, setInterval] = useState('24');
   const [saleOnly, setSaleOnly] = useState(false);
   const [specificBrands, setSpecificBrands] = useState('');
-  const [enableDiscovery, setEnableDiscovery] = useState(true);
+  const [excludedBrands, setExcludedBrands] = useState(SKIP_BRANDS_DEFAULT);
   const [useZenrows, setUseZenrows] = useState(true);
   const [backorderCount, setBackorderCount] = useState('5');
 
   useEffect(() => {
     fetchScheduledJobs();
+    fetchBrands();
   }, []);
+
+  const fetchBrands = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/brands`, {
+        params: { shop: '2f3d7a-2.myshopify.com' }
+      });
+      setBrands(response.data.brands || []);
+    } catch (error) {
+      console.error('Failed to fetch brands:', error);
+    }
+  };
 
   const fetchScheduledJobs = async () => {
     try {
@@ -63,9 +94,10 @@ export default function ScheduledScrapingTab() {
     setInterval('24');
     setSaleOnly(false);
     setSpecificBrands('');
-    setEnableDiscovery(true);
+    setExcludedBrands(SKIP_BRANDS_DEFAULT);
     setUseZenrows(true);
     setBackorderCount('5');
+    setBrandsOpen(false);
     setModalOpen(true);
   };
 
@@ -76,22 +108,21 @@ export default function ScheduledScrapingTab() {
     setInterval(job.schedule_interval.toString());
     setSaleOnly(job.config?.saleOnly || false);
     setSpecificBrands(job.config?.specificBrands?.join(', ') || '');
-    setEnableDiscovery(job.config?.enableDiscovery !== false);
+    setExcludedBrands(job.config?.excludedBrands || SKIP_BRANDS_DEFAULT);
     setUseZenrows(job.config?.useZenrows !== false);
     setBackorderCount((job.config?.backorderCount || 5).toString());
+    setBrandsOpen(false);
     setModalOpen(true);
   };
 
   const handleSave = async () => {
     try {
       const config = {
-        headless: true,
-        enableDiscovery,
-        enableShopifySync: false, // Always false for scheduled jobs
         useZenrows,
         backorderCount: parseInt(backorderCount) || 5,
         saleOnly,
-        specificBrands: specificBrands ? specificBrands.split(',').map(b => b.trim()) : []
+        specificBrands: specificBrands ? specificBrands.split(',').map(b => b.trim()) : [],
+        excludedBrands
       };
 
       if (editingJob) {
@@ -255,12 +286,6 @@ export default function ScheduledScrapingTab() {
             />
 
             <Checkbox
-              label="Enable product discovery (find new products)"
-              checked={enableDiscovery}
-              onChange={setEnableDiscovery}
-            />
-
-            <Checkbox
               label="Use ZenRows (proxy service for scraping)"
               checked={useZenrows}
               onChange={setUseZenrows}
@@ -291,6 +316,82 @@ export default function ScheduledScrapingTab() {
               autoComplete="off"
               multiline
             />
+
+            <div style={{ marginTop: '16px' }}>
+              <Button
+                onClick={() => setBrandsOpen(!brandsOpen)}
+                ariaExpanded={brandsOpen}
+                ariaControls="excluded-brands-scheduled"
+                fullWidth
+                textAlign="left"
+                disclosure={brandsOpen ? 'up' : 'down'}
+              >
+                <Text variant="bodyMd" as="span">
+                  Excluded Brands ({excludedBrands.length} selected)
+                </Text>
+              </Button>
+
+              <Collapsible
+                open={brandsOpen}
+                id="excluded-brands-scheduled"
+                transition={{duration: '200ms', timingFunction: 'ease-in-out'}}
+              >
+                <div style={{ marginTop: '12px' }}>
+                  <BlockStack gap="300">
+                    <Text tone="subdued">
+                      Select brands to exclude from scraping:
+                    </Text>
+
+                    <InlineStack gap="200">
+                      <Button
+                        size="slim"
+                        onClick={() => {
+                          const allBrands = brands.length > 0 ? brands : SKIP_BRANDS_DEFAULT;
+                          setExcludedBrands(allBrands);
+                        }}
+                      >
+                        Select All
+                      </Button>
+                      <Button
+                        size="slim"
+                        onClick={() => setExcludedBrands([])}
+                      >
+                        Deselect All
+                      </Button>
+                    </InlineStack>
+
+                    <div style={{
+                      maxHeight: '300px',
+                      overflowY: 'auto',
+                      padding: '12px',
+                      backgroundColor: '#f6f6f7',
+                      borderRadius: '8px'
+                    }}>
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(2, 1fr)',
+                        gap: '8px'
+                      }}>
+                        {(brands.length > 0 ? brands : SKIP_BRANDS_DEFAULT).map((brand) => (
+                          <Checkbox
+                            key={brand}
+                            label={brand}
+                            checked={excludedBrands.includes(brand)}
+                            onChange={(checked) => {
+                              if (checked) {
+                                setExcludedBrands([...excludedBrands, brand]);
+                              } else {
+                                setExcludedBrands(excludedBrands.filter(b => b !== brand));
+                              }
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </BlockStack>
+                </div>
+              </Collapsible>
+            </div>
           </BlockStack>
         </Modal.Section>
       </Modal>

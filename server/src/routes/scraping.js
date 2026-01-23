@@ -103,10 +103,7 @@ router.post('/start', async (req, res) => {
     ];
 
     // Add optional flags based on config
-    if (config.headless === false) args.push('--headed');
     if (config.saleOnly) args.push('--sale-only');
-    if (!config.enableDiscovery) args.push('--no-discovery');
-    if (!config.enableShopifySync) args.push('--no-shopify-sync');
     if (config.useZenrows === false) args.push('--no-zenrows');
 
     console.log(`🔧 Python args:`, args.join(' '));

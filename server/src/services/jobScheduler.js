@@ -167,11 +167,7 @@ class JobScheduler {
       ];
 
       // Add config flags
-      if (config.headless === false) args.push('--headed');
       if (config.saleOnly) args.push('--sale-only');
-      if (!config.enableDiscovery) args.push('--no-discovery');
-      // Always disable Shopify sync for scheduled scrapes
-      args.push('--no-shopify-sync');
       if (config.useZenrows === false) args.push('--no-zenrows');
 
       const pythonProcess = spawn('python3', args, {

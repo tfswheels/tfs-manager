@@ -73,7 +73,10 @@ try:
     logger.info("=" * 80)
 
     # Import and run the main scraper
-    sys.argv = ['main.py', f'--{scraper_type}']
+    # Preserve all command line arguments except job-id and type
+    # (which are specific to run_scraper.py)
+    preserved_args = [arg for arg in sys.argv[1:] if not arg.startswith('--job-id=') and not arg.startswith('--type=')]
+    sys.argv = ['main.py', f'--{scraper_type}'] + preserved_args
 
     from main import run_enhanced_scraper
 
