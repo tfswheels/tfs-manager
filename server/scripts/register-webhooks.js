@@ -60,16 +60,6 @@ async function registerWebhooks(shopDomain) {
         address: `${process.env.APP_URL}/webhooks/orders/updated`,
         format: 'json'
       },
-      {
-        topic: 'products/create',
-        address: `${process.env.APP_URL}/webhooks/orders/products/create`,
-        format: 'json'
-      },
-      {
-        topic: 'products/update',
-        address: `${process.env.APP_URL}/webhooks/orders/products/update`,
-        format: 'json'
-      },
       // GDPR webhooks (required for Shopify app store compliance)
       {
         topic: 'customers/data_request',

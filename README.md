@@ -57,8 +57,10 @@ TFS Manager provides an all-in-one solution for managing TFS Wheels' Shopify sto
    - `processing_logs` - Order processing history
    - `gdpr_requests` - GDPR compliance tracking
 
-2. **`tfs-db`** - Product database (shared with other systems)
-   - `shopify_products` - Product catalog from scraping
+2. **`tfs-db`** - Inventory database (shared with other systems)
+   - `shopify_products` - Product catalog from scraping (220K+ rows)
+   - `all_shopify_wheels` - Wheel inventory with comprehensive data
+   - `shopify_tires` - Tire inventory with comprehensive data
    - Product images and metadata
 
 ## ✅ Implemented Features
@@ -162,9 +164,10 @@ TFS Manager provides an all-in-one solution for managing TFS Wheels' Shopify sto
 - HMAC verification for webhooks
 
 **Webhooks:**
-- Order created/updated webhooks
-- GDPR compliance webhooks (customer data requests, redaction, erasure)
+- Order webhooks (orders/create, orders/updated)
+- GDPR compliance webhooks (customers/data_request, customers/redact, shop/redact)
 - Webhook verification with HMAC
+- Note: Product webhooks are NOT used - inventory is synced via direct scraping to tfs-db
 
 ## 🚧 Pending Features
 
@@ -460,7 +463,9 @@ TFS Manager/
 ### Webhooks
 - `POST /webhooks/orders/create` - Shopify order created
 - `POST /webhooks/orders/updated` - Shopify order updated
-- `POST /webhooks/gdpr/*` - GDPR compliance webhooks
+- `POST /webhooks/gdpr/customers/data_request` - GDPR data request
+- `POST /webhooks/gdpr/customers/redact` - GDPR customer data redaction
+- `POST /webhooks/gdpr/shop/redact` - GDPR shop data redaction
 - `POST /webhooks/zoho/email-received` - Zoho incoming email
 
 ### Products & Scraping
@@ -510,9 +515,12 @@ TFS Manager/
 ## 📝 Database Migrations
 
 **Migration Files:**
-- `create-tables.sql` - Base schema (shops, orders, products, etc.)
+- `create-tables.sql` - Base schema (shops, orders, etc.)
 - `002_enhance_email_system.sql` - Email tables (templates, logs, conversations)
 - `003_complete_email_system.sql` - Zoho settings and template variables
+- `004_seed_email_templates.sql` - Seed default email templates
+- `005_scheduled_jobs.sql` - Add scheduled scraping job tables
+- `006_drop_products_table.sql` - Remove orphaned products table (product webhooks removed)
 
 **Running Migrations:**
 ```bash
