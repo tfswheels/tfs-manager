@@ -156,6 +156,7 @@ router.put('/config', async (req, res) => {
 
 /**
  * Get product creation history
+ * Only shows jobs from the last 7 days to avoid stale data
  */
 router.get('/history', async (req, res) => {
   try {
@@ -174,10 +175,24 @@ router.get('/history', async (req, res) => {
 
     const shopId = rows[0].id;
 
-    // Use string interpolation for LIMIT since MySQL doesn't support placeholders for LIMIT in prepared statements
+    // Clean up stale "running" jobs (running for more than 2 hours)
+    await db.execute(
+      `UPDATE product_creation_jobs
+       SET status = 'failed',
+           error_message = 'Job timed out - marked as failed',
+           completed_at = NOW(),
+           updated_at = NOW()
+       WHERE shop_id = ?
+       AND status = 'running'
+       AND started_at < DATE_SUB(NOW(), INTERVAL 2 HOUR)`,
+      [shopId]
+    );
+
+    // Get recent history (last 7 days)
     const [history] = await db.execute(
       `SELECT * FROM product_creation_jobs
        WHERE shop_id = ?
+       AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
        ORDER BY created_at DESC
        LIMIT ${limit}`,
       [shopId]
@@ -268,6 +283,7 @@ router.post('/run-now', async (req, res) => {
 
 /**
  * Get today's product creation stats
+ * Uses shared daily limit system
  */
 router.get('/stats/today', async (req, res) => {
   try {
@@ -285,32 +301,35 @@ router.get('/stats/today', async (req, res) => {
 
     const shopId = rows[0].id;
 
-    // Get today's stats
+    // Get today's stats from shared daily limit table
     const [stats] = await db.execute(
       `SELECT
-        SUM(products_created) as total_created,
-        SUM(wheels_created) as wheels_created,
-        SUM(tires_created) as tires_created
-       FROM product_creation_jobs
-       WHERE shop_id = ?
-       AND DATE(created_at) = CURDATE()
-       AND status = 'completed'`,
-      [shopId]
+        total_created,
+        wheels_created,
+        tires_created,
+        limit_per_day
+       FROM daily_shopify_creation_limit
+       WHERE date = CURDATE()`
     );
 
-    // Get current config for daily limit
-    const [config] = await db.execute(
-      `SELECT max_products_per_run FROM product_creation_jobs
-       WHERE shop_id = ?
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [shopId]
-    );
+    let totalCreated = 0;
+    let wheelsCreated = 0;
+    let tiresCreated = 0;
+    let dailyLimit = 1000;
 
-    const dailyLimit = config[0]?.max_products_per_run || 1000;
-    const totalCreated = stats[0]?.total_created || 0;
-    const wheelsCreated = stats[0]?.wheels_created || 0;
-    const tiresCreated = stats[0]?.tires_created || 0;
+    if (stats.length > 0) {
+      totalCreated = stats[0].total_created || 0;
+      wheelsCreated = stats[0].wheels_created || 0;
+      tiresCreated = stats[0].tires_created || 0;
+      dailyLimit = stats[0].limit_per_day || 1000;
+    } else {
+      // Create today's entry if it doesn't exist
+      await db.execute(
+        `INSERT INTO daily_shopify_creation_limit
+         (date, total_created, wheels_created, tires_created)
+         VALUES (CURDATE(), 0, 0, 0)`
+      );
+    }
 
     res.json({
       today: {

@@ -179,8 +179,9 @@ export default function ProductCreationTab() {
   return (
     <BlockStack gap="400">
       <Banner title="Automated Product Creation" tone="info">
-        <p>Products are automatically created in Shopify from scraped inventory data.</p>
-        <p>Configure daily limits and schedule to control product creation rate.</p>
+        <p>Creates products on Shopify from the wheels and tires database (products without Shopify IDs).</p>
+        <p><strong>Shared 1000/day limit</strong> across wheels + tires with <strong>70/30 split</strong>, oldest products first.</p>
+        <p>Scraping saves ALL discovered products to database. This job creates them on Shopify.</p>
       </Banner>
 
       <Layout>
@@ -247,17 +248,31 @@ export default function ProductCreationTab() {
                 <BlockStack gap="300">
                   <InlineStack align="space-between" blockAlign="center">
                     <Text as="p">
-                      <strong>Status:</strong>
+                      <strong>System Status:</strong>
                     </Text>
                     <Badge tone={config.enabled ? 'success' : 'critical'}>
-                      {config.enabled ? 'Enabled' : 'Disabled'}
+                      {config.enabled ? 'Active ✓' : 'Disabled'}
                     </Badge>
                   </InlineStack>
-                  <Text tone="subdued" as="p">
+
+                  {todayStats && (
+                    <Text as="p">
+                      <strong>Daily Progress:</strong> {todayStats.total}/{todayStats.limit} products created today
+                    </Text>
+                  )}
+
+                  <Text as="p">
                     <strong>Next Run:</strong> {formatNextRun(config.next_run_at)}
                   </Text>
+
+                  {config.updated_at && config.updated_at !== config.created_at && (
+                    <Text tone="subdued" as="p" fontSize="small">
+                      Last run: {new Date(config.updated_at).toLocaleString()}
+                    </Text>
+                  )}
+
                   <Text tone="subdued" as="p" fontSize="small">
-                    Last updated: {new Date(config.updated_at).toLocaleString()}
+                    Split: 70% wheels, 30% tires (oldest first)
                   </Text>
                 </BlockStack>
               )}

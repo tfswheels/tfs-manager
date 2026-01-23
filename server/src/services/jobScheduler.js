@@ -257,7 +257,7 @@ class JobScheduler {
 
   /**
    * Execute product creation job
-   * TODO: This needs to be implemented with actual product creation logic
+   * Spawns the Python product creation worker
    */
   async executeProductCreationJob(job) {
     try {
@@ -294,26 +294,57 @@ class JobScheduler {
       console.log(`  ✅ Created product creation job #${newJobId}`);
       console.log(`  ⏰ Next run scheduled for: ${nextRunAt.toISOString()}`);
 
-      // Mark the process as running
-      runningJobs.set(`product_creation_${job.id}`, true);
+      // Spawn Python product creation worker
+      const workerPath = path.join(__dirname, '../../workers/product-creator');
+      const pythonScript = path.join(workerPath, 'create_shopify_products.py');
 
-      // TODO: Spawn product creation worker here
-      // For now, just mark as completed
-      setTimeout(async () => {
-        await db.execute(
-          `UPDATE product_creation_jobs
-           SET status = 'completed',
-               completed_at = NOW(),
-               products_created = 0,
-               wheels_created = 0,
-               tires_created = 0
-           WHERE id = ?`,
-          [newJobId]
-        );
+      const args = [
+        pythonScript,
+        `--job-id=${newJobId}`,
+        `--max-products=${job.max_products_per_run || 1000}`
+      ];
 
+      const pythonProcess = spawn('python3', args, {
+        cwd: workerPath,
+        env: {
+          ...process.env,
+          DB_NAME: 'tfs-manager'
+        }
+      });
+
+      // Track the process
+      runningJobs.set(`product_creation_${job.id}`, pythonProcess);
+
+      // Handle output
+      pythonProcess.stdout.on('data', (data) => {
+        console.log(`[Product Creation #${newJobId}] ${data.toString().trim()}`);
+      });
+
+      pythonProcess.stderr.on('data', (data) => {
+        const output = data.toString().trim();
+        if (output.includes('ERROR') || output.includes('WARNING') || output.includes('Traceback')) {
+          console.error(`[Product Creation #${newJobId} ERROR] ${output}`);
+        } else {
+          console.log(`[Product Creation #${newJobId}] ${output}`);
+        }
+      });
+
+      pythonProcess.on('close', (code) => {
         runningJobs.delete(`product_creation_${job.id}`);
-        console.log(`✅ Product creation job #${newJobId} completed (placeholder)`);
-      }, 5000);
+
+        if (code === 0) {
+          console.log(`✅ Product creation job #${newJobId} completed successfully`);
+        } else if (code === null) {
+          console.log(`⚠️  Product creation job #${newJobId} was terminated`);
+        } else {
+          console.error(`❌ Product creation job #${newJobId} failed with code ${code}`);
+        }
+      });
+
+      pythonProcess.on('error', (error) => {
+        console.error(`❌ Failed to start product creation job #${newJobId}:`, error);
+        runningJobs.delete(`product_creation_${job.id}`);
+      });
 
     } catch (error) {
       console.error('❌ Error executing product creation job:', error);

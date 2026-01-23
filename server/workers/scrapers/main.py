@@ -237,50 +237,41 @@ async def run_enhanced_scraper():
                     logger.info("STEP 3: EXTRACTING PRODUCT DATA")
                     logger.info("=" * 80)
 
-                    # Check daily limit
-                    remaining_limit = await check_daily_creation_limit(db_pool)
-                    logger.info(f"Daily limit: {remaining_limit} products can be created today")
+                    logger.info(f"Processing ALL {len(discovery_queue)} discovered products")
+                    logger.info("Note: Shopify creation limit (1000/day) is handled by separate product creation job")
 
-                    if remaining_limit > 0:
-                        # Limit to daily max
-                        products_to_process = discovery_queue[:remaining_limit]
+                    # Extract product data for ALL discovered products
+                    extracted_products = await extract_product_data_batch(
+                        session,
+                        discovery_queue,
+                        [],  # cookies from scraper
+                        stats  # Pass stats to track discontinued products
+                    )
 
-                        logger.info(f"Processing {len(products_to_process)} products (limit: {remaining_limit})")
+                    # ================================================================
+                    # STEP 4: Save Products to Database
+                    # ================================================================
+                    if len(extracted_products) > 0:
+                        logger.info("")
+                        logger.info("=" * 80)
+                        logger.info("STEP 4: SAVING PRODUCTS TO DATABASE")
+                        logger.info("=" * 80)
 
-                        # Extract product data
-                        extracted_products = await extract_product_data_batch(
+                        await create_products_batch(
                             session,
-                            products_to_process,
-                            [],  # cookies from scraper
-                            stats  # Pass stats to track discontinued products
+                            gcs_manager,
+                            db_pool,
+                            extracted_products,
+                            stats,
+                            skip_shopify_creation=True  # Only save to DB during scraping
                         )
 
-                        # ================================================================
-                        # STEP 5: Save Products to Database
-                        # ================================================================
-                        if len(extracted_products) > 0:
-                            logger.info("")
-                            logger.info("=" * 80)
-                            logger.info("STEP 5: SAVING PRODUCTS TO DATABASE")
-                            logger.info("=" * 80)
-
-                            await create_products_batch(
-                                session,
-                                gcs_manager,
-                                db_pool,
-                                extracted_products,
-                                stats,
-                                skip_shopify_creation=True  # Only save to DB during scraping
-                            )
-                    else:
-                        logger.warning("Daily limit reached - cannot create new products")
-
             # ================================================================
-            # STEP 5.5: Restore Prices for Ended Sales
+            # STEP 5: Restore Prices for Ended Sales
             # ================================================================
             logger.info("")
             logger.info("=" * 80)
-            logger.info("STEP 5.5: RESTORING PRICES FOR ENDED SALES")
+            logger.info("STEP 5: RESTORING PRICES FOR ENDED SALES")
             logger.info("=" * 80)
 
             try:
