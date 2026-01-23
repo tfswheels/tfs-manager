@@ -113,6 +113,31 @@ export default function ProductCreationTab() {
     }
   };
 
+  const handleToggleEnabled = async () => {
+    const newEnabledState = !config?.enabled;
+    const action = newEnabledState ? 'enable' : 'disable';
+
+    if (!window.confirm(`Are you sure you want to ${action} automated product creation?`)) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await axios.put(`${API_URL}/api/product-creation/config`, {
+        enabled: newEnabledState
+      }, {
+        params: { shop: '2f3d7a-2.myshopify.com' }
+      });
+      await fetchConfig();
+      alert(`Product creation ${newEnabledState ? 'enabled' : 'disabled'} successfully!`);
+    } catch (error) {
+      console.error('Failed to toggle enabled state:', error);
+      alert(`Failed to ${action} product creation`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const formatNextRun = (dateString) => {
     if (!dateString) return '-';
     const date = new Date(dateString);
@@ -219,12 +244,20 @@ export default function ProductCreationTab() {
               />
 
               {config && (
-                <BlockStack gap="200">
-                  <Text tone="subdued" as="p">
-                    <strong>Status:</strong> {config.enabled ? 'Enabled' : 'Disabled'}
-                  </Text>
+                <BlockStack gap="300">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text as="p">
+                      <strong>Status:</strong>
+                    </Text>
+                    <Badge tone={config.enabled ? 'success' : 'critical'}>
+                      {config.enabled ? 'Enabled' : 'Disabled'}
+                    </Badge>
+                  </InlineStack>
                   <Text tone="subdued" as="p">
                     <strong>Next Run:</strong> {formatNextRun(config.next_run_at)}
+                  </Text>
+                  <Text tone="subdued" as="p" fontSize="small">
+                    Last updated: {new Date(config.updated_at).toLocaleString()}
                   </Text>
                 </BlockStack>
               )}
@@ -232,6 +265,13 @@ export default function ProductCreationTab() {
               <InlineStack gap="200">
                 <Button onClick={handleSave} loading={saving}>
                   Save Configuration
+                </Button>
+                <Button
+                  onClick={handleToggleEnabled}
+                  loading={saving}
+                  tone={config?.enabled ? 'critical' : 'success'}
+                >
+                  {config?.enabled ? 'Disable' : 'Enable'}
                 </Button>
                 <Button onClick={handleRunNow} loading={running}>
                   Run Now
