@@ -100,17 +100,21 @@ async def increment_daily_limit(db_pool, product_type):
 async def query_products_needing_creation(db_pool_inventory, table_name, limit):
     """
     Query products that need to be created on Shopify.
-    Returns oldest products first (by id - since no created_at column).
+    Returns newest modified products first (most recently updated).
     Uses db_pool_inventory which connects to tfs-db database.
+
+    Queries from 'wheels' and 'tires' tables (not all_shopify_wheels/shopify_tires).
     """
     try:
-        # Query products where shopify_id IS NULL (not created on Shopify yet)
-        # Order by id ASC (oldest first - id is auto-increment)
+        # Query products where product_sync = 'pending' or 'error' (need Shopify creation)
+        # Order by last_modified DESC (newest first - as per original script)
         query = f"""
         SELECT *
         FROM {table_name}
-        WHERE shopify_id IS NULL
-        ORDER BY id ASC
+        WHERE product_sync IN ('pending', 'error')
+          AND url_part_number IS NOT NULL
+          AND url_part_number != ''
+        ORDER BY last_modified DESC
         LIMIT %s
         """
 
@@ -125,27 +129,56 @@ async def query_products_needing_creation(db_pool_inventory, table_name, limit):
         return []
 
 
-async def update_shopify_product_id(db_pool_inventory, table_name, product_id, shopify_product_id):
+async def update_product_sync_status(db_pool_inventory, table_name, url_part_number, status, shopify_id=None, error_message=None):
     """
-    Update the product with its Shopify product ID.
+    Update product_sync status in wheels/tires table.
     Uses db_pool_inventory which connects to tfs-db database.
+
+    Args:
+        status: 'synced', 'pending', or 'error'
+        shopify_id: Shopify product ID (if successfully created)
+        error_message: Error message (if status = 'error')
     """
     try:
-        # Update shopify_id column (not shopify_product_id)
-        query = f"""
-        UPDATE {table_name}
-        SET shopify_id = %s,
-            last_modified = NOW()
-        WHERE id = %s
-        """
+        if shopify_id:
+            # Success - mark as synced with Shopify ID
+            query = f"""
+            UPDATE {table_name}
+            SET product_sync = %s,
+                sync_error = NULL,
+                shopify_id = %s,
+                last_modified = NOW()
+            WHERE url_part_number = %s
+            """
+            params = (status, shopify_id, url_part_number)
+        elif error_message:
+            # Error - mark as error with message
+            query = f"""
+            UPDATE {table_name}
+            SET product_sync = %s,
+                sync_error = %s,
+                last_modified = NOW()
+            WHERE url_part_number = %s
+            """
+            params = (status, error_message, url_part_number)
+        else:
+            # Just update status
+            query = f"""
+            UPDATE {table_name}
+            SET product_sync = %s,
+                sync_error = NULL,
+                last_modified = NOW()
+            WHERE url_part_number = %s
+            """
+            params = (status, url_part_number)
 
         async with db_pool_inventory.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(query, (shopify_product_id, product_id))
+                await cur.execute(query, params)
                 await conn.commit()
 
     except Exception as e:
-        logger.error(f"Error updating shopify_id: {e}")
+        logger.error(f"Error updating product_sync status: {e}")
 
 
 async def update_job_status(db_pool, job_id, status, products_created=None, wheels_created=None, tires_created=None, error_message=None):
@@ -285,11 +318,12 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
 
         # Query more than we need in case some fail
         # Use db_pool_inventory for tfs-db database
+        # Query from 'wheels' and 'tires' tables (not all_shopify_wheels/shopify_tires)
         wheels_products = await query_products_needing_creation(
-            db_pool_inventory, 'all_shopify_wheels', wheels_target + 50
+            db_pool_inventory, 'wheels', wheels_target + 50
         )
         tires_products = await query_products_needing_creation(
-            db_pool_inventory, 'shopify_tires', tires_target + 50
+            db_pool_inventory, 'tires', tires_target + 50
         )
 
         logger.info(f"  Found {len(wheels_products)} wheels needing creation")
@@ -319,9 +353,10 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
                     shopify_product_id = await create_product_on_shopify(product, 'wheel')
 
                     if shopify_product_id:
-                        # Update database (tfs-db)
-                        await update_shopify_product_id(
-                            db_pool_inventory, 'all_shopify_wheels', product['id'], shopify_product_id
+                        # Update database (tfs-db) - mark as synced
+                        await update_product_sync_status(
+                            db_pool_inventory, 'wheels', product['url_part_number'],
+                            status='synced', shopify_id=shopify_product_id
                         )
 
                         # Increment daily limit (tfs-manager)
@@ -332,6 +367,12 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
 
                         logger.info(f"  ✅ Created wheel with Shopify ID: {shopify_product_id}")
                     else:
+                        # Mark as error
+                        await update_product_sync_status(
+                            db_pool_inventory, 'wheels', product['url_part_number'],
+                            status='error', error_message='Failed to create on Shopify'
+                        )
+
                         stats['wheels_failed'] += 1
                         stats['total_failed'] += 1
                         logger.warning(f"  ❌ Failed to create wheel")
@@ -353,9 +394,10 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
                     shopify_product_id = await create_product_on_shopify(product, 'tire')
 
                     if shopify_product_id:
-                        # Update database (tfs-db)
-                        await update_shopify_product_id(
-                            db_pool_inventory, 'shopify_tires', product['id'], shopify_product_id
+                        # Update database (tfs-db) - mark as synced
+                        await update_product_sync_status(
+                            db_pool_inventory, 'tires', product['url_part_number'],
+                            status='synced', shopify_id=shopify_product_id
                         )
 
                         # Increment daily limit (tfs-manager)
@@ -366,6 +408,12 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
 
                         logger.info(f"  ✅ Created tire with Shopify ID: {shopify_product_id}")
                     else:
+                        # Mark as error
+                        await update_product_sync_status(
+                            db_pool_inventory, 'tires', product['url_part_number'],
+                            status='error', error_message='Failed to create on Shopify'
+                        )
+
                         stats['tires_failed'] += 1
                         stats['total_failed'] += 1
                         logger.warning(f"  ❌ Failed to create tire")
