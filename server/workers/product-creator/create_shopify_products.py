@@ -97,23 +97,24 @@ async def increment_daily_limit(db_pool, product_type):
         logger.error(f"Error incrementing daily limit: {e}")
 
 
-async def query_products_needing_creation(db_pool, table_name, limit):
+async def query_products_needing_creation(db_pool_inventory, table_name, limit):
     """
     Query products that need to be created on Shopify.
-    Returns oldest products first (by created_at).
+    Returns oldest products first (by id - since no created_at column).
+    Uses db_pool_inventory which connects to tfs-db database.
     """
     try:
-        # Query products where shopify_product_id IS NULL
-        # Order by created_at ASC (oldest first)
+        # Query products where shopify_id IS NULL (not created on Shopify yet)
+        # Order by id ASC (oldest first - id is auto-increment)
         query = f"""
         SELECT *
         FROM {table_name}
-        WHERE shopify_product_id IS NULL
-        ORDER BY created_at ASC
+        WHERE shopify_id IS NULL
+        ORDER BY id ASC
         LIMIT %s
         """
 
-        async with db_pool.acquire() as conn:
+        async with db_pool_inventory.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute(query, (limit,))
                 results = await cur.fetchall()
@@ -124,23 +125,27 @@ async def query_products_needing_creation(db_pool, table_name, limit):
         return []
 
 
-async def update_shopify_product_id(db_pool, table_name, product_id, shopify_product_id):
-    """Update the product with its Shopify product ID."""
+async def update_shopify_product_id(db_pool_inventory, table_name, product_id, shopify_product_id):
+    """
+    Update the product with its Shopify product ID.
+    Uses db_pool_inventory which connects to tfs-db database.
+    """
     try:
+        # Update shopify_id column (not shopify_product_id)
         query = f"""
         UPDATE {table_name}
-        SET shopify_product_id = %s,
-            updated_at = NOW()
+        SET shopify_id = %s,
+            last_modified = NOW()
         WHERE id = %s
         """
 
-        async with db_pool.acquire() as conn:
+        async with db_pool_inventory.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(query, (shopify_product_id, product_id))
                 await conn.commit()
 
     except Exception as e:
-        logger.error(f"Error updating shopify_product_id: {e}")
+        logger.error(f"Error updating shopify_id: {e}")
 
 
 async def update_job_status(db_pool, job_id, status, products_created=None, wheels_created=None, tires_created=None, error_message=None):
@@ -193,15 +198,19 @@ async def update_job_status(db_pool, job_id, status, products_created=None, whee
 # PRODUCT CREATION LOGIC
 # =============================================================================
 
-async def create_products_on_shopify(db_pool, job_id, max_products):
+async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id, max_products):
     """
     Main product creation workflow.
 
-    1. Check daily limit
-    2. Query products from wheels and tires tables
+    1. Check daily limit (from tfs-manager)
+    2. Query products from wheels and tires tables (from tfs-db)
     3. Apply 70/30 split
     4. Create on Shopify (oldest first)
-    5. Update database
+    5. Update database (both databases)
+
+    Args:
+        db_pool_manager: Connection pool to tfs-manager database (for job status, daily limits)
+        db_pool_inventory: Connection pool to tfs-db database (for product tables)
     """
 
     logger.info("=" * 80)
@@ -214,7 +223,7 @@ async def create_products_on_shopify(db_pool, job_id, max_products):
     logger.info("=" * 80)
 
     # Update job status to running
-    await update_job_status(db_pool, job_id, 'running')
+    await update_job_status(db_pool_manager, job_id, 'running')
 
     stats = {
         'wheels_created': 0,
@@ -232,7 +241,7 @@ async def create_products_on_shopify(db_pool, job_id, max_products):
         logger.info("")
         logger.info("STEP 1: Checking daily limit...")
 
-        limit_info = await get_daily_limit_info(db_pool)
+        limit_info = await get_daily_limit_info(db_pool_manager)
         if not limit_info:
             raise Exception("Failed to get daily limit info")
 
@@ -245,7 +254,7 @@ async def create_products_on_shopify(db_pool, job_id, max_products):
 
         if remaining <= 0:
             logger.warning("Daily limit reached! No products will be created.")
-            await update_job_status(db_pool, job_id, 'completed', 0, 0, 0)
+            await update_job_status(db_pool_manager, job_id, 'completed', 0, 0, 0)
             return
 
         # Limit to remaining daily capacity
@@ -275,11 +284,12 @@ async def create_products_on_shopify(db_pool, job_id, max_products):
         logger.info("STEP 3: Querying products needing creation...")
 
         # Query more than we need in case some fail
+        # Use db_pool_inventory for tfs-db database
         wheels_products = await query_products_needing_creation(
-            db_pool, 'all_shopify_wheels', wheels_target + 50
+            db_pool_inventory, 'all_shopify_wheels', wheels_target + 50
         )
         tires_products = await query_products_needing_creation(
-            db_pool, 'shopify_tires', tires_target + 50
+            db_pool_inventory, 'shopify_tires', tires_target + 50
         )
 
         logger.info(f"  Found {len(wheels_products)} wheels needing creation")
@@ -309,13 +319,13 @@ async def create_products_on_shopify(db_pool, job_id, max_products):
                     shopify_product_id = await create_product_on_shopify(product, 'wheel')
 
                     if shopify_product_id:
-                        # Update database
+                        # Update database (tfs-db)
                         await update_shopify_product_id(
-                            db_pool, 'all_shopify_wheels', product['id'], shopify_product_id
+                            db_pool_inventory, 'all_shopify_wheels', product['id'], shopify_product_id
                         )
 
-                        # Increment daily limit
-                        await increment_daily_limit(db_pool, 'wheel')
+                        # Increment daily limit (tfs-manager)
+                        await increment_daily_limit(db_pool_manager, 'wheel')
 
                         stats['wheels_created'] += 1
                         stats['total_created'] += 1
@@ -343,13 +353,13 @@ async def create_products_on_shopify(db_pool, job_id, max_products):
                     shopify_product_id = await create_product_on_shopify(product, 'tire')
 
                     if shopify_product_id:
-                        # Update database
+                        # Update database (tfs-db)
                         await update_shopify_product_id(
-                            db_pool, 'shopify_tires', product['id'], shopify_product_id
+                            db_pool_inventory, 'shopify_tires', product['id'], shopify_product_id
                         )
 
-                        # Increment daily limit
-                        await increment_daily_limit(db_pool, 'tire')
+                        # Increment daily limit (tfs-manager)
+                        await increment_daily_limit(db_pool_manager, 'tire')
 
                         stats['tires_created'] += 1
                         stats['total_created'] += 1
@@ -382,7 +392,7 @@ async def create_products_on_shopify(db_pool, job_id, max_products):
 
         # Update job status to completed
         await update_job_status(
-            db_pool, job_id, 'completed',
+            db_pool_manager, job_id, 'completed',
             stats['total_created'],
             stats['wheels_created'],
             stats['tires_created']
@@ -393,7 +403,7 @@ async def create_products_on_shopify(db_pool, job_id, max_products):
         import traceback
         logger.error(traceback.format_exc())
 
-        await update_job_status(db_pool, job_id, 'failed', error_message=str(e))
+        await update_job_status(db_pool_manager, job_id, 'failed', error_message=str(e))
         raise
 
 
@@ -410,31 +420,51 @@ async def main():
 
     args = parser.parse_args()
 
-    # Create database connection pool
-    db_pool = None
+    # Create TWO database connection pools
+    db_pool_manager = None
+    db_pool_inventory = None
 
     try:
-        # Use tfs-manager database (where product_creation_jobs table is)
-        db_config = DB_CONFIG.copy()
-        db_config['db'] = os.getenv('DB_NAME', 'tfs-manager')
+        # Pool 1: tfs-manager database (for job status, daily limits)
+        manager_config = DB_CONFIG.copy()
+        manager_config['db'] = os.getenv('DB_NAME', 'tfs-manager')
 
-        logger.info(f"Connecting to database: {db_config['host']}/{db_config['db']}")
+        logger.info(f"Connecting to manager database: {manager_config['host']}/{manager_config['db']}")
 
-        db_pool = await aiomysql.create_pool(
-            host=db_config['host'],
-            port=db_config['port'],
-            user=db_config['user'],
-            password=db_config['password'],
-            db=db_config['db'],
+        db_pool_manager = await aiomysql.create_pool(
+            host=manager_config['host'],
+            port=manager_config['port'],
+            user=manager_config['user'],
+            password=manager_config['password'],
+            db=manager_config['db'],
             minsize=2,
             maxsize=10,
             autocommit=True
         )
 
-        logger.info("✅ Database connected")
+        logger.info("✅ Manager database connected")
 
-        # Run product creation
-        await create_products_on_shopify(db_pool, args.job_id, args.max_products)
+        # Pool 2: tfs-db database (for product tables)
+        inventory_config = DB_CONFIG.copy()
+        inventory_config['db'] = 'tfs-db'
+
+        logger.info(f"Connecting to inventory database: {inventory_config['host']}/{inventory_config['db']}")
+
+        db_pool_inventory = await aiomysql.create_pool(
+            host=inventory_config['host'],
+            port=inventory_config['port'],
+            user=inventory_config['user'],
+            password=inventory_config['password'],
+            db=inventory_config['db'],
+            minsize=2,
+            maxsize=10,
+            autocommit=True
+        )
+
+        logger.info("✅ Inventory database connected")
+
+        # Run product creation with both pools
+        await create_products_on_shopify(db_pool_manager, db_pool_inventory, args.job_id, args.max_products)
 
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
@@ -444,10 +474,14 @@ async def main():
         logger.error(traceback.format_exc())
         sys.exit(1)
     finally:
-        if db_pool:
-            db_pool.close()
-            await db_pool.wait_closed()
-            logger.info("Database connection closed")
+        if db_pool_manager:
+            db_pool_manager.close()
+            await db_pool_manager.wait_closed()
+            logger.info("Manager database connection closed")
+        if db_pool_inventory:
+            db_pool_inventory.close()
+            await db_pool_inventory.wait_closed()
+            logger.info("Inventory database connection closed")
 
 
 if __name__ == "__main__":
