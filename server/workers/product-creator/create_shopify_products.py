@@ -125,45 +125,33 @@ async def query_products_needing_creation(db_pool_inventory, table_name, limit):
         return []
 
 
-async def update_product_sync_status(db_pool_inventory, table_name, url_part_number, status, shopify_id=None, error_message=None):
+async def update_product_sync_status(db_pool_inventory, table_name, url_part_number, status, error_message=None):
     """
     Update product_sync status in wheels/tires table.
     Uses db_pool_inventory which connects to tfs-db database.
 
     Args:
+        table_name: 'wheels' or 'tires'
+        url_part_number: Product URL part number
         status: 'synced', 'pending', or 'error'
-        shopify_id: Shopify product ID (if successfully created)
         error_message: Error message (if status = 'error')
     """
     try:
-        if shopify_id:
-            # Success - mark as synced with Shopify ID
-            query = f"""
-            UPDATE {table_name}
-            SET product_sync = %s,
-                sync_error = NULL,
-                shopify_id = %s,
-                last_modified = NOW()
-            WHERE url_part_number = %s
-            """
-            params = (status, shopify_id, url_part_number)
-        elif error_message:
+        if error_message:
             # Error - mark as error with message
             query = f"""
             UPDATE {table_name}
             SET product_sync = %s,
-                sync_error = %s,
-                last_modified = NOW()
+                sync_error = %s
             WHERE url_part_number = %s
             """
             params = (status, error_message, url_part_number)
         else:
-            # Just update status
+            # Success or pending - update status
             query = f"""
             UPDATE {table_name}
             SET product_sync = %s,
-                sync_error = NULL,
-                last_modified = NOW()
+                sync_error = NULL
             WHERE url_part_number = %s
             """
             params = (status, url_part_number)
@@ -175,6 +163,58 @@ async def update_product_sync_status(db_pool_inventory, table_name, url_part_num
 
     except Exception as e:
         logger.error(f"Error updating product_sync status: {e}")
+
+
+async def insert_into_shopify_products(db_pool_inventory, product_data, shopify_result, product_type):
+    """
+    Insert product into shopify_products table (tracking table).
+    Uses db_pool_inventory which connects to tfs-db database.
+
+    Args:
+        product_data: Formatted wheel/tire data dict
+        shopify_result: Result from create_product_on_shopify()
+        product_type: 'wheel' or 'tire'
+    """
+    try:
+        query = """
+        INSERT INTO shopify_products
+        (brand, part_number, url_part_number, product_type, shopify_id, variant_id, handle,
+         map_price, quantity, sdw_cost, needs_sync, sync_status, source)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+
+        # Extract numeric Shopify ID from gid://shopify/Product/123456
+        shopify_id = shopify_result.get('shopify_id')
+        if isinstance(shopify_id, str) and shopify_id.startswith('gid://shopify/Product/'):
+            shopify_id = int(shopify_id.split('/')[-1])
+
+        values = (
+            product_data.get('brand'),
+            product_data.get('part_number'),
+            product_data.get('url_part_number'),
+            product_type,  # 'wheel' or 'tire'
+            shopify_id,
+            shopify_result.get('variant_id'),
+            shopify_result.get('handle'),
+            float(product_data.get('map_price', 0)),
+            int(product_data.get('quantity', 0)),
+            None,  # sdw_cost (we don't have supplier_cost in our data)
+            0,  # needs_sync
+            'active',  # sync_status
+            'CWO'  # source
+        )
+
+        async with db_pool_inventory.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, values)
+                await conn.commit()
+
+        logger.info(f"✅ Inserted into shopify_products: {product_data.get('part_number')}")
+
+    except Exception as e:
+        logger.error(f"Error inserting into shopify_products: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 
 async def update_job_status(db_pool, job_id, status, products_created=None, wheels_created=None, tires_created=None, error_message=None):
@@ -478,10 +518,15 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
                         if shopify_result and shopify_result.get('shopify_id'):
                             shopify_product_id = shopify_result['shopify_id']
 
-                            # Update database (tfs-db) - mark as synced
+                            # Update wheels table - mark as synced (no shopify_id in wheels table)
                             await update_product_sync_status(
                                 db_pool_inventory, 'wheels', product['url_part_number'],
-                                status='synced', shopify_id=shopify_product_id
+                                status='synced'
+                            )
+
+                            # Insert into shopify_products tracking table (this has the shopify_id)
+                            await insert_into_shopify_products(
+                                db_pool_inventory, wheel_data, shopify_result, 'wheel'
                             )
 
                             # Increment daily limit (tfs-manager)
@@ -524,10 +569,15 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
                         if shopify_result and shopify_result.get('shopify_id'):
                             shopify_product_id = shopify_result['shopify_id']
 
-                            # Update database (tfs-db) - mark as synced
+                            # Update tires table - mark as synced (no shopify_id in tires table)
                             await update_product_sync_status(
                                 db_pool_inventory, 'tires', product['url_part_number'],
-                                status='synced', shopify_id=shopify_product_id
+                                status='synced'
+                            )
+
+                            # Insert into shopify_products tracking table (this has the shopify_id)
+                            await insert_into_shopify_products(
+                                db_pool_inventory, tire_data, shopify_result, 'tire'
                             )
 
                             # Increment daily limit (tfs-manager)
