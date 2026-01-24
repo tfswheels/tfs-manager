@@ -470,6 +470,55 @@ async def handle_rate_limiting(throttle_status: Dict):
 
 
 # ==============================================================================
+# SHOPIFY QUERIES
+# ==============================================================================
+
+async def get_existing_product_by_handle(session: aiohttp.ClientSession, handle: str) -> Optional[Dict]:
+    """
+    Query Shopify for a product by handle.
+    Returns product data if it exists, otherwise None.
+    Matches reference script's implementation (create_tires_2025-01.py lines 423-464).
+    """
+    query = """
+    query getProductByHandle($handle: String!) {
+      productByHandle(handle: $handle) {
+        id
+        handle
+        variants(first: 1) {
+          edges {
+            node {
+              id
+              inventoryItem {
+                id
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    variables = {"handle": handle}
+    headers = {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": SHOPIFY_ACCESS_TOKEN
+    }
+    try:
+        async with session.post(
+            SHOPIFY_STORE_URL,
+            headers=headers,
+            json={"query": query, "variables": variables}
+        ) as resp:
+            data = await resp.json()
+            throttle = data.get("extensions", {}).get("cost", {}).get("throttleStatus", {})
+            await handle_rate_limiting(throttle)
+            product = data.get("data", {}).get("productByHandle")
+            return product
+    except Exception as e:
+        logger.error(f"Error checking if product exists by handle: {str(e)}")
+        return None
+
+
+# ==============================================================================
 # SHOPIFY MUTATIONS
 # ==============================================================================
 
