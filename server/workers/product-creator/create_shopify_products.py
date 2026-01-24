@@ -356,8 +356,8 @@ def format_wheel_data(product_row):
         'hub_bore': product_row.get('hub_bore', ''),
         'load_rating': product_row.get('load_rating'),
         'weight': product_row.get('weight'),
-        'available_finishes': product_row.get('available_finishes'),
-        'available_bolt_patterns': product_row.get('available_bolt_patterns'),
+        'available_finishes': product_row.get('available_finishes') or '',
+        'available_bolt_patterns': product_row.get('available_bolt_patterns') or '',
         'image': image_url,
         'custom_build': product_row.get('custom_build'),
     }
@@ -585,12 +585,12 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
         # Limit to remaining daily capacity
         to_create = min(max_products, remaining)
 
-        # TESTING MODE: Override to create only 1 product for testing
+        # TESTING MODE: Override to create only N successful products
+        testing_limit = TESTING_LIMIT if TESTING_MODE else to_create
         if TESTING_MODE:
-            to_create = min(to_create, TESTING_LIMIT)
-            logger.warning(f"🧪 TESTING MODE: Limited to {TESTING_LIMIT} product(s)")
+            logger.warning(f"🧪 TESTING MODE: Will create until {TESTING_LIMIT} successful product(s)")
 
-        logger.info(f"  Will create: {to_create} products")
+        logger.info(f"  Target: {to_create} products (testing: {testing_limit} successes)" if TESTING_MODE else f"  Will create: {to_create} products")
 
         # ================================================================
         # STEP 2: Calculate Split
@@ -644,8 +644,23 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
         async with aiohttp.ClientSession() as session:
             # Create wheels
             if wheels_target > 0:
-                logger.info(f"Creating {wheels_target} wheels...")
-                for i, product in enumerate(wheels_products[:wheels_target], 1):
+                logger.info(f"Creating wheels (target: {wheels_target})...")
+
+                # In testing mode, keep trying until we get enough successes
+                wheels_to_try = wheels_products[:wheels_target + 50] if TESTING_MODE else wheels_products[:wheels_target]
+                product_index = 0
+
+                for i, product in enumerate(wheels_to_try, 1):
+                    # Stop if we've reached our success target in testing mode
+                    if TESTING_MODE and stats['wheels_created'] >= testing_limit:
+                        logger.info(f"✅ Reached testing limit of {testing_limit} successful creations")
+                        break
+
+                    # Stop if we've reached our target in normal mode
+                    if not TESTING_MODE and product_index >= wheels_target:
+                        break
+
+                    product_index += 1
                     try:
                         # Format wheel data
                         wheel_data = format_wheel_data(product)
@@ -728,8 +743,23 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
             # Create tires
             if tires_target > 0:
                 logger.info("")
-                logger.info(f"Creating {tires_target} tires...")
-                for i, product in enumerate(tires_products[:tires_target], 1):
+                logger.info(f"Creating tires (target: {tires_target})...")
+
+                # In testing mode, keep trying until we get enough successes
+                tires_to_try = tires_products[:tires_target + 50] if TESTING_MODE else tires_products[:tires_target]
+                product_index = 0
+
+                for i, product in enumerate(tires_to_try, 1):
+                    # Stop if we've reached our success target in testing mode
+                    if TESTING_MODE and stats['tires_created'] >= testing_limit:
+                        logger.info(f"✅ Reached testing limit successful creations")
+                        break
+
+                    # Stop if we've reached our target in normal mode
+                    if not TESTING_MODE and product_index >= tires_target:
+                        break
+
+                    product_index += 1
                     try:
                         # Format tire data
                         tire_data = format_tire_data(product)

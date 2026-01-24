@@ -279,12 +279,14 @@ def prepare_metafields(wheel_data: Dict) -> List[Dict]:
             "value": lug_count
         })
 
-    if wheel_data.get('short_color'):
+    # Only add if value is not empty
+    short_color = wheel_data.get('short_color', '').strip()
+    if short_color:
         metafields.append({
             "namespace": "google",
             "key": "wheel_color",
             "type": "single_line_text_field",
-            "value": wheel_data['short_color']
+            "value": short_color
         })
 
     # Generate Google Shopping feed title
@@ -362,7 +364,19 @@ async def create_product_asynchronous_mutation(wheel_data: Dict):
         tags.append('custom-drill')
 
     description_html = generate_body_html(wheel_data)
-    metafields = prepare_metafields(wheel_data)
+    metafields_raw = prepare_metafields(wheel_data)
+
+    # Filter out any metafields with empty/None values
+    metafields = []
+    for mf in metafields_raw:
+        value = mf.get('value', '')
+        if value is not None and str(value).strip():
+            metafields.append(mf)
+        else:
+            logger.warning(f"Skipping empty metafield: {mf['namespace']}.{mf['key']} (value={repr(value)})")
+
+    logger.info(f"Product {wheel_data.get('part_number')}: {len(metafields)} metafields (filtered from {len(metafields_raw)})")
+
     price_str = str(wheel_data.get('map_price', '0.00'))
 
     mutation = """
