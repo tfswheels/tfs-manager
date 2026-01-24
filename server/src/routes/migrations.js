@@ -69,6 +69,59 @@ router.post('/005', async (req, res) => {
 });
 
 /**
+ * Run migration 008 to add product creation stats columns
+ */
+router.post('/008', async (req, res) => {
+  try {
+    console.log('🚀 Running migration 008 via API...');
+
+    const migrationPath = path.join(__dirname, '../../scripts/migrations/008_product_creation_stats.sql');
+    const sql = fs.readFileSync(migrationPath, 'utf8');
+
+    // Split by semicolon and execute each statement
+    const statements = sql
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0 && !s.startsWith('--') && !s.toLowerCase().startsWith('use'));
+
+    const results = [];
+
+    for (const statement of statements) {
+      try {
+        await db.execute(statement);
+        results.push({ type: 'statement', success: true });
+        console.log(`✓ Executed statement`);
+      } catch (error) {
+        // If column already exists, that's OK
+        if (error.code === 'ER_DUP_FIELDNAME' || error.message.includes('Duplicate column')) {
+          results.push({ type: 'statement', success: true, skipped: true, reason: 'column already exists' });
+          console.log(`⏭️  Skipped: ${error.message}`);
+        } else {
+          console.error(`❌ Error executing statement:`, error);
+          throw error;
+        }
+      }
+    }
+
+    console.log('✅ Migration 008 completed successfully via API!');
+
+    res.json({
+      success: true,
+      message: 'Migration 008 completed successfully - Added product creation stats columns',
+      details: results
+    });
+  } catch (error) {
+    console.error('❌ Migration 008 failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Migration failed',
+      message: error.message,
+      code: error.code
+    });
+  }
+});
+
+/**
  * Check migration status
  */
 router.get('/status', async (req, res) => {

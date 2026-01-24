@@ -569,7 +569,7 @@ async def publish_to_sales_channels(session: aiohttp.ClientSession, product_id: 
 # MAIN PRODUCT CREATION FUNCTION
 # ==============================================================================
 
-async def create_product_on_shopify(session: aiohttp.ClientSession, wheel_data: Dict, gcs_image_url: Optional[str] = None) -> Optional[Dict]:
+async def create_product_on_shopify(session: aiohttp.ClientSession, wheel_data: Dict, gcs_image_url: Optional[str] = None):
     """
     Create a product on Shopify using productSet mutation.
 
@@ -581,7 +581,9 @@ async def create_product_on_shopify(session: aiohttp.ClientSession, wheel_data: 
         gcs_image_url: Optional GCS image URL
 
     Returns:
-        Dict with shopify_id, variant_id, handle if successful, None if failed
+        Tuple of (result_dict, error_message):
+        - result_dict: Dict with shopify_id, variant_id, handle if successful, None if failed
+        - error_message: String with error details if failed, None if successful
     """
     try:
         logger.info(f"Creating product: {wheel_data.get('part_number')}")
@@ -603,9 +605,11 @@ async def create_product_on_shopify(session: aiohttp.ClientSession, wheel_data: 
 
             user_errors = result.get("data", {}).get("productSet", {}).get("userErrors")
             if 'errors' in result or (user_errors and len(user_errors) > 0):
-                err_str = json.dumps(result.get('errors') or user_errors, indent=2)
-                logger.error(f"productSet errors for SKU={wheel_data['part_number']}:\n{err_str}")
-                return None
+                # Format error message for database
+                errors = result.get('errors') or user_errors
+                error_message = json.dumps(errors, indent=2)
+                logger.error(f"productSet errors for SKU={wheel_data['part_number']}:\n{error_message}")
+                return None, error_message
 
             product_data = result["data"]["productSet"]["product"]
             product_id = product_data["id"]
@@ -648,10 +652,11 @@ async def create_product_on_shopify(session: aiohttp.ClientSession, wheel_data: 
                 'shopify_id': int(product_id.split('/')[-1]),
                 'variant_id': int(shopify_variant_id.split('/')[-1]),
                 'handle': shopify_handle
-            }
+            }, None
 
     except Exception as e:
         logger.error(f"Exception creating product: {e}")
         import traceback
-        logger.error(traceback.format_exc())
-        return None
+        error_traceback = traceback.format_exc()
+        logger.error(error_traceback)
+        return None, str(e)

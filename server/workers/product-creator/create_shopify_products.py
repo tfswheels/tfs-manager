@@ -221,7 +221,7 @@ async def insert_into_shopify_products(db_pool_inventory, product_data, shopify_
         logger.error(traceback.format_exc())
 
 
-async def update_job_status(db_pool, job_id, status, products_created=None, wheels_created=None, tires_created=None, error_message=None):
+async def update_job_status(db_pool, job_id, status, products_created=None, wheels_created=None, tires_created=None, error_message=None, products_skipped=None, products_failed=None):
     """Update the product_creation_jobs status."""
     try:
         if status == 'running':
@@ -233,6 +233,19 @@ async def update_job_status(db_pool, job_id, status, products_created=None, whee
             WHERE id = %s
             """
             params = (status, job_id)
+        elif status == 'in_progress':
+            # Update in-progress stats without marking as completed
+            query = """
+            UPDATE product_creation_jobs
+            SET products_created = %s,
+                wheels_created = %s,
+                tires_created = %s,
+                products_skipped = COALESCE(%s, products_skipped),
+                products_failed = COALESCE(%s, products_failed),
+                updated_at = NOW()
+            WHERE id = %s
+            """
+            params = (products_created, wheels_created, tires_created, products_skipped, products_failed, job_id)
         elif status == 'completed':
             query = """
             UPDATE product_creation_jobs
@@ -241,10 +254,12 @@ async def update_job_status(db_pool, job_id, status, products_created=None, whee
                 products_created = %s,
                 wheels_created = %s,
                 tires_created = %s,
+                products_skipped = %s,
+                products_failed = %s,
                 updated_at = NOW()
             WHERE id = %s
             """
-            params = (status, products_created, wheels_created, tires_created, job_id)
+            params = (status, products_created, wheels_created, tires_created, products_skipped, products_failed, job_id)
         elif status == 'failed':
             query = """
             UPDATE product_creation_jobs
@@ -393,15 +408,114 @@ def format_tire_data(product_row):
 # MAIN PRODUCT CREATION FUNCTION
 # =============================================================================
 
+async def sync_shopify_data():
+    """
+    Run the Shopify data sync scripts to update all_shopify_wheels and shopify_tires tables.
+
+    This ensures we have the latest Shopify data before checking for duplicates.
+    """
+    import subprocess
+
+    logger.info("=" * 80)
+    logger.info("SYNCING SHOPIFY DATA")
+    logger.info("=" * 80)
+
+    scripts = [
+        {
+            'name': 'Wheels',
+            'path': '/Users/jeremiah/Desktop/TFS Wheels/Scripts/Product Management/Manage Products/get_non_sdw_wheels.py'
+        },
+        {
+            'name': 'Tires',
+            'path': '/Users/jeremiah/Desktop/TFS Wheels/Scripts/Product Management/Manage Products/get_shopify_tires.py'
+        }
+    ]
+
+    for script in scripts:
+        logger.info(f"\nRunning {script['name']} sync script...")
+        logger.info(f"Path: {script['path']}")
+
+        try:
+            result = subprocess.run(
+                ['python3', script['path']],
+                capture_output=True,
+                text=True,
+                timeout=600  # 10 minute timeout
+            )
+
+            if result.returncode == 0:
+                logger.info(f"✅ {script['name']} sync completed successfully")
+                # Log last few lines of output for visibility
+                output_lines = result.stdout.strip().split('\n')
+                for line in output_lines[-5:]:  # Last 5 lines
+                    logger.info(f"  {line}")
+            else:
+                logger.error(f"❌ {script['name']} sync failed with exit code {result.returncode}")
+                logger.error(f"Error: {result.stderr}")
+                raise Exception(f"{script['name']} sync failed")
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"❌ {script['name']} sync timed out after 10 minutes")
+            raise Exception(f"{script['name']} sync timed out")
+        except Exception as e:
+            logger.error(f"❌ Error running {script['name']} sync: {e}")
+            raise
+
+    logger.info("")
+    logger.info("✅ All Shopify data synced successfully")
+    logger.info("=" * 80)
+
+
+async def check_product_exists_on_shopify(db_pool_inventory, product_type, part_number):
+    """
+    Check if a product already exists on Shopify by checking the synced Shopify tables.
+
+    Args:
+        db_pool_inventory: Connection pool to tfs-db database
+        product_type: 'wheel' or 'tire'
+        part_number: Product part number to check
+
+    Returns:
+        tuple: (exists: bool, table_name: str or None)
+    """
+    try:
+        if product_type == 'wheel':
+            table_name = 'all_shopify_wheels'
+        else:  # tire
+            table_name = 'shopify_tires'
+
+        query = f"""
+        SELECT shopify_id
+        FROM {table_name}
+        WHERE part_number = %s
+        LIMIT 1
+        """
+
+        async with db_pool_inventory.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, (part_number,))
+                result = await cur.fetchone()
+
+                if result:
+                    return True, table_name
+                return False, None
+
+    except Exception as e:
+        logger.error(f"Error checking if product exists on Shopify: {e}")
+        return False, None
+
+
 async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id, max_products):
     """
     Main product creation workflow.
 
-    1. Check daily limit (from tfs-manager)
-    2. Query products from wheels and tires tables (from tfs-db)
-    3. Apply 70/30 split
-    4. Create on Shopify (oldest first)
-    5. Update database (both databases)
+    1. Sync Shopify data (update all_shopify_wheels and shopify_tires tables)
+    2. Check daily limit (from tfs-manager)
+    3. Query products from wheels and tires tables (from tfs-db)
+    4. Apply 70/30 split
+    5. Check for duplicates against Shopify tables
+    6. Create on Shopify (oldest first)
+    7. Update database (both databases)
 
     Args:
         db_pool_manager: Connection pool to tfs-manager database (for job status, daily limits)
@@ -420,13 +534,29 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
     # Update job status to running
     await update_job_status(db_pool_manager, job_id, 'running')
 
+    # ================================================================
+    # STEP 0: Sync Shopify Data
+    # ================================================================
+    logger.info("")
+    logger.info("STEP 0: Syncing Shopify data...")
+
+    try:
+        await sync_shopify_data()
+    except Exception as e:
+        logger.error(f"Failed to sync Shopify data: {e}")
+        await update_job_status(db_pool_manager, job_id, 'failed', error_message=f"Shopify data sync failed: {str(e)}")
+        return
+
     stats = {
         'wheels_created': 0,
         'tires_created': 0,
         'total_created': 0,
         'wheels_failed': 0,
         'tires_failed': 0,
-        'total_failed': 0
+        'total_failed': 0,
+        'wheels_skipped': 0,
+        'tires_skipped': 0,
+        'total_skipped': 0
     }
 
     try:
@@ -522,8 +652,24 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
 
                         logger.info(f"  [{i}/{wheels_target}] Creating wheel: {wheel_data.get('title', 'Unknown')}")
 
+                        # Check if product already exists on Shopify
+                        exists, table_name = await check_product_exists_on_shopify(
+                            db_pool_inventory, 'wheel', wheel_data.get('part_number')
+                        )
+
+                        if exists:
+                            # Product already exists on Shopify - skip and mark as skipped
+                            await update_product_sync_status(
+                                db_pool_inventory, 'wheels', product['url_part_number'],
+                                status='skipped', error_message=f'Product already exists in {table_name}'
+                            )
+                            stats['wheels_skipped'] += 1
+                            stats['total_skipped'] += 1
+                            logger.info(f"  ⏭️  Skipped: Product already exists in {table_name}")
+                            continue
+
                         # Create on Shopify
-                        shopify_result = await create_product_on_shopify(session, wheel_data, wheel_data.get('image'))
+                        shopify_result, shopify_error = await create_product_on_shopify(session, wheel_data, wheel_data.get('image'))
 
                         if shopify_result and shopify_result.get('shopify_id'):
                             shopify_product_id = shopify_result['shopify_id']
@@ -546,18 +692,35 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
                             stats['total_created'] += 1
 
                             logger.info(f"  ✅ Created wheel with Shopify ID: {shopify_product_id}")
+
+                            # Update in-progress stats every 10 products
+                            if (stats['total_created'] + stats['total_failed'] + stats['total_skipped']) % 10 == 0:
+                                await update_job_status(
+                                    db_pool_manager, job_id, 'in_progress',
+                                    stats['total_created'],
+                                    stats['wheels_created'],
+                                    stats['tires_created'],
+                                    products_skipped=stats['total_skipped'],
+                                    products_failed=stats['total_failed']
+                                )
                         else:
-                            # Mark as error
+                            # Mark as error with exact Shopify error message
+                            error_msg = shopify_error if shopify_error else 'Failed to create on Shopify (no error details)'
                             await update_product_sync_status(
                                 db_pool_inventory, 'wheels', product['url_part_number'],
-                                status='error', error_message='Failed to create on Shopify'
+                                status='error', error_message=error_msg
                             )
 
                             stats['wheels_failed'] += 1
                             stats['total_failed'] += 1
-                            logger.warning(f"  ❌ Failed to create wheel")
+                            logger.warning(f"  ❌ Failed to create wheel: {error_msg}")
 
                     except Exception as e:
+                        # Use exact exception message
+                        await update_product_sync_status(
+                            db_pool_inventory, 'wheels', product['url_part_number'],
+                            status='error', error_message=str(e)
+                        )
                         stats['wheels_failed'] += 1
                         stats['total_failed'] += 1
                         logger.error(f"  ❌ Error creating wheel: {e}")
@@ -573,8 +736,24 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
 
                         logger.info(f"  [{i}/{tires_target}] Creating tire: {tire_data.get('title', 'Unknown')}")
 
+                        # Check if product already exists on Shopify
+                        exists, table_name = await check_product_exists_on_shopify(
+                            db_pool_inventory, 'tire', tire_data.get('part_number')
+                        )
+
+                        if exists:
+                            # Product already exists on Shopify - skip and mark as skipped
+                            await update_product_sync_status(
+                                db_pool_inventory, 'tires', product['url_part_number'],
+                                status='skipped', error_message=f'Product already exists in {table_name}'
+                            )
+                            stats['tires_skipped'] += 1
+                            stats['total_skipped'] += 1
+                            logger.info(f"  ⏭️  Skipped: Product already exists in {table_name}")
+                            continue
+
                         # Create on Shopify
-                        shopify_result = await create_product_on_shopify(session, tire_data, tire_data.get('image'))
+                        shopify_result, shopify_error = await create_product_on_shopify(session, tire_data, tire_data.get('image'))
 
                         if shopify_result and shopify_result.get('shopify_id'):
                             shopify_product_id = shopify_result['shopify_id']
@@ -597,18 +776,35 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
                             stats['total_created'] += 1
 
                             logger.info(f"  ✅ Created tire with Shopify ID: {shopify_product_id}")
+
+                            # Update in-progress stats every 10 products
+                            if (stats['total_created'] + stats['total_failed'] + stats['total_skipped']) % 10 == 0:
+                                await update_job_status(
+                                    db_pool_manager, job_id, 'in_progress',
+                                    stats['total_created'],
+                                    stats['wheels_created'],
+                                    stats['tires_created'],
+                                    products_skipped=stats['total_skipped'],
+                                    products_failed=stats['total_failed']
+                                )
                         else:
-                            # Mark as error
+                            # Mark as error with exact Shopify error message
+                            error_msg = shopify_error if shopify_error else 'Failed to create on Shopify (no error details)'
                             await update_product_sync_status(
                                 db_pool_inventory, 'tires', product['url_part_number'],
-                                status='error', error_message='Failed to create on Shopify'
+                                status='error', error_message=error_msg
                             )
 
                             stats['tires_failed'] += 1
                             stats['total_failed'] += 1
-                            logger.warning(f"  ❌ Failed to create tire")
+                            logger.warning(f"  ❌ Failed to create tire: {error_msg}")
 
                     except Exception as e:
+                        # Use exact exception message
+                        await update_product_sync_status(
+                            db_pool_inventory, 'tires', product['url_part_number'],
+                            status='error', error_message=str(e)
+                        )
                         stats['tires_failed'] += 1
                         stats['total_failed'] += 1
                         logger.error(f"  ❌ Error creating tire: {e}")
@@ -623,6 +819,9 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
         logger.info(f"Total Created: {stats['total_created']}")
         logger.info(f"  Wheels: {stats['wheels_created']}")
         logger.info(f"  Tires: {stats['tires_created']}")
+        logger.info(f"Total Skipped: {stats['total_skipped']}")
+        logger.info(f"  Wheels: {stats['wheels_skipped']}")
+        logger.info(f"  Tires: {stats['tires_skipped']}")
         logger.info(f"Total Failed: {stats['total_failed']}")
         logger.info(f"  Wheels: {stats['wheels_failed']}")
         logger.info(f"  Tires: {stats['tires_failed']}")
@@ -633,7 +832,9 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
             db_pool_manager, job_id, 'completed',
             stats['total_created'],
             stats['wheels_created'],
-            stats['tires_created']
+            stats['tires_created'],
+            products_skipped=stats['total_skipped'],
+            products_failed=stats['total_failed']
         )
 
     except Exception as e:

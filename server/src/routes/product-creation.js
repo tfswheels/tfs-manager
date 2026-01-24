@@ -341,6 +341,103 @@ router.post('/run-now', async (req, res) => {
 });
 
 /**
+ * Get pending products stats
+ * Shows how many products are waiting to be created on Shopify
+ */
+router.get('/stats/pending', async (req, res) => {
+  try {
+    // Connect to tfs-db database to query wheels and tires tables
+    const inventoryDb = await import('../config/database.js').then(m => {
+      const mysql = require('mysql2/promise');
+      return mysql.createPool({
+        host: process.env.DB_HOST || 'localhost',
+        user: process.env.DB_USER || 'root',
+        password: process.env.DB_PASSWORD || 'password',
+        database: 'tfs-db',
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0
+      });
+    }).catch(() => {
+      // If dynamic import fails, create pool directly
+      const mysql = require('mysql2/promise');
+      return mysql.createPool({
+        host: process.env.DB_HOST || 'localhost',
+        user: process.env.DB_USER || 'root',
+        password: process.env.DB_PASSWORD || 'password',
+        database: 'tfs-db',
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0
+      });
+    });
+
+    // Query wheels table
+    const [wheelsResult] = await inventoryDb.execute(
+      `SELECT COUNT(*) as count
+       FROM wheels
+       WHERE product_sync IN ('pending', 'error')`
+    );
+
+    // Query tires table
+    const [tiresResult] = await inventoryDb.execute(
+      `SELECT COUNT(*) as count
+       FROM tires
+       WHERE product_sync IN ('pending', 'error')`
+    );
+
+    const wheelsPending = wheelsResult[0]?.count || 0;
+    const tiresPending = tiresResult[0]?.count || 0;
+    const totalPending = wheelsPending + tiresPending;
+
+    // Get today's stats to calculate remaining capacity
+    const [todayStats] = await db.execute(
+      `SELECT total_created, limit_per_day
+       FROM daily_shopify_creation_limit
+       WHERE date = CURDATE()`
+    );
+
+    const dailyLimit = todayStats[0]?.limit_per_day || 1000;
+    const createdToday = todayStats[0]?.total_created || 0;
+    const remainingToday = Math.max(0, dailyLimit - createdToday);
+
+    // Calculate estimated days to complete
+    let estimatedDays = 0;
+    if (dailyLimit > 0 && totalPending > 0) {
+      estimatedDays = Math.ceil(totalPending / dailyLimit);
+    }
+
+    res.json({
+      pending: {
+        total: totalPending,
+        wheels: wheelsPending,
+        tires: tiresPending
+      },
+      capacity: {
+        dailyLimit,
+        createdToday,
+        remainingToday
+      },
+      estimate: {
+        daysToComplete: estimatedDays,
+        message: estimatedDays === 0
+          ? 'No products pending'
+          : estimatedDays === 1
+          ? 'Will complete today (if remaining capacity allows)'
+          : `Estimated ${estimatedDays} days at current daily limit`
+      }
+    });
+
+    // Close the inventory DB pool
+    await inventoryDb.end();
+
+  } catch (error) {
+    console.error('❌ Get pending stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch pending stats' });
+  }
+});
+
+/**
  * Get today's product creation stats
  * Uses shared daily limit system
  */
