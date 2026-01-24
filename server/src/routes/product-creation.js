@@ -3,6 +3,7 @@ import db from '../config/database.js';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import mysql from 'mysql2/promise';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -348,7 +349,6 @@ router.get('/stats/pending', async (req, res) => {
   let inventoryDb = null;
   try {
     // Connect to tfs-db database to query wheels and tires tables
-    const mysql = require('mysql2/promise');
     inventoryDb = mysql.createPool({
       host: process.env.DB_HOST || 'localhost',
       port: process.env.DB_PORT || 3306,
