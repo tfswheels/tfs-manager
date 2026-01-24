@@ -387,6 +387,13 @@ def format_tire_data(product_row):
     image_url = product_row.get('image1') or product_row.get('image2') or product_row.get('image3') or PLACEHOLDER_IMAGE
 
     # Format tire data (tires have fewer metafields than wheels)
+    # Safely handle None values for numeric fields
+    quantity_val = product_row.get('quantity')
+    quantity = int(quantity_val) if quantity_val is not None else 0
+
+    map_price_val = product_row.get('map_price')
+    map_price = float(map_price_val) if map_price_val else 0.0
+
     tire_data = {
         'part_number': product_row.get('part_number', product_row.get('url_part_number')),
         'url_part_number': product_row.get('url_part_number'),
@@ -395,8 +402,8 @@ def format_tire_data(product_row):
         'size': product_row.get('size', ''),
         'title': title,
         'handle': handle,
-        'map_price': float(product_row.get('map_price')) if product_row.get('map_price') else 0,
-        'quantity': int(product_row.get('quantity', 0)),
+        'map_price': map_price,
+        'quantity': quantity,
         'weight': product_row.get('weight'),
         'image': image_url,
     }
