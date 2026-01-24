@@ -75,29 +75,30 @@ router.post('/008', async (req, res) => {
   try {
     console.log('🚀 Running migration 008 via API...');
 
-    const migrationPath = path.join(__dirname, '../../scripts/migrations/008_product_creation_stats.sql');
-    const sql = fs.readFileSync(migrationPath, 'utf8');
-
-    // Split by semicolon and execute each statement
-    const statements = sql
-      .split(';')
-      .map(s => s.trim())
-      .filter(s => s.length > 0 && !s.startsWith('--') && !s.toLowerCase().startsWith('use'));
-
     const results = [];
+    const columns = [
+      { name: 'products_skipped', comment: 'Number of products skipped (already exist on Shopify)' },
+      { name: 'products_failed', comment: 'Number of products that failed to create' },
+      { name: 'wheels_skipped', comment: 'Number of wheels skipped' },
+      { name: 'tires_skipped', comment: 'Number of tires skipped' },
+      { name: 'wheels_failed', comment: 'Number of wheels that failed' },
+      { name: 'tires_failed', comment: 'Number of tires that failed' }
+    ];
 
-    for (const statement of statements) {
+    for (const col of columns) {
       try {
-        await db.execute(statement);
-        results.push({ type: 'statement', success: true });
-        console.log(`✓ Executed statement`);
+        const sql = `ALTER TABLE product_creation_jobs ADD COLUMN ${col.name} INT DEFAULT 0 COMMENT '${col.comment}'`;
+        console.log(`Executing: ${sql}`);
+        await db.execute(sql);
+        results.push({ column: col.name, success: true });
+        console.log(`✓ Added column ${col.name}`);
       } catch (error) {
         // If column already exists, that's OK
         if (error.code === 'ER_DUP_FIELDNAME' || error.message.includes('Duplicate column')) {
-          results.push({ type: 'statement', success: true, skipped: true, reason: 'column already exists' });
-          console.log(`⏭️  Skipped: ${error.message}`);
+          results.push({ column: col.name, success: true, skipped: true, reason: 'column already exists' });
+          console.log(`⏭️  Skipped ${col.name}: ${error.message}`);
         } else {
-          console.error(`❌ Error executing statement:`, error);
+          console.error(`❌ Error adding column ${col.name}:`, error);
           throw error;
         }
       }
