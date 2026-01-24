@@ -368,6 +368,7 @@ def format_wheel_data(product_row):
 def format_tire_data(product_row):
     """
     Format tire database row into structure expected by create_product_on_shopify().
+    Includes all metafields matching the reference script create_tires_2025-01.py.
 
     Args:
         product_row: Dict from tires table
@@ -375,6 +376,9 @@ def format_tire_data(product_row):
     Returns:
         Dict with formatted tire data for Shopify creation
     """
+    import json
+    import re
+
     # Generate title
     title = f"{product_row.get('brand', '')} {product_row.get('model', '')} {product_row.get('size', '')}"
     title = title.strip()
@@ -386,7 +390,6 @@ def format_tire_data(product_row):
     # Get first image URL (tires have image1, image2, image3)
     image_url = product_row.get('image1') or product_row.get('image2') or product_row.get('image3') or PLACEHOLDER_IMAGE
 
-    # Format tire data (tires have fewer metafields than wheels)
     # Safely handle None values for numeric fields
     quantity_val = product_row.get('quantity')
     quantity = int(quantity_val) if quantity_val is not None else 0
@@ -394,6 +397,63 @@ def format_tire_data(product_row):
     map_price_val = product_row.get('map_price')
     map_price = float(map_price_val) if map_price_val else 0.0
 
+    # Process description tag (from reference script lines 353-381)
+    desc_parts = [f"{product_row.get('brand', '')} {product_row.get('model', '')} {product_row.get('size', '')}"]
+    if product_row.get('tire_type'):
+        desc_parts.append(f"{product_row['tire_type']} tire")
+    specs = []
+    if product_row.get('load_index') and product_row.get('speed_index'):
+        specs.append(f"{product_row['load_index']}{product_row['speed_index']} rated")
+    if product_row.get('load_range'):
+        specs.append(f"{product_row['load_range']} load range")
+    if product_row.get('tread_depth'):
+        specs.append(f"{product_row['tread_depth']} tread depth")
+    desc_parts.extend(specs)
+
+    tire_type = product_row.get('tire_type', '').lower()
+    if 'mud terrain' in tire_type:
+        desc_parts.append("for extreme off-road use")
+    elif 'all season' in tire_type:
+        desc_parts.append("for year-round performance")
+    elif 'all terrain' in tire_type:
+        desc_parts.append("for all-terrain capability")
+    elif 'summer' in tire_type:
+        desc_parts.append("for maximum summer performance")
+    elif 'winter' in tire_type:
+        desc_parts.append("for superior winter traction")
+    elif 'highway' in tire_type:
+        desc_parts.append("for highway comfort and durability")
+    elif 'performance' in tire_type:
+        desc_parts.append("for enhanced performance")
+
+    metafield_description_tag = " ".join(desc_parts)
+
+    # Process tire types (from reference script lines 384-387)
+    tire_types = [t for t in [product_row.get('tire_type'), product_row.get('tire_type2')] if t]
+    metafield_tire_type_combined = json.dumps(tire_types) if tire_types else None
+
+    # Process max pressure (from reference script lines 389-392)
+    metafield_max_inflation_pressure = None
+    if product_row.get('max_pressure'):
+        match = re.search(r'@\s*(\d+)(?:\s*psi)?', product_row['max_pressure'])
+        metafield_max_inflation_pressure = match.group(1) if match else ""
+
+    # Process weight (from reference script lines 394-399)
+    metafield_weight = None
+    if product_row.get('weight'):
+        if 'lb' not in product_row['weight'].lower():
+            metafield_weight = f"{product_row['weight']} lbs"
+        else:
+            metafield_weight = product_row['weight']
+
+    # Handle warranty (from reference script lines 183-188)
+    warranty = product_row.get('warranty', '')
+    if warranty and warranty.startswith('Manufacture'):
+        metafield_tire_mileage_warranty = "Manufacturer's Warranty"
+    else:
+        metafield_tire_mileage_warranty = warranty
+
+    # Build complete tire data with all metafields
     tire_data = {
         'part_number': product_row.get('part_number', product_row.get('url_part_number')),
         'url_part_number': product_row.get('url_part_number'),
@@ -406,6 +466,62 @@ def format_tire_data(product_row):
         'quantity': quantity,
         'weight': product_row.get('weight'),
         'image': image_url,
+        'image1': product_row.get('image1'),
+        'image2': product_row.get('image2'),
+        'image3': product_row.get('image3'),
+
+        # Global metafields
+        'metafield_title_tag': f"{title} Tire",
+        'metafield_description_tag': metafield_description_tag,
+
+        # Convermax metafields (from reference script lines 161-166)
+        'metafield_tire_size': product_row.get('size'),
+        'metafield_tire_width': product_row.get('section_width'),
+        'metafield_tire_aspect_ratio': product_row.get('aspect_ratio'),
+        'metafield_tire_rim': product_row.get('rim_diameter'),
+        'metafield_tire_speed_rating': product_row.get('speed_index'),
+        'metafield_tire_load_index': product_row.get('load_index'),
+
+        # Custom metafields (from reference script lines 168-188)
+        'metafield_tire_model': product_row.get('model'),
+        'metafield_service_description': product_row.get('service_description'),
+        'metafield_tire_sidewall': product_row.get('sidewall'),
+        'metafield_overall_diameter': product_row.get('inflated_diameter'),
+        'metafield_overall_width': product_row.get('inflated_width'),
+        'metafield_load_range': product_row.get('load_range'),
+        'metafield_ply_rating': product_row.get('ply'),
+        'metafield_tread_depth': product_row.get('tread_depth'),
+        'metafield_revs_per_mile': product_row.get('revs_per_mile'),
+        'metafield_utqg': product_row.get('utqg'),
+        'metafield_temperature': product_row.get('temperature'),
+        'metafield_traction': product_row.get('traction'),
+        'metafield_tread_wear': product_row.get('tread_wear'),
+        'metafield_tire_mileage_warranty': metafield_tire_mileage_warranty,
+        'metafield_tire_type_combined': metafield_tire_type_combined,
+        'metafield_max_inflation_pressure': metafield_max_inflation_pressure,
+        'metafield_weight': metafield_weight,
+
+        # Additional fields for body HTML generation
+        'tire_type': product_row.get('tire_type'),
+        'tire_type2': product_row.get('tire_type2'),
+        'section_width': product_row.get('section_width'),
+        'aspect_ratio': product_row.get('aspect_ratio'),
+        'rim_diameter': product_row.get('rim_diameter'),
+        'load_index': product_row.get('load_index'),
+        'load_range': product_row.get('load_range'),
+        'speed_index': product_row.get('speed_index'),
+        'service_description': product_row.get('service_description'),
+        'sidewall': product_row.get('sidewall'),
+        'tread_depth': product_row.get('tread_depth'),
+        'inflated_diameter': product_row.get('inflated_diameter'),
+        'inflated_width': product_row.get('inflated_width'),
+        'temperature': product_row.get('temperature'),
+        'traction': product_row.get('traction'),
+        'tread_wear': product_row.get('tread_wear'),
+        'revs_per_mile': product_row.get('revs_per_mile'),
+        'utqg': product_row.get('utqg'),
+        'ply': product_row.get('ply'),
+        'warranty': product_row.get('warranty'),
     }
 
     return tire_data

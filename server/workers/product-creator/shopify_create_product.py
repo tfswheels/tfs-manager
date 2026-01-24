@@ -23,6 +23,7 @@ except ImportError:
 
 # Constants from working script
 CATEGORY_ID = "gid://shopify/TaxonomyCategory/vp-1-4-20-1-1"  # Wheels category
+TIRE_CATEGORY_ID = "gid://shopify/TaxonomyCategory/vp-1-4-20-3-1"  # Tires category
 LOCATION_ID = "gid://shopify/Location/69594415255"
 THROTTLE_THRESHOLD = 120
 MAX_AVAILABLE = 2000
@@ -328,6 +329,130 @@ def prepare_metafields(wheel_data: Dict) -> List[Dict]:
 
 
 # ==============================================================================
+# TIRE HELPER FUNCTIONS (from create_tires_2025-01.py)
+# ==============================================================================
+
+def generate_body_html_tire(tire: Dict) -> str:
+    """Generate the body HTML for a tire product."""
+    try:
+        # Safely handle warranty text - replace any text starting with 'Manufacture'
+        warranty = tire.get('warranty', '')
+        if warranty and warranty.startswith('Manufacture'):
+            warranty = "Manufacturer's Warranty"
+
+        specs = [
+            ('Brand', tire.get('brand')),
+            ('Model', tire.get('model')),
+            ('Part Number', tire.get('part_number')),
+            ('Size', tire.get('size')),
+            ('Category/Type', f"{tire.get('tire_type', '')}, {tire.get('tire_type2', '')}".strip(', ')),
+            ('Section Width', tire.get('section_width')),
+            ('Aspect Ratio', tire.get('aspect_ratio')),
+            ('Rim Diameter', tire.get('rim_diameter')),
+            ('Load Index', tire.get('load_index')),
+            ('Load Range', tire.get('load_range')),
+            ('Speed Rating', tire.get('speed_index')),
+            ('Service Description', tire.get('service_description')),
+            ('Sidewall', tire.get('sidewall')),
+            ('Tread Depth', tire.get('tread_depth')),
+            ('Overall Diameter', tire.get('inflated_diameter')),
+            ('Overall Width', tire.get('inflated_width')),
+            ('Temperature', tire.get('temperature')),
+            ('Traction', tire.get('traction')),
+            ('Tread Wear', tire.get('tread_wear')),
+            ('Max Inflation Pressure', tire.get('metafield_max_inflation_pressure')),
+            ('Revs per mile', tire.get('revs_per_mile')),
+            ('UTQG', tire.get('utqg')),
+            ('Ply Rating', tire.get('ply')),
+            ('Warranty (miles)', warranty),
+            ('Weight', tire.get('metafield_weight'))
+        ]
+
+        html = ['<h3>Tire Spec</h3><hr>']
+        for label, value in specs:
+            if value:
+                html.append(f'<b>{label}: </b>{value}<br>')
+
+        return '\n'.join(html)
+    except Exception as e:
+        logger.error(f"Error generating HTML for tire: {str(e)}")
+        return "<h3>Tire Spec</h3>\n<p>Specifications temporarily unavailable</p>"
+
+
+def prepare_metafields_tire(tire_data: Dict) -> List[Dict]:
+    """Prepare all metafields for a tire product."""
+    metafields = []
+
+    # Global metafields
+    global_fields = {
+        'title_tag': tire_data.get('metafield_title_tag'),
+        'description_tag': tire_data.get('metafield_description_tag')
+    }
+
+    for key, value in global_fields.items():
+        if value:
+            metafields.append({
+                "namespace": "global",
+                "key": key,
+                "type": "single_line_text_field",
+                "value": str(value)
+            })
+
+    # Custom metafields
+    custom_fields = {
+        'tire_model': 'single_line_text_field',
+        'service_description': 'single_line_text_field',
+        'tire_type_combined': 'list.single_line_text_field',
+        'tire_sidewall': 'single_line_text_field',
+        'overall_diameter': 'single_line_text_field',
+        'overall_width': 'single_line_text_field',
+        'load_range': 'single_line_text_field',
+        'max_inflation_pressure': 'single_line_text_field',
+        'ply_rating': 'single_line_text_field',
+        'tread_depth': 'single_line_text_field',
+        'weight': 'single_line_text_field',
+        'revs_per_mile': 'single_line_text_field',
+        'utqg': 'single_line_text_field',
+        'temperature': 'single_line_text_field',
+        'traction': 'single_line_text_field',
+        'tread_wear': 'single_line_text_field',
+        'tire_mileage_warranty': 'single_line_text_field'
+    }
+
+    for field, field_type in custom_fields.items():
+        metafield_key = f'metafield_{field}'
+        if tire_data.get(metafield_key):
+            metafields.append({
+                "namespace": "custom",
+                "key": field,
+                "type": field_type,
+                "value": str(tire_data[metafield_key])
+            })
+
+    # Convermax metafields
+    convermax_fields = {
+        'tire_size': 'single_line_text_field',
+        'tire_width': 'single_line_text_field',
+        'tire_aspect_ratio': 'single_line_text_field',
+        'tire_rim': 'single_line_text_field',
+        'tire_speed_rating': 'single_line_text_field',
+        'tire_load_index': 'single_line_text_field'
+    }
+
+    for field, field_type in convermax_fields.items():
+        metafield_key = f'metafield_{field}'
+        if tire_data.get(metafield_key):
+            metafields.append({
+                "namespace": "convermax",
+                "key": field,
+                "type": field_type,
+                "value": str(tire_data[metafield_key])
+            })
+
+    return metafields
+
+
+# ==============================================================================
 # RATE LIMITING
 # ==============================================================================
 
@@ -349,7 +474,13 @@ async def handle_rate_limiting(throttle_status: Dict):
 # ==============================================================================
 
 async def create_product_asynchronous_mutation(wheel_data: Dict):
-    """Build the productSet mutation and variables."""
+    """
+    Build the productSet mutation and variables.
+    Detects product type (wheel vs tire) and uses appropriate settings.
+    """
+    # Detect product type: if has 'finish', it's a wheel; if has 'size' but no 'finish', it's a tire
+    is_tire = not wheel_data.get('finish') and wheel_data.get('size')
+
     variant_weight = 0.0
     if wheel_data.get('weight'):
         try:
@@ -357,14 +488,27 @@ async def create_product_asynchronous_mutation(wheel_data: Dict):
         except:
             pass
 
+    # Tags - wheels can have custom_build tags, tires always just SDW Wholesale
     tags = ["SDW Wholesale"]
-    if wheel_data.get('custom_build') == '1':
-        tags.append('made-to-order')
-    if wheel_data.get('custom_build') == '2':
-        tags.append('custom-drill')
+    if not is_tire:
+        if wheel_data.get('custom_build') == '1':
+            tags.append('made-to-order')
+        if wheel_data.get('custom_build') == '2':
+            tags.append('custom-drill')
 
-    description_html = generate_body_html(wheel_data)
-    metafields_raw = prepare_metafields(wheel_data)
+    # Use tire-specific or wheel-specific functions
+    if is_tire:
+        description_html = generate_body_html_tire(wheel_data)
+        metafields_raw = prepare_metafields_tire(wheel_data)
+        product_type = "Tires"
+        category_id = TIRE_CATEGORY_ID
+        template_suffix = "ecom-tires"
+    else:
+        description_html = generate_body_html(wheel_data)
+        metafields_raw = prepare_metafields(wheel_data)
+        product_type = "Wheels"
+        category_id = CATEGORY_ID
+        template_suffix = "ecom-new-product-page"
 
     # Filter out any metafields with empty/None values
     metafields = []
@@ -375,7 +519,7 @@ async def create_product_asynchronous_mutation(wheel_data: Dict):
         else:
             logger.warning(f"Skipping empty metafield: {mf['namespace']}.{mf['key']} (value={repr(value)})")
 
-    logger.info(f"Product {wheel_data.get('part_number')}: {len(metafields)} metafields (filtered from {len(metafields_raw)})")
+    logger.info(f"Product {wheel_data.get('part_number')} ({product_type}): {len(metafields)} metafields (filtered from {len(metafields_raw)})")
 
     price_str = str(wheel_data.get('map_price', '0.00'))
 
@@ -403,19 +547,27 @@ async def create_product_asynchronous_mutation(wheel_data: Dict):
       }
     }
     """
+    # Inventory settings - tires always track inventory and DENY, wheels may vary
+    if is_tire:
+        inventory_tracked = True
+        inventory_policy = "DENY"
+    else:
+        inventory_tracked = (wheel_data.get('custom_build') != '1')
+        inventory_policy = "CONTINUE" if wheel_data.get('custom_build') == '1' else "DENY"
+
     variables = {
         "synchronous": True,
         "productSet": {
             "title": wheel_data['title'],
             "handle": wheel_data['handle'],
             "vendor": wheel_data['brand'],
-            "productType": "Wheels",
+            "productType": product_type,
             "status": "ACTIVE",
             "descriptionHtml": description_html,
-            "templateSuffix": "ecom-new-product-page",
+            "templateSuffix": template_suffix,
             "tags": tags,
             "metafields": metafields,
-            "category": CATEGORY_ID,
+            "category": category_id,
             "productOptions": [
                 {
                     "name": "Title",
@@ -429,7 +581,7 @@ async def create_product_asynchronous_mutation(wheel_data: Dict):
                     "price": price_str,
                     "optionValues": [{"optionName": "Title", "name": "Default Title"}],
                     "inventoryItem": {
-                        "tracked": (wheel_data.get('custom_build') != '1'),
+                        "tracked": inventory_tracked,
                         "requiresShipping": True,
                         "measurement": {
                             "weight": {
@@ -438,10 +590,7 @@ async def create_product_asynchronous_mutation(wheel_data: Dict):
                             }
                         }
                     },
-                    "inventoryPolicy": (
-                        "CONTINUE" if wheel_data.get('custom_build') == '1'
-                        else "DENY"
-                    )
+                    "inventoryPolicy": inventory_policy
                 }
             ]
         }
@@ -646,29 +795,42 @@ async def create_product_on_shopify(session: aiohttp.ClientSession, wheel_data: 
                 if not ok:
                     logger.error(f"Could not adjust inventory for SKU={wheel_data['part_number']}")
 
-            # Add product image if available
-            # Generate alt text - include finish for wheels, size for tires
-            if wheel_data.get('finish'):
-                # Wheel product
-                alt_text = f"{wheel_data['brand']} {wheel_data['model']} {wheel_data['finish']}"
-            else:
-                # Tire product (tires have 'size' instead of 'finish')
-                alt_text = f"{wheel_data['brand']} {wheel_data['model']} {wheel_data.get('size', '')}"
+            # Add product images
+            # Detect if this is a tire (tires have multiple images: image3, image1, image2)
+            is_tire = not wheel_data.get('finish') and wheel_data.get('size')
 
-            if gcs_image_url:
-                await product_create_media_mutation(
-                    session,
-                    product_id,
-                    gcs_image_url,
-                    alt_text.strip()
-                )
-            elif wheel_data.get('image'):
-                await product_create_media_mutation(
-                    session,
-                    product_id,
-                    wheel_data['image'],
-                    alt_text.strip()
-                )
+            if is_tire:
+                # Tire: Add multiple images in order: image3, image1, image2
+                alt_text = f"{wheel_data['brand']} {wheel_data['model']} {wheel_data.get('size', '')} Tire"
+
+                # Process images in order (from reference script lines 694-795)
+                for image_field in ['image3', 'image1', 'image2']:
+                    image_url = wheel_data.get(image_field)
+                    if image_url:
+                        await product_create_media_mutation(
+                            session,
+                            product_id,
+                            image_url,
+                            alt_text.strip()
+                        )
+            else:
+                # Wheel: Add single image
+                alt_text = f"{wheel_data['brand']} {wheel_data['model']} {wheel_data['finish']}"
+
+                if gcs_image_url:
+                    await product_create_media_mutation(
+                        session,
+                        product_id,
+                        gcs_image_url,
+                        alt_text.strip()
+                    )
+                elif wheel_data.get('image'):
+                    await product_create_media_mutation(
+                        session,
+                        product_id,
+                        wheel_data['image'],
+                        alt_text.strip()
+                    )
 
             return {
                 'shopify_id': int(product_id.split('/')[-1]),
