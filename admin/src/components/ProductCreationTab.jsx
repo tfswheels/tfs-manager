@@ -19,6 +19,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'https://tfs-manager-server-prod
 export default function ProductCreationTab() {
   const [config, setConfig] = useState(null);
   const [todayStats, setTodayStats] = useState(null);
+  const [pendingStats, setPendingStats] = useState(null);
   const [history, setHistory] = useState([]);
   const [maxProducts, setMaxProducts] = useState('1000');
   const [scheduleInterval, setScheduleInterval] = useState('24');
@@ -28,11 +29,14 @@ export default function ProductCreationTab() {
   useEffect(() => {
     fetchConfig();
     fetchTodayStats();
+    fetchPendingStats();
     fetchHistory();
 
     const interval = setInterval(() => {
       fetchConfig();
       fetchTodayStats();
+      fetchPendingStats();
+      fetchHistory();
     }, 30000);
 
     return () => clearInterval(interval);
@@ -60,6 +64,15 @@ export default function ProductCreationTab() {
       setTodayStats(response.data.today);
     } catch (error) {
       console.error('Failed to fetch stats:', error);
+    }
+  };
+
+  const fetchPendingStats = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/product-creation/stats/pending`);
+      setPendingStats(response.data);
+    } catch (error) {
+      console.error('Failed to fetch pending stats:', error);
     }
   };
 
@@ -169,6 +182,8 @@ export default function ProductCreationTab() {
     job.products_created || 0,
     job.wheels_created || 0,
     job.tires_created || 0,
+    job.products_skipped || 0,
+    job.products_failed || 0,
     job.completed_at ? new Date(job.completed_at).toLocaleString() : '-'
   ]);
 
@@ -186,40 +201,79 @@ export default function ProductCreationTab() {
 
       <Layout>
         <Layout.Section>
-          <Card>
-            <BlockStack gap="400">
-              <Text variant="headingMd" as="h2">Today's Progress</Text>
+          <BlockStack gap="400">
+            <Card>
+              <BlockStack gap="400">
+                <Text variant="headingMd" as="h2">Pending Products Queue</Text>
 
-              {todayStats && (
-                <>
-                  <BlockStack gap="200">
-                    <InlineStack align="space-between">
-                      <Text>Products Created Today</Text>
-                      <Text variant="headingMd" as="h3">
-                        {todayStats.total} / {todayStats.limit}
-                      </Text>
+                {pendingStats && (
+                  <>
+                    <BlockStack gap="200">
+                      <InlineStack align="space-between">
+                        <Text>Products Waiting to be Created</Text>
+                        <Text variant="headingLg" as="h3" tone="success">
+                          {pendingStats.pending.total.toLocaleString()}
+                        </Text>
+                      </InlineStack>
+                    </BlockStack>
+
+                    <InlineStack gap="400" align="space-around">
+                      <BlockStack gap="100">
+                        <Text tone="subdued">Wheels Pending</Text>
+                        <Text variant="headingMd" as="h3">{pendingStats.pending.wheels.toLocaleString()}</Text>
+                      </BlockStack>
+                      <BlockStack gap="100">
+                        <Text tone="subdued">Tires Pending</Text>
+                        <Text variant="headingMd" as="h3">{pendingStats.pending.tires.toLocaleString()}</Text>
+                      </BlockStack>
                     </InlineStack>
-                    <ProgressBar progress={progressPercentage} tone="primary" />
-                  </BlockStack>
 
-                  <InlineStack gap="400" align="space-around">
-                    <BlockStack gap="100">
-                      <Text tone="subdued">Wheels</Text>
-                      <Text variant="headingMd" as="h3">{todayStats.wheels}</Text>
+                    <Banner tone="info">
+                      <p><strong>{pendingStats.estimate.message}</strong></p>
+                      {pendingStats.estimate.daysToComplete > 0 && (
+                        <p>At {pendingStats.capacity.dailyLimit}/day: ~{pendingStats.estimate.daysToComplete} days to complete</p>
+                      )}
+                    </Banner>
+                  </>
+                )}
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="400">
+                <Text variant="headingMd" as="h2">Today's Progress</Text>
+
+                {todayStats && (
+                  <>
+                    <BlockStack gap="200">
+                      <InlineStack align="space-between">
+                        <Text>Products Created Today</Text>
+                        <Text variant="headingMd" as="h3">
+                          {todayStats.total} / {todayStats.limit}
+                        </Text>
+                      </InlineStack>
+                      <ProgressBar progress={progressPercentage} tone="primary" />
                     </BlockStack>
-                    <BlockStack gap="100">
-                      <Text tone="subdued">Tires</Text>
-                      <Text variant="headingMd" as="h3">{todayStats.tires}</Text>
-                    </BlockStack>
-                    <BlockStack gap="100">
-                      <Text tone="subdued">Remaining</Text>
-                      <Text variant="headingMd" as="h3">{todayStats.remaining}</Text>
-                    </BlockStack>
-                  </InlineStack>
-                </>
-              )}
-            </BlockStack>
-          </Card>
+
+                    <InlineStack gap="400" align="space-around">
+                      <BlockStack gap="100">
+                        <Text tone="subdued">Wheels</Text>
+                        <Text variant="headingMd" as="h3">{todayStats.wheels}</Text>
+                      </BlockStack>
+                      <BlockStack gap="100">
+                        <Text tone="subdued">Tires</Text>
+                        <Text variant="headingMd" as="h3">{todayStats.tires}</Text>
+                      </BlockStack>
+                      <BlockStack gap="100">
+                        <Text tone="subdued">Remaining</Text>
+                        <Text variant="headingMd" as="h3">{todayStats.remaining}</Text>
+                      </BlockStack>
+                    </InlineStack>
+                  </>
+                )}
+              </BlockStack>
+            </Card>
+          </BlockStack>
         </Layout.Section>
 
         <Layout.Section secondary>
@@ -305,8 +359,8 @@ export default function ProductCreationTab() {
             <Text>No execution history yet</Text>
           ) : (
             <DataTable
-              columnContentTypes={['text', 'text', 'numeric', 'numeric', 'numeric', 'text']}
-              headings={['Started', 'Status', 'Total', 'Wheels', 'Tires', 'Completed']}
+              columnContentTypes={['text', 'text', 'numeric', 'numeric', 'numeric', 'numeric', 'numeric', 'text']}
+              headings={['Started', 'Status', 'Total', 'Wheels', 'Tires', 'Skipped', 'Failed', 'Completed']}
               rows={historyRows}
             />
           )}
