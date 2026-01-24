@@ -30,7 +30,7 @@ WHEELS_RATIO = 0.70  # 70% wheels
 TIRES_RATIO = 0.30   # 30% tires
 
 # TESTING: Limit to 1 product for testing
-TESTING_MODE = False
+TESTING_MODE = True
 TESTING_LIMIT = 1
 
 # =============================================================================
@@ -410,12 +410,60 @@ def format_tire_data(product_row):
 
 async def sync_shopify_data():
     """
-    Sync Shopify data - PLACEHOLDER for future implementation.
+    Run the Shopify data sync scripts to update all_shopify_wheels and shopify_tires tables.
 
-    For now, we assume all_shopify_wheels and shopify_tires tables are already populated.
-    TODO: Integrate sync logic or run separate sync job before product creation.
+    This ensures we have the latest Shopify data before checking for duplicates.
     """
-    logger.info("⏭️  Skipping Shopify data sync (tables assumed current)")
+    import subprocess
+    import os
+
+    logger.info("=" * 80)
+    logger.info("SYNCING SHOPIFY DATA")
+    logger.info("=" * 80)
+
+    # Get the directory where this script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    sync_scripts_dir = os.path.join(script_dir, 'sync_scripts')
+
+    scripts = [
+        {
+            'name': 'Wheels',
+            'path': os.path.join(sync_scripts_dir, 'get_non_sdw_wheels.py')
+        },
+        {
+            'name': 'Tires',
+            'path': os.path.join(sync_scripts_dir, 'get_shopify_tires.py')
+        }
+    ]
+
+    for script in scripts:
+        logger.info(f"\nRunning {script['name']} sync...")
+
+        try:
+            result = subprocess.run(
+                ['python3', script['path']],
+                capture_output=True,
+                text=True,
+                timeout=600,  # 10 minute timeout
+                cwd=sync_scripts_dir  # Run in sync_scripts directory
+            )
+
+            if result.returncode == 0:
+                logger.info(f"✅ {script['name']} sync completed")
+            else:
+                logger.error(f"❌ {script['name']} sync failed with exit code {result.returncode}")
+                logger.error(f"stderr: {result.stderr[:500]}")  # First 500 chars
+                raise Exception(f"{script['name']} sync failed")
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"❌ {script['name']} sync timed out")
+            raise Exception(f"{script['name']} sync timed out")
+        except Exception as e:
+            logger.error(f"❌ Error running {script['name']} sync: {e}")
+            raise
+
+    logger.info("✅ Shopify data synced")
+    logger.info("=" * 80)
 
 
 async def check_product_exists_on_shopify(db_pool_inventory, product_type, part_number):
@@ -486,8 +534,18 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
     # Update job status to running
     await update_job_status(db_pool_manager, job_id, 'running')
 
-    # Note: Shopify sync happens separately or tables are assumed current
-    # await sync_shopify_data()  # Disabled for now
+    # ================================================================
+    # STEP 0: Sync Shopify Data
+    # ================================================================
+    logger.info("")
+    logger.info("STEP 0: Syncing Shopify data...")
+
+    try:
+        await sync_shopify_data()
+    except Exception as e:
+        logger.error(f"Failed to sync Shopify data: {e}")
+        await update_job_status(db_pool_manager, job_id, 'failed', error_message=f"Shopify data sync failed: {str(e)}")
+        return
 
     stats = {
         'wheels_created': 0,
