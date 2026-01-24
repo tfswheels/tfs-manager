@@ -647,19 +647,27 @@ async def create_product_on_shopify(session: aiohttp.ClientSession, wheel_data: 
                     logger.error(f"Could not adjust inventory for SKU={wheel_data['part_number']}")
 
             # Add product image if available
+            # Generate alt text - include finish for wheels, size for tires
+            if wheel_data.get('finish'):
+                # Wheel product
+                alt_text = f"{wheel_data['brand']} {wheel_data['model']} {wheel_data['finish']}"
+            else:
+                # Tire product (tires have 'size' instead of 'finish')
+                alt_text = f"{wheel_data['brand']} {wheel_data['model']} {wheel_data.get('size', '')}"
+
             if gcs_image_url:
                 await product_create_media_mutation(
                     session,
                     product_id,
                     gcs_image_url,
-                    f"{wheel_data['brand']} {wheel_data['model']} {wheel_data['finish']}"
+                    alt_text.strip()
                 )
             elif wheel_data.get('image'):
                 await product_create_media_mutation(
                     session,
                     product_id,
                     wheel_data['image'],
-                    f"{wheel_data['brand']} {wheel_data['model']} {wheel_data['finish']}"
+                    alt_text.strip()
                 )
 
             return {
