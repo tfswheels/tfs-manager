@@ -432,6 +432,44 @@ router.get('/stats/pending', async (req, res) => {
 });
 
 /**
+ * Clear all job history
+ * Useful for cleaning up test runs
+ */
+router.delete('/history', async (req, res) => {
+  try {
+    const shop = req.query.shop || '2f3d7a-2.myshopify.com';
+
+    // Get shop ID
+    const [rows] = await db.execute(
+      'SELECT id FROM shops WHERE shop_name = ?',
+      [shop]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Shop not found' });
+    }
+
+    const shopId = rows[0].id;
+
+    // Delete all history for this shop
+    const [result] = await db.execute(
+      'DELETE FROM product_creation_jobs WHERE shop_id = ?',
+      [shopId]
+    );
+
+    console.log(`✅ Cleared ${result.affectedRows} job history entries`);
+
+    res.json({
+      success: true,
+      deletedCount: result.affectedRows
+    });
+  } catch (error) {
+    console.error('❌ Clear history error:', error);
+    res.status(500).json({ error: 'Failed to clear history' });
+  }
+});
+
+/**
  * Get today's product creation stats
  * Uses shared daily limit system
  */

@@ -30,7 +30,7 @@ WHEELS_RATIO = 0.70  # 70% wheels
 TIRES_RATIO = 0.30   # 30% tires
 
 # TESTING: Limit to 1 product for testing
-TESTING_MODE = True
+TESTING_MODE = False
 TESTING_LIMIT = 1
 
 # =============================================================================
@@ -410,60 +410,12 @@ def format_tire_data(product_row):
 
 async def sync_shopify_data():
     """
-    Run the Shopify data sync scripts to update all_shopify_wheels and shopify_tires tables.
+    Sync Shopify data - PLACEHOLDER for future implementation.
 
-    This ensures we have the latest Shopify data before checking for duplicates.
+    For now, we assume all_shopify_wheels and shopify_tires tables are already populated.
+    TODO: Integrate sync logic or run separate sync job before product creation.
     """
-    import subprocess
-
-    logger.info("=" * 80)
-    logger.info("SYNCING SHOPIFY DATA")
-    logger.info("=" * 80)
-
-    scripts = [
-        {
-            'name': 'Wheels',
-            'path': '/Users/jeremiah/Desktop/TFS Wheels/Scripts/Product Management/Manage Products/get_non_sdw_wheels.py'
-        },
-        {
-            'name': 'Tires',
-            'path': '/Users/jeremiah/Desktop/TFS Wheels/Scripts/Product Management/Manage Products/get_shopify_tires.py'
-        }
-    ]
-
-    for script in scripts:
-        logger.info(f"\nRunning {script['name']} sync script...")
-        logger.info(f"Path: {script['path']}")
-
-        try:
-            result = subprocess.run(
-                ['python3', script['path']],
-                capture_output=True,
-                text=True,
-                timeout=600  # 10 minute timeout
-            )
-
-            if result.returncode == 0:
-                logger.info(f"✅ {script['name']} sync completed successfully")
-                # Log last few lines of output for visibility
-                output_lines = result.stdout.strip().split('\n')
-                for line in output_lines[-5:]:  # Last 5 lines
-                    logger.info(f"  {line}")
-            else:
-                logger.error(f"❌ {script['name']} sync failed with exit code {result.returncode}")
-                logger.error(f"Error: {result.stderr}")
-                raise Exception(f"{script['name']} sync failed")
-
-        except subprocess.TimeoutExpired:
-            logger.error(f"❌ {script['name']} sync timed out after 10 minutes")
-            raise Exception(f"{script['name']} sync timed out")
-        except Exception as e:
-            logger.error(f"❌ Error running {script['name']} sync: {e}")
-            raise
-
-    logger.info("")
-    logger.info("✅ All Shopify data synced successfully")
-    logger.info("=" * 80)
+    logger.info("⏭️  Skipping Shopify data sync (tables assumed current)")
 
 
 async def check_product_exists_on_shopify(db_pool_inventory, product_type, part_number):
@@ -534,18 +486,8 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
     # Update job status to running
     await update_job_status(db_pool_manager, job_id, 'running')
 
-    # ================================================================
-    # STEP 0: Sync Shopify Data
-    # ================================================================
-    logger.info("")
-    logger.info("STEP 0: Syncing Shopify data...")
-
-    try:
-        await sync_shopify_data()
-    except Exception as e:
-        logger.error(f"Failed to sync Shopify data: {e}")
-        await update_job_status(db_pool_manager, job_id, 'failed', error_message=f"Shopify data sync failed: {str(e)}")
-        return
+    # Note: Shopify sync happens separately or tables are assumed current
+    # await sync_shopify_data()  # Disabled for now
 
     stats = {
         'wheels_created': 0,
@@ -853,28 +795,13 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
 async def main():
     """Main entry point."""
 
-    # Startup banner
-    print("=" * 80)
-    print("🚀 SHOPIFY PRODUCT CREATION WORKER STARTING...")
-    print("=" * 80)
-    print(f"Script path: {os.path.abspath(__file__)}")
-    print(f"Working directory: {os.getcwd()}")
-    print(f"Python version: {sys.version}")
-    print(f"Arguments: {sys.argv}")
-    print("=" * 80)
-    sys.stdout.flush()
-
     parser = argparse.ArgumentParser(description='Create products on Shopify from database')
     parser.add_argument('--job-id', type=int, required=True, help='Product creation job ID')
     parser.add_argument('--max-products', type=int, default=DEFAULT_MAX_PRODUCTS, help='Max products to create')
 
-    print("📋 Parsing command line arguments...")
-    sys.stdout.flush()
-
     args = parser.parse_args()
 
-    print(f"✅ Arguments parsed: job_id={args.job_id}, max_products={args.max_products}")
-    sys.stdout.flush()
+    logger.info(f"Starting job #{args.job_id}, max_products={args.max_products}")
 
     # Create TWO database connection pools
     db_pool_manager = None
@@ -884,10 +811,6 @@ async def main():
         # Pool 1: tfs-manager database (for job status, daily limits)
         manager_config = DB_CONFIG.copy()
         manager_config['db'] = os.getenv('DB_NAME', 'tfs-manager')
-
-        print(f"🔌 Connecting to manager database: {manager_config['host']}/{manager_config['db']}")
-        logger.info(f"Connecting to manager database: {manager_config['host']}/{manager_config['db']}")
-        sys.stdout.flush()
 
         db_pool_manager = await aiomysql.create_pool(
             host=manager_config['host'],
@@ -900,17 +823,9 @@ async def main():
             autocommit=True
         )
 
-        print("✅ Manager database connected")
-        logger.info("✅ Manager database connected")
-        sys.stdout.flush()
-
         # Pool 2: tfs-db database (for product tables)
         inventory_config = DB_CONFIG.copy()
         inventory_config['db'] = 'tfs-db'
-
-        print(f"🔌 Connecting to inventory database: {inventory_config['host']}/{inventory_config['db']}")
-        logger.info(f"Connecting to inventory database: {inventory_config['host']}/{inventory_config['db']}")
-        sys.stdout.flush()
 
         db_pool_inventory = await aiomysql.create_pool(
             host=inventory_config['host'],
@@ -923,54 +838,31 @@ async def main():
             autocommit=True
         )
 
-        print("✅ Inventory database connected")
-        logger.info("✅ Inventory database connected")
-        sys.stdout.flush()
+        logger.info("Database connections established")
 
         # Run product creation with both pools
-        print(f"🎯 Starting product creation for job #{args.job_id}...")
-        sys.stdout.flush()
-
         await create_products_on_shopify(db_pool_manager, db_pool_inventory, args.job_id, args.max_products)
 
-        print("✅ Product creation completed successfully")
-        sys.stdout.flush()
-
     except KeyboardInterrupt:
-        print("⚠️ Interrupted by user")
         logger.info("Interrupted by user")
-        sys.stdout.flush()
+        sys.exit(0)
     except Exception as e:
-        print(f"❌ FATAL ERROR: {e}")
         logger.error(f"Fatal error: {e}")
         import traceback
-        error_trace = traceback.format_exc()
-        print(error_trace)
-        logger.error(error_trace)
-        sys.stdout.flush()
+        logger.error(traceback.format_exc())
         sys.exit(1)
     finally:
         if db_pool_manager:
             db_pool_manager.close()
             await db_pool_manager.wait_closed()
-            logger.info("Manager database connection closed")
         if db_pool_inventory:
             db_pool_inventory.close()
             await db_pool_inventory.wait_closed()
-            logger.info("Inventory database connection closed")
 
 
 if __name__ == "__main__":
-    print("\n" + "=" * 80)
-    print("🔥 PYTHON SCRIPT LOADED - __main__ block executing")
-    print("=" * 80)
-    sys.stdout.flush()
-
     try:
         asyncio.run(main())
     except Exception as e:
-        print(f"\n❌ ASYNCIO ERROR: {e}")
-        import traceback
-        print(traceback.format_exc())
-        sys.stdout.flush()
+        logger.error(f"Asyncio error: {e}")
         sys.exit(1)
