@@ -405,7 +405,8 @@ def batch_upsert_records(db, records):
             aspect = VALUES(aspect),
             weight = VALUES(weight),
             product_template = VALUES(product_template),
-            publication_status = VALUES(publication_status)
+            publication_status = VALUES(publication_status),
+            last_modified = NOW()
     """
     params = []
     for r in records:

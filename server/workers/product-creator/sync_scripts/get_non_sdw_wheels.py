@@ -364,7 +364,8 @@ def batch_upsert_records(db, records):
             hub_bore = VALUES(hub_bore),
             status = VALUES(status),
             meta_description = VALUES(meta_description),
-            price = VALUES(price)
+            price = VALUES(price),
+            last_modified = NOW()
     """
     params = []
     for r in records:
