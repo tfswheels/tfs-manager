@@ -24,7 +24,7 @@ DB_CONFIG = {
     'host': os.environ.get('DB_HOST'),
     'user': os.environ.get('DB_USER'),
     'password': os.environ.get('DB_PASSWORD'),
-    'database': os.environ.get('DB_NAME')
+    'database': 'tfs-db'  # Hardcoded to tfs-db for inventory/Shopify sync tables
 }
 
 # Number of products per page in the ID-gather step
