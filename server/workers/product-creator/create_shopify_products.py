@@ -29,6 +29,10 @@ DEFAULT_MAX_PRODUCTS = 1000
 WHEELS_RATIO = 0.70  # 70% wheels
 TIRES_RATIO = 0.30   # 30% tires
 
+# TESTING: Limit to 1 product for testing
+TESTING_MODE = True
+TESTING_LIMIT = 1
+
 # =============================================================================
 # DATABASE HELPERS
 # =============================================================================
@@ -450,6 +454,12 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
 
         # Limit to remaining daily capacity
         to_create = min(max_products, remaining)
+
+        # TESTING MODE: Override to create only 1 product for testing
+        if TESTING_MODE:
+            to_create = min(to_create, TESTING_LIMIT)
+            logger.warning(f"🧪 TESTING MODE: Limited to {TESTING_LIMIT} product(s)")
+
         logger.info(f"  Will create: {to_create} products")
 
         # ================================================================
