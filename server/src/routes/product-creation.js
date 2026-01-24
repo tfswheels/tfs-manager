@@ -345,31 +345,19 @@ router.post('/run-now', async (req, res) => {
  * Shows how many products are waiting to be created on Shopify
  */
 router.get('/stats/pending', async (req, res) => {
+  let inventoryDb = null;
   try {
     // Connect to tfs-db database to query wheels and tires tables
-    const inventoryDb = await import('../config/database.js').then(m => {
-      const mysql = require('mysql2/promise');
-      return mysql.createPool({
-        host: process.env.DB_HOST || 'localhost',
-        user: process.env.DB_USER || 'root',
-        password: process.env.DB_PASSWORD || 'password',
-        database: 'tfs-db',
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0
-      });
-    }).catch(() => {
-      // If dynamic import fails, create pool directly
-      const mysql = require('mysql2/promise');
-      return mysql.createPool({
-        host: process.env.DB_HOST || 'localhost',
-        user: process.env.DB_USER || 'root',
-        password: process.env.DB_PASSWORD || 'password',
-        database: 'tfs-db',
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0
-      });
+    const mysql = require('mysql2/promise');
+    inventoryDb = mysql.createPool({
+      host: process.env.DB_HOST || 'localhost',
+      port: process.env.DB_PORT || 3306,
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || 'password',
+      database: 'tfs-db',
+      waitForConnections: true,
+      connectionLimit: 5,
+      queueLimit: 0
     });
 
     // Query wheels table
@@ -429,11 +417,17 @@ router.get('/stats/pending', async (req, res) => {
     });
 
     // Close the inventory DB pool
-    await inventoryDb.end();
+    if (inventoryDb) {
+      await inventoryDb.end();
+    }
 
   } catch (error) {
     console.error('❌ Get pending stats error:', error);
-    res.status(500).json({ error: 'Failed to fetch pending stats' });
+    console.error('Error details:', error.message, error.stack);
+    if (inventoryDb) {
+      await inventoryDb.end().catch(() => {});
+    }
+    res.status(500).json({ error: 'Failed to fetch pending stats', message: error.message });
   }
 });
 
