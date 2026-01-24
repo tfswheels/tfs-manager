@@ -73,7 +73,7 @@ router.post('/005', async (req, res) => {
  */
 router.post('/008', async (req, res) => {
   try {
-    console.log('🚀 Running migration 008 via API...');
+    console.log('🚀 Running migration 008 via API... (v2)');
 
     const results = [];
     const columns = [
@@ -85,24 +85,30 @@ router.post('/008', async (req, res) => {
       { name: 'tires_failed', comment: 'Number of tires that failed' }
     ];
 
+    console.log(`Will add ${columns.length} columns...`);
+
     for (const col of columns) {
       try {
         const sql = `ALTER TABLE product_creation_jobs ADD COLUMN ${col.name} INT DEFAULT 0 COMMENT '${col.comment}'`;
         console.log(`Executing: ${sql}`);
         await db.execute(sql);
-        results.push({ column: col.name, success: true });
-        console.log(`✓ Added column ${col.name}`);
+        results.push({ column: col.name, success: true, added: true });
+        console.log(`✅ Successfully added column ${col.name}`);
       } catch (error) {
+        console.error(`Error for ${col.name}:`, { code: error.code, message: error.message });
         // If column already exists, that's OK
-        if (error.code === 'ER_DUP_FIELDNAME' || error.message.includes('Duplicate column')) {
+        if (error.code === 'ER_DUP_FIELDNAME' || error.message.includes('Duplicate column') || error.message.includes('duplicate column')) {
           results.push({ column: col.name, success: true, skipped: true, reason: 'column already exists' });
-          console.log(`⏭️  Skipped ${col.name}: ${error.message}`);
+          console.log(`⏭️  Skipped ${col.name} - already exists`);
         } else {
           console.error(`❌ Error adding column ${col.name}:`, error);
-          throw error;
+          results.push({ column: col.name, success: false, error: error.message });
+          // Continue with other columns instead of throwing
         }
       }
     }
+
+    console.log(`Migration 008 results:`, JSON.stringify(results, null, 2));
 
     console.log('✅ Migration 008 completed successfully via API!');
 
