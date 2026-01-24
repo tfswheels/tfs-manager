@@ -1,5 +1,6 @@
 import express from 'express';
 import db from '../config/database.js';
+import mysql from 'mysql2/promise';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -162,6 +163,71 @@ router.get('/status', async (req, res) => {
   } catch (error) {
     console.error('❌ Failed to check migration status:', error);
     res.status(500).json({ error: 'Failed to check migration status' });
+  }
+});
+
+/**
+ * Run migration 009 to add last_modified column to shopify_tires table in tfs-db
+ */
+router.post('/009', async (req, res) => {
+  let inventoryDb = null;
+  try {
+    console.log('🚀 Running migration 009 via API...');
+
+    // Connect to tfs-db database
+    inventoryDb = await mysql.createConnection({
+      host: process.env.DB_HOST || 'localhost',
+      port: process.env.DB_PORT || 3306,
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || 'password',
+      database: 'tfs-db'
+    });
+
+    console.log('📦 Connected to tfs-db database');
+
+    // Check if column already exists
+    const [columns] = await inventoryDb.execute(
+      "SHOW COLUMNS FROM shopify_tires LIKE 'last_modified'"
+    );
+
+    if (columns.length > 0) {
+      console.log('⏭️  Column last_modified already exists in shopify_tires');
+      await inventoryDb.end();
+      return res.json({
+        success: true,
+        message: 'Migration 009 - Column already exists',
+        skipped: true
+      });
+    }
+
+    // Add the column
+    await inventoryDb.execute(`
+      ALTER TABLE shopify_tires
+      ADD COLUMN last_modified TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      COMMENT 'Last time this record was modified'
+    `);
+
+    console.log('✅ Added last_modified column to shopify_tires');
+
+    await inventoryDb.end();
+
+    console.log('✅ Migration 009 completed successfully via API!');
+
+    res.json({
+      success: true,
+      message: 'Migration 009 completed successfully - Added last_modified column to shopify_tires'
+    });
+  } catch (error) {
+    console.error('❌ Migration 009 failed:', error);
+    if (inventoryDb) {
+      await inventoryDb.end().catch(() => {});
+    }
+    res.status(500).json({
+      success: false,
+      error: 'Migration failed',
+      message: error.message,
+      code: error.code
+    });
   }
 });
 
