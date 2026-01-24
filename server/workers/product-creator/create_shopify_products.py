@@ -413,6 +413,7 @@ async def sync_shopify_data():
     Run the Shopify data sync scripts to update all_shopify_wheels and shopify_tires tables.
 
     This ensures we have the latest Shopify data before checking for duplicates.
+    Streams logs in real-time to show chunk progress.
     """
     import subprocess
     import os
@@ -437,32 +438,43 @@ async def sync_shopify_data():
     ]
 
     for script in scripts:
-        logger.info(f"\nRunning {script['name']} sync...")
+        logger.info(f"\n🔄 Starting {script['name']} sync...")
 
         try:
-            result = subprocess.run(
+            # Use Popen to stream output in real-time
+            process = subprocess.Popen(
                 ['python3', script['path']],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Merge stderr into stdout
                 text=True,
-                timeout=600,  # 10 minute timeout
-                cwd=sync_scripts_dir  # Run in sync_scripts directory
+                bufsize=1,  # Line buffered
+                cwd=sync_scripts_dir
             )
 
-            if result.returncode == 0:
-                logger.info(f"✅ {script['name']} sync completed")
+            # Stream output line by line
+            for line in process.stdout:
+                line = line.rstrip()
+                if line:  # Only log non-empty lines
+                    logger.info(f"[{script['name']}] {line}")
+
+            # Wait for process to complete
+            process.wait(timeout=600)  # 10 minute timeout
+
+            if process.returncode == 0:
+                logger.info(f"✅ {script['name']} sync completed successfully")
             else:
-                logger.error(f"❌ {script['name']} sync failed with exit code {result.returncode}")
-                logger.error(f"stderr: {result.stderr[:500]}")  # First 500 chars
+                logger.error(f"❌ {script['name']} sync failed with exit code {process.returncode}")
                 raise Exception(f"{script['name']} sync failed")
 
         except subprocess.TimeoutExpired:
-            logger.error(f"❌ {script['name']} sync timed out")
+            logger.error(f"❌ {script['name']} sync timed out after 10 minutes")
+            process.kill()
             raise Exception(f"{script['name']} sync timed out")
         except Exception as e:
             logger.error(f"❌ Error running {script['name']} sync: {e}")
             raise
 
-    logger.info("✅ Shopify data synced")
+    logger.info("✅ All Shopify data synced")
     logger.info("=" * 80)
 
 
