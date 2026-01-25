@@ -6,14 +6,42 @@ body.embedded-app {
   line-height: 1.4;
 }
 
-/* Hide sidebar in embedded mode - Shopify provides its own navigation */
+/* Make sidebar narrower in embedded mode */
 .embedded-app .sidebar {
-  display: none !important;
+  width: 14rem !important;
 }
 
-/* Remove left margin when sidebar is hidden */
+/* Adjust main content margin for narrower sidebar */
 .embedded-app .main-content {
-  margin-left: 0 !important;
+  margin-left: 14rem !important;
+}
+
+/* Compact sidebar elements */
+.embedded-app .sidebar-header {
+  padding: 1rem !important;
+}
+
+.embedded-app .sidebar-header h1 {
+  font-size: 1.125rem !important;
+}
+
+.embedded-app .sidebar-header .w-8 {
+  width: 1.75rem !important;
+  height: 1.75rem !important;
+}
+
+.embedded-app .sidebar-nav {
+  padding: 0.75rem !important;
+}
+
+.embedded-app .nav-item {
+  padding: 0.625rem 0.875rem !important;
+  font-size: 0.875rem !important;
+}
+
+.embedded-app .nav-item .w-5 {
+  width: 1.125rem !important;
+  height: 1.125rem !important;
 }
 
 /* Compact content wrapper */
