@@ -15,7 +15,8 @@ const runningProcesses = new Map(); // jobId -> process
 
 /**
  * Get current product creation job configuration and stats
- * Returns the most recent job or default config (without creating a job)
+ * Returns the most recent job config with dynamically calculated next_run_at
+ * Next run is calculated as: last_completed_at + schedule_interval
  */
 router.get('/config', async (req, res) => {
   try {
@@ -33,7 +34,7 @@ router.get('/config', async (req, res) => {
 
     const shopId = rows[0].id;
 
-    // Get most recent product creation job
+    // Get most recent product creation job (for configuration)
     const [jobs] = await db.execute(
       `SELECT * FROM product_creation_jobs
        WHERE shop_id = ?
@@ -55,12 +56,42 @@ router.get('/config', async (req, res) => {
           schedule_interval: 24,
           enabled: true,
           next_run_at: nextRunAt,
-          status: 'pending'
+          status: 'pending',
+          updated_at: new Date()
         }
       });
     }
 
-    res.json({ job: jobs[0] });
+    const config = jobs[0];
+
+    // Find the last COMPLETED job to calculate next run time
+    const [lastCompletedJobs] = await db.execute(
+      `SELECT completed_at, id FROM product_creation_jobs
+       WHERE shop_id = ?
+       AND status = 'completed'
+       ORDER BY completed_at DESC
+       LIMIT 1`,
+      [shopId]
+    );
+
+    // Calculate next_run_at based on last completed job + interval
+    let calculatedNextRunAt;
+    if (lastCompletedJobs.length > 0) {
+      const lastCompletedAt = new Date(lastCompletedJobs[0].completed_at);
+      const intervalMs = (config.schedule_interval || 24) * 60 * 60 * 1000;
+      calculatedNextRunAt = new Date(lastCompletedAt.getTime() + intervalMs);
+    } else {
+      // No completed jobs yet - next run is "now" (scheduler will run immediately)
+      calculatedNextRunAt = new Date();
+    }
+
+    // Return config with calculated next_run_at (not from database)
+    res.json({
+      job: {
+        ...config,
+        next_run_at: calculatedNextRunAt
+      }
+    });
   } catch (error) {
     console.error('❌ Get product creation config error:', error);
     res.status(500).json({ error: 'Failed to fetch product creation config' });

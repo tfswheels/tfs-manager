@@ -223,33 +223,84 @@ class JobScheduler {
 
   /**
    * Check for product creation jobs that need to run
+   * Only creates jobs based on:
+   * 1. Time elapsed since last COMPLETED job (not next_run_at field)
+   * 2. Schedule interval from most recent config
    */
   async checkProductCreationJobs() {
     try {
-      // Find the active product creation job that needs to run
-      const [jobs] = await db.execute(
-        `SELECT * FROM product_creation_jobs
-         WHERE enabled = TRUE
-         AND next_run_at <= NOW()
-         AND status IN ('pending', 'completed')
-         ORDER BY next_run_at ASC
-         LIMIT 1`
-      );
+      // Get all shops to check their product creation schedules
+      const [shops] = await db.execute('SELECT id FROM shops');
 
-      if (jobs.length === 0) {
-        return;
+      for (const shop of shops) {
+        const shopId = shop.id;
+
+        // Get the most recent job (for configuration settings)
+        const [configs] = await db.execute(
+          `SELECT * FROM product_creation_jobs
+           WHERE shop_id = ?
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [shopId]
+        );
+
+        if (configs.length === 0 || !configs[0].enabled) {
+          continue; // No config or disabled
+        }
+
+        const config = configs[0];
+
+        // Find the last COMPLETED job for this shop
+        const [lastCompletedJobs] = await db.execute(
+          `SELECT completed_at, id FROM product_creation_jobs
+           WHERE shop_id = ?
+           AND status = 'completed'
+           ORDER BY completed_at DESC
+           LIMIT 1`,
+          [shopId]
+        );
+
+        // Calculate if it's time to run
+        const now = new Date();
+        let shouldRun = false;
+
+        if (lastCompletedJobs.length === 0) {
+          // No completed jobs yet - run now if enabled
+          shouldRun = true;
+          console.log(`  📦 No completed jobs yet - will start first run`);
+        } else {
+          const lastCompletedAt = new Date(lastCompletedJobs[0].completed_at);
+          const scheduleIntervalMs = (config.schedule_interval || 24) * 60 * 60 * 1000; // hours to ms
+          const nextRunTime = new Date(lastCompletedAt.getTime() + scheduleIntervalMs);
+
+          if (now >= nextRunTime) {
+            shouldRun = true;
+            const hoursSinceLastRun = Math.floor((now - lastCompletedAt) / (1000 * 60 * 60));
+            console.log(`  📦 Last run completed ${hoursSinceLastRun} hours ago - time for next run`);
+          }
+        }
+
+        if (!shouldRun) {
+          continue;
+        }
+
+        // Check if there's already a running job
+        const [runningJobs] = await db.execute(
+          `SELECT id FROM product_creation_jobs
+           WHERE shop_id = ?
+           AND status = 'running'
+           LIMIT 1`,
+          [shopId]
+        );
+
+        if (runningJobs.length > 0) {
+          console.log(`  ⏭️  Skipping product creation - job #${runningJobs[0].id} already running`);
+          continue;
+        }
+
+        console.log(`  📦 Starting scheduled product creation job (max ${config.max_products_per_run} products)`);
+        await this.executeProductCreationJob(config, shopId);
       }
-
-      const job = jobs[0];
-
-      // Skip if already running
-      if (runningJobs.has(`product_creation_${job.id}`)) {
-        console.log(`  ⏭️  Skipping product creation - already running`);
-        return;
-      }
-
-      console.log(`  📦 Starting product creation job (max ${job.max_products_per_run} products)`);
-      await this.executeProductCreationJob(job);
     } catch (error) {
       console.error('❌ Error checking product creation jobs:', error);
     }
@@ -258,14 +309,17 @@ class JobScheduler {
   /**
    * Execute product creation job
    * Spawns the Python product creation worker
+   *
+   * @param {Object} config - Configuration from most recent job
+   * @param {number} shopId - Shop ID
    */
-  async executeProductCreationJob(job) {
+  async executeProductCreationJob(config, shopId) {
     try {
-      // Calculate next run time
+      // Calculate next run time (for display purposes only)
       const nextRunAt = new Date();
-      nextRunAt.setHours(nextRunAt.getHours() + job.schedule_interval);
+      nextRunAt.setHours(nextRunAt.getHours() + (config.schedule_interval || 24));
 
-      // Create a new job entry for this run
+      // Create a new job entry for this execution (for history tracking)
       const [result] = await db.execute(
         `INSERT INTO product_creation_jobs (
           shop_id,
@@ -279,12 +333,12 @@ class JobScheduler {
           next_run_at
         ) VALUES (?, ?, ?, ?, ?, ?, 'running', NOW(), ?)`,
         [
-          job.shop_id,
-          job.max_products_per_run,
-          job.schedule_interval,
-          job.max_wheels_per_run,
-          job.max_tires_per_run,
-          job.enabled,
+          shopId,
+          config.max_products_per_run,
+          config.schedule_interval,
+          config.max_wheels_per_run,
+          config.max_tires_per_run,
+          config.enabled,
           nextRunAt
         ]
       );
@@ -292,7 +346,7 @@ class JobScheduler {
       const newJobId = result.insertId;
 
       console.log(`  ✅ Created product creation job #${newJobId}`);
-      console.log(`  ⏰ Next run scheduled for: ${nextRunAt.toISOString()}`);
+      console.log(`  ⏰ Next scheduled run: ${nextRunAt.toISOString()}`);
 
       // Spawn Python product creation worker
       const workerPath = path.join(__dirname, '../../workers/product-creator');
@@ -301,7 +355,7 @@ class JobScheduler {
       const args = [
         pythonScript,
         `--job-id=${newJobId}`,
-        `--max-products=${job.max_products_per_run || 1000}`
+        `--max-products=${config.max_products_per_run || 1000}`
       ];
 
       console.log(`  📦 Spawning Python worker...`);
@@ -319,8 +373,8 @@ class JobScheduler {
 
       console.log(`  ✅ Python process spawned with PID: ${pythonProcess.pid}`);
 
-      // Track the process
-      runningJobs.set(`product_creation_${job.id}`, pythonProcess);
+      // Track the process by newJobId (not config.id)
+      runningJobs.set(`product_creation_${newJobId}`, pythonProcess);
 
       // Handle output
       pythonProcess.stdout.on('data', (data) => {
@@ -338,11 +392,11 @@ class JobScheduler {
 
       pythonProcess.on('error', (error) => {
         console.error(`[Product Creation #${newJobId}] ❌ Process error:`, error);
-        runningJobs.delete(`product_creation_${job.id}`);
+        runningJobs.delete(`product_creation_${newJobId}`);
       });
 
       pythonProcess.on('close', (code) => {
-        runningJobs.delete(`product_creation_${job.id}`);
+        runningJobs.delete(`product_creation_${newJobId}`);
 
         if (code === 0) {
           console.log(`✅ Product creation job #${newJobId} completed successfully`);
