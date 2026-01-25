@@ -13,7 +13,8 @@ import {
   Text,
   Banner,
   EmptyState,
-  Collapsible
+  Collapsible,
+  ChoiceList
 } from '@shopify/polaris';
 import axios from 'axios';
 
@@ -57,7 +58,8 @@ export default function ScheduledScrapingTab() {
   const [saleOnly, setSaleOnly] = useState(false);
   const [specificBrands, setSpecificBrands] = useState('');
   const [excludedBrands, setExcludedBrands] = useState(SKIP_BRANDS_DEFAULT);
-  const [useZenrows, setUseZenrows] = useState(true);
+  const [scrapingMode, setScrapingMode] = useState('zenrows');
+  const [hybridRetryCount, setHybridRetryCount] = useState('3');
   const [backorderCount, setBackorderCount] = useState('5');
 
   useEffect(() => {
@@ -95,7 +97,8 @@ export default function ScheduledScrapingTab() {
     setSaleOnly(false);
     setSpecificBrands('');
     setExcludedBrands(SKIP_BRANDS_DEFAULT);
-    setUseZenrows(true);
+    setScrapingMode('zenrows');
+    setHybridRetryCount('3');
     setBackorderCount('5');
     setBrandsOpen(false);
     setModalOpen(true);
@@ -109,7 +112,14 @@ export default function ScheduledScrapingTab() {
     setSaleOnly(job.config?.saleOnly || false);
     setSpecificBrands(job.config?.specificBrands?.join(', ') || '');
     setExcludedBrands(job.config?.excludedBrands || SKIP_BRANDS_DEFAULT);
-    setUseZenrows(job.config?.useZenrows !== false);
+    // Handle both old (useZenrows) and new (scrapingMode) config formats
+    if (job.config?.scrapingMode) {
+      setScrapingMode(job.config.scrapingMode);
+      setHybridRetryCount((job.config?.hybridRetryCount || 3).toString());
+    } else {
+      setScrapingMode(job.config?.useZenrows !== false ? 'zenrows' : 'direct');
+      setHybridRetryCount('3');
+    }
     setBackorderCount((job.config?.backorderCount || 5).toString());
     setBrandsOpen(false);
     setModalOpen(true);
@@ -118,7 +128,8 @@ export default function ScheduledScrapingTab() {
   const handleSave = async () => {
     try {
       const config = {
-        useZenrows,
+        scrapingMode,
+        hybridRetryCount: parseInt(hybridRetryCount) || 3,
         backorderCount: parseInt(backorderCount) || 5,
         saleOnly,
         specificBrands: specificBrands ? specificBrands.split(',').map(b => b.trim()) : [],
@@ -285,12 +296,41 @@ export default function ScheduledScrapingTab() {
               onChange={setInterval}
             />
 
-            <Checkbox
-              label="Use ZenRows (proxy service for scraping)"
-              checked={useZenrows}
-              onChange={setUseZenrows}
-              helpText="When disabled, scrapes without ZenRows proxy"
+            <ChoiceList
+              title="Scraping Mode"
+              choices={[
+                {
+                  label: 'Direct Scraping',
+                  value: 'direct',
+                  helpText: 'Scrape directly without proxy (faster, may be blocked)'
+                },
+                {
+                  label: 'Use ZenRows',
+                  value: 'zenrows',
+                  helpText: 'Always use ZenRows proxy service (slower, more reliable)'
+                },
+                {
+                  label: 'Hybrid',
+                  value: 'hybrid',
+                  helpText: 'Start with direct, fallback to ZenRows on failure'
+                }
+              ]}
+              selected={[scrapingMode]}
+              onChange={(selected) => setScrapingMode(selected[0])}
             />
+
+            {scrapingMode === 'hybrid' && (
+              <TextField
+                label="Hybrid Retry Count"
+                type="number"
+                value={hybridRetryCount}
+                onChange={setHybridRetryCount}
+                autoComplete="off"
+                helpText="Number of direct attempts before using ZenRows"
+                min="1"
+                max="10"
+              />
+            )}
 
             <Checkbox
               label="Sale items only"

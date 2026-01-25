@@ -13,7 +13,8 @@ import {
   Spinner,
   Icon,
   TextField,
-  Modal
+  Modal,
+  ChoiceList
 } from '@shopify/polaris';
 import { ChevronDownIcon, ChevronUpIcon } from '@shopify/polaris-icons';
 import axios from 'axios';
@@ -45,7 +46,8 @@ export default function ManualScrapingTab() {
 
   const [excludedBrands, setExcludedBrands] = useState(SKIP_BRANDS_DEFAULT);
   const [config, setConfig] = useState({
-    useZenrows: true,
+    scrapingMode: 'zenrows',
+    hybridRetryCount: 3,
     backorderCount: 5,
     retryFailed: true,
     saleOnly: false,
@@ -228,12 +230,42 @@ export default function ManualScrapingTab() {
             transition={{duration: '200ms', timingFunction: 'ease-in-out'}}
           >
             <BlockStack gap="400">
-              <Checkbox
-                label="Use ZenRows (proxy service for scraping)"
-                checked={config.useZenrows}
-                onChange={(val) => setConfig({...config, useZenrows: val})}
-                helpText="When disabled, scrapes without ZenRows proxy"
+              <ChoiceList
+                title="Scraping Mode"
+                choices={[
+                  {
+                    label: 'Direct Scraping',
+                    value: 'direct',
+                    helpText: 'Scrape directly without proxy (faster, may be blocked)'
+                  },
+                  {
+                    label: 'Use ZenRows',
+                    value: 'zenrows',
+                    helpText: 'Always use ZenRows proxy service (slower, more reliable)'
+                  },
+                  {
+                    label: 'Hybrid',
+                    value: 'hybrid',
+                    helpText: 'Start with direct, fallback to ZenRows on failure'
+                  }
+                ]}
+                selected={[config.scrapingMode]}
+                onChange={(selected) => setConfig({...config, scrapingMode: selected[0]})}
               />
+
+              {config.scrapingMode === 'hybrid' && (
+                <TextField
+                  label="Hybrid Retry Count"
+                  type="number"
+                  value={config.hybridRetryCount.toString()}
+                  onChange={(val) => setConfig({...config, hybridRetryCount: parseInt(val) || 3})}
+                  autoComplete="off"
+                  helpText="Number of direct attempts before using ZenRows"
+                  min="1"
+                  max="10"
+                />
+              )}
+
               <Checkbox
                 label="Sale items only"
                 checked={config.saleOnly}

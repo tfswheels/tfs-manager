@@ -563,17 +563,49 @@ async def fetch_page_direct(session: aiohttp.ClientSession, url: str, cookies: L
 
 async def fetch_page(session: aiohttp.ClientSession, url: str, cookies: List[Dict], max_retries: int = 3) -> Optional[str]:
     """
-    Fetch a page using ZenRows or direct fetch based on USE_ZENROWS config.
+    Fetch a page using ZenRows, direct fetch, or hybrid mode based on SCRAPING_MODE config.
 
     This is the main fetch function that should be used throughout the codebase.
-    It automatically chooses between ZenRows and direct fetch.
+    It automatically chooses the appropriate scraping method.
+
+    Modes:
+    - 'direct': Always use direct fetch (no proxy)
+    - 'zenrows': Always use ZenRows proxy
+    - 'hybrid': Try direct fetch first, fallback to ZenRows on failure
     """
-    if USE_ZENROWS:
-        logger.debug(f"Using ZenRows for: {url}")
-        return await fetch_page_with_zenrows(session, url, cookies, max_retries)
-    else:
-        logger.debug(f"Using direct fetch (no proxy) for: {url}")
+    from config import SCRAPING_MODE, HYBRID_RETRY_COUNT
+
+    if SCRAPING_MODE == 'direct':
+        logger.debug(f"[Direct Mode] Fetching: {url}")
         return await fetch_page_direct(session, url, cookies, max_retries)
+
+    elif SCRAPING_MODE == 'zenrows':
+        logger.debug(f"[ZenRows Mode] Fetching: {url}")
+        return await fetch_page_with_zenrows(session, url, cookies, max_retries)
+
+    elif SCRAPING_MODE == 'hybrid':
+        # Hybrid mode: Try direct first (with limited retries), fallback to ZenRows
+        logger.debug(f"[Hybrid Mode] Attempting direct fetch (max {HYBRID_RETRY_COUNT} attempts): {url}")
+
+        # Try direct fetch with custom retry count
+        result = await fetch_page_direct(session, url, cookies, max_retries=HYBRID_RETRY_COUNT)
+
+        if result is not None:
+            logger.debug(f"[Hybrid Mode] Direct fetch succeeded: {url}")
+            return result
+
+        # Direct fetch failed, fallback to ZenRows
+        logger.info(f"[Hybrid Mode] Direct fetch failed after {HYBRID_RETRY_COUNT} attempts, trying ZenRows: {url}")
+        return await fetch_page_with_zenrows(session, url, cookies, max_retries)
+
+    else:
+        # Fallback to legacy USE_ZENROWS for backward compatibility
+        if USE_ZENROWS:
+            logger.debug(f"[Legacy] Using ZenRows for: {url}")
+            return await fetch_page_with_zenrows(session, url, cookies, max_retries)
+        else:
+            logger.debug(f"[Legacy] Using direct fetch for: {url}")
+            return await fetch_page_direct(session, url, cookies, max_retries)
 
 
 # =============================================================================

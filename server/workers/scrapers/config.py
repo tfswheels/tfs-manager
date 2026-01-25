@@ -51,7 +51,13 @@ SALE_ONLY = False
 # =============================================================================
 
 MAX_PRODUCTS_PER_DAY = int(os.environ.get('MAX_PRODUCTS_PER_DAY', '1000'))  # Daily creation limit (can be overridden via env var)
-USE_ZENROWS = True  # Default to using ZenRows proxy (can be disabled with --no-zenrows)
+
+# Scraping mode: 'direct', 'zenrows', or 'hybrid'
+SCRAPING_MODE = 'zenrows'  # Default to using ZenRows proxy
+HYBRID_RETRY_COUNT = 3  # Number of direct attempts before using ZenRows in hybrid mode
+
+# Legacy support for backward compatibility
+USE_ZENROWS = True  # Deprecated: use SCRAPING_MODE instead
 
 # =============================================================================
 # COMMAND LINE ARGUMENTS
@@ -67,7 +73,10 @@ if '--stop-on-backorder-only' in sys.argv:
     STOP_ON_BACKORDER_ONLY = True
 if '--sale-only' in sys.argv:
     SALE_ONLY = True
+
+# Legacy command-line arg support
 if '--no-zenrows' in sys.argv:
+    SCRAPING_MODE = 'direct'
     USE_ZENROWS = False
 
 # Override from environment variables (from Node.js backend)
@@ -78,6 +87,24 @@ if os.environ.get('MAX_PRODUCTS_PER_DAY'):
 if os.environ.get('BACKORDER_COUNT'):
     MAX_CONSECUTIVE_NON_IN_STOCK = int(os.environ.get('BACKORDER_COUNT'))
     logger.info(f"🛑 BACKORDER_COUNT overridden from env var: {MAX_CONSECUTIVE_NON_IN_STOCK}")
+
+# Override scraping mode from environment variables
+if os.environ.get('SCRAPING_MODE'):
+    mode = os.environ.get('SCRAPING_MODE').lower()
+    if mode in ['direct', 'zenrows', 'hybrid']:
+        SCRAPING_MODE = mode
+        # Update legacy USE_ZENROWS for backward compatibility
+        USE_ZENROWS = (mode == 'zenrows')
+        logger.info(f"🌐 SCRAPING_MODE overridden from env var: {SCRAPING_MODE}")
+    else:
+        logger.warning(f"Invalid SCRAPING_MODE '{mode}', using default: {SCRAPING_MODE}")
+
+if os.environ.get('HYBRID_RETRY_COUNT'):
+    try:
+        HYBRID_RETRY_COUNT = int(os.environ.get('HYBRID_RETRY_COUNT'))
+        logger.info(f"🔄 HYBRID_RETRY_COUNT overridden from env var: {HYBRID_RETRY_COUNT}")
+    except ValueError:
+        logger.warning(f"Invalid HYBRID_RETRY_COUNT value, using default: {HYBRID_RETRY_COUNT}")
 
 # =============================================================================
 # SCRAPING SETTINGS
@@ -233,7 +260,9 @@ logger.info("=" * 80)
 logger.info(f"Mode: {MODE}")
 logger.info(f"Resume: {RESUME_FROM_CHECKPOINT}")
 logger.info(f"Sale Only: {SALE_ONLY}")
-logger.info(f"Use ZenRows: {USE_ZENROWS}")
+logger.info(f"Scraping Mode: {SCRAPING_MODE}")
+if SCRAPING_MODE == 'hybrid':
+    logger.info(f"Hybrid Retry Count: {HYBRID_RETRY_COUNT}")
 logger.info(f"Max Products/Day: {MAX_PRODUCTS_PER_DAY}")
 logger.info(f"Backorder Count: {MAX_CONSECUTIVE_NON_IN_STOCK}")
 logger.info("=" * 80)

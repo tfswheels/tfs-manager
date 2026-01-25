@@ -104,7 +104,11 @@ router.post('/start', async (req, res) => {
 
     // Add optional flags based on config
     if (config.saleOnly) args.push('--sale-only');
-    if (config.useZenrows === false) args.push('--no-zenrows');
+
+    // Handle legacy useZenrows boolean (backward compatibility)
+    if (config.useZenrows === false && !config.scrapingMode) {
+      args.push('--no-zenrows');
+    }
 
     console.log(`🔧 Python args:`, args.join(' '));
 
@@ -118,7 +122,10 @@ router.post('/start', async (req, res) => {
         MAX_PRODUCTS_PER_DAY: config.maxProductsPerDay?.toString() || '1000',
         EXCLUDED_BRANDS: config.excludedBrands ? JSON.stringify(config.excludedBrands) : '[]',
         SPECIFIC_BRANDS: config.specificBrands ? JSON.stringify(config.specificBrands) : '[]',
-        BACKORDER_COUNT: config.backorderCount?.toString() || '5'
+        BACKORDER_COUNT: config.backorderCount?.toString() || '5',
+        // New scraping mode configuration
+        SCRAPING_MODE: config.scrapingMode || 'zenrows',
+        HYBRID_RETRY_COUNT: config.hybridRetryCount?.toString() || '3'
       }
     });
 
