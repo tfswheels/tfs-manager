@@ -33,6 +33,8 @@ try:
         SKIP_BRANDS_NORMALIZED,
         SALE_ONLY,
         USE_ZENROWS,
+        SCRAPING_MODE,
+        HYBRID_RETRY_COUNT,
         logger
     )
 except ImportError:
@@ -45,6 +47,8 @@ except ImportError:
         SKIP_BRANDS_NORMALIZED,
         SALE_ONLY,
         USE_ZENROWS,
+        SCRAPING_MODE,
+        HYBRID_RETRY_COUNT,
         logger
     )
 
@@ -573,8 +577,6 @@ async def fetch_page(session: aiohttp.ClientSession, url: str, cookies: List[Dic
     - 'zenrows': Always use ZenRows proxy
     - 'hybrid': Try direct fetch first, fallback to ZenRows on failure
     """
-    from config import SCRAPING_MODE, HYBRID_RETRY_COUNT
-
     if SCRAPING_MODE == 'direct':
         logger.debug(f"[Direct Mode] Fetching: {url}")
         return await fetch_page_direct(session, url, cookies, max_retries)
