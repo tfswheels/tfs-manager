@@ -352,14 +352,15 @@ router.post('/run-now', async (req, res) => {
 
 /**
  * Terminate a running product creation job
+ * Works across server restarts by using PID stored in database
  */
 router.post('/terminate/:jobId', async (req, res) => {
   try {
     const jobId = parseInt(req.params.jobId);
 
-    // Check if job exists
+    // Check if job exists and get PID
     const [jobs] = await db.execute(
-      'SELECT id, status FROM product_creation_jobs WHERE id = ?',
+      'SELECT id, status, process_pid FROM product_creation_jobs WHERE id = ?',
       [jobId]
     );
 
@@ -371,6 +372,7 @@ router.post('/terminate/:jobId', async (req, res) => {
     }
 
     const currentStatus = jobs[0].status;
+    const processPid = jobs[0].process_pid;
 
     // If job is not running, inform user
     if (currentStatus !== 'running') {
@@ -380,43 +382,72 @@ router.post('/terminate/:jobId', async (req, res) => {
       });
     }
 
-    // Check if process is in memory
-    const process = runningProcesses.get(jobId);
+    let terminationSuccess = false;
+    let terminationMethod = '';
 
-    if (process) {
-      // Process found - send SIGTERM for graceful shutdown
-      console.log(`✅ Found running process for job #${jobId}, sending SIGTERM...`);
-      process.kill('SIGTERM');
+    // Try in-memory process first (fastest)
+    const memoryProcess = runningProcesses.get(jobId);
+    if (memoryProcess) {
+      console.log(`✅ Found process in memory for job #${jobId}, sending SIGTERM...`);
+      memoryProcess.kill('SIGTERM');
+      terminationSuccess = true;
+      terminationMethod = 'memory';
+    }
+    // Fall back to PID from database (works after server restart)
+    else if (processPid) {
+      console.log(`✅ Found PID ${processPid} in database for job #${jobId}, sending SIGTERM...`);
+      try {
+        // Send SIGTERM to the process
+        process.kill(processPid, 'SIGTERM');
+        terminationSuccess = true;
+        terminationMethod = 'database';
+      } catch (killError) {
+        if (killError.code === 'ESRCH') {
+          console.log(`⚠️  Process ${processPid} not found (may have already exited)`);
+          terminationSuccess = false;
+          terminationMethod = 'process_not_found';
+        } else {
+          throw killError;
+        }
+      }
     } else {
-      // Process not found - likely server restarted
-      console.log(`⚠️  Process for job #${jobId} not found in memory (server may have restarted)`);
-      console.log(`   Marking job as failed in database...`);
+      console.log(`⚠️  No PID found for job #${jobId} (process may have already exited)`);
+      terminationSuccess = false;
+      terminationMethod = 'no_pid';
     }
 
-    // Update job status in database regardless
-    await db.execute(
-      `UPDATE product_creation_jobs
-       SET status = ?,
-           completed_at = NOW()
-       WHERE id = ?`,
-      [process ? 'terminated' : 'failed', jobId]
-    );
+    // Update job status in database
+    if (terminationSuccess) {
+      // Don't update status here - let the Python process update it to 'terminated' when it exits
+      // Just log the termination request
+      console.log(`✅ Job #${jobId} termination signal sent via ${terminationMethod}`);
+    } else {
+      // Process not found - mark as failed immediately
+      await db.execute(
+        `UPDATE product_creation_jobs
+         SET status = 'failed',
+             error_message = 'Process not found - may have already exited',
+             completed_at = NOW(),
+             process_pid = NULL
+         WHERE id = ?`,
+        [jobId]
+      );
+      console.log(`⚠️  Job #${jobId} marked as failed (process not found)`);
+    }
 
-    const statusMessage = process
-      ? 'terminated successfully (will stop after current product)'
-      : 'marked as failed (process was not found - server may have restarted)';
-
-    console.log(`✅ Job #${jobId} ${statusMessage}`);
+    const responseMessage = terminationSuccess
+      ? `Termination signal sent (${terminationMethod}). Job will stop gracefully after current product.`
+      : 'Process not found - may have already exited. Job marked as failed.';
 
     res.json({
-      success: true,
-      message: `Product creation job #${jobId} has been ${statusMessage}`,
+      success: terminationSuccess,
+      message: responseMessage,
       jobId: jobId,
-      wasProcessFound: !!process
+      terminationMethod: terminationMethod
     });
   } catch (error) {
     console.error('❌ Terminate product creation error:', error);
-    res.status(500).json({ error: 'Failed to terminate product creation job' });
+    res.status(500).json({ error: 'Failed to terminate product creation job', details: error.message });
   }
 });
 

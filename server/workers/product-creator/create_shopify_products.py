@@ -116,27 +116,40 @@ async def increment_daily_limit(db_pool, product_type):
 async def query_products_needing_creation(db_pool_inventory, table_name, limit):
     """
     Query products that need to be created on Shopify.
-    Returns newest modified products first (most recently updated).
+    Returns oldest modified products first (oldest products get created first).
     Uses db_pool_inventory which connects to tfs-db database.
 
     Queries from 'wheels' and 'tires' tables (not all_shopify_wheels/shopify_tires).
-    Excludes products that already exist in shopify_products (by part_number or handle).
-    Matches reference script's approach.
+    Excludes products that already exist in:
+    - shopify_products table (by part_number)
+    - all_shopify_wheels/shopify_tires tables (by part_number)
+
+    This prevents creating duplicates even if products were manually created on Shopify.
     """
     try:
+        # Determine the corresponding Shopify table to check
+        shopify_table = 'all_shopify_wheels' if table_name == 'wheels' else 'shopify_tires'
+
         # Query products where product_sync = 'pending' or 'error' (need Shopify creation)
-        # Exclude products that already exist in shopify_products (by part_number OR handle)
-        # Order by last_modified DESC (newest first - as per original script)
+        # Exclude products that already exist in BOTH shopify_products AND all_shopify_wheels/shopify_tires
+        # This catches:
+        # 1. Products tracked in shopify_products
+        # 2. Products that exist on Shopify but aren't in shopify_products (manual creations, sync issues)
         query = f"""
         SELECT *
         FROM {table_name}
         WHERE product_sync IN ('pending', 'error')
           AND url_part_number IS NOT NULL
           AND url_part_number != ''
+          AND part_number IS NOT NULL
+          AND part_number != ''
           AND NOT EXISTS (
               SELECT 1 FROM shopify_products sp
               WHERE sp.part_number = {table_name}.part_number
-                 OR sp.handle = LOWER(REPLACE(REPLACE(CONCAT({table_name}.brand, '-', {table_name}.model, '-', {table_name}.size, '-', {table_name}.part_number), ' ', '-'), '/', '-'))
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM {shopify_table} st
+              WHERE st.part_number = {table_name}.part_number
           )
         ORDER BY last_modified ASC
         LIMIT %s
@@ -245,6 +258,41 @@ async def insert_into_shopify_products(db_pool_inventory, product_data, shopify_
         logger.error(traceback.format_exc())
 
 
+async def update_job_pid(db_pool, job_id, pid):
+    """Update the process PID in the database for termination tracking."""
+    try:
+        query = """
+        UPDATE product_creation_jobs
+        SET process_pid = %s,
+            updated_at = NOW()
+        WHERE id = %s
+        """
+        async with db_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, (pid, job_id))
+                await conn.commit()
+        logger.info(f"📋 Registered process PID {pid} for job #{job_id}")
+    except Exception as e:
+        logger.error(f"Error updating job PID: {e}")
+
+
+async def clear_job_pid(db_pool, job_id):
+    """Clear the process PID when job completes or fails."""
+    try:
+        query = """
+        UPDATE product_creation_jobs
+        SET process_pid = NULL,
+            updated_at = NOW()
+        WHERE id = %s
+        """
+        async with db_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, (job_id,))
+                await conn.commit()
+    except Exception as e:
+        logger.error(f"Error clearing job PID: {e}")
+
+
 async def update_job_status(db_pool, job_id, status, products_created=None, wheels_created=None, tires_created=None, error_message=None, products_skipped=None, products_failed=None):
     """Update the product_creation_jobs status."""
     try:
@@ -275,6 +323,7 @@ async def update_job_status(db_pool, job_id, status, products_created=None, whee
             UPDATE product_creation_jobs
             SET status = %s,
                 completed_at = NOW(),
+                process_pid = NULL,
                 products_created = %s,
                 wheels_created = %s,
                 tires_created = %s,
@@ -289,11 +338,22 @@ async def update_job_status(db_pool, job_id, status, products_created=None, whee
             UPDATE product_creation_jobs
             SET status = %s,
                 completed_at = NOW(),
+                process_pid = NULL,
                 error_message = %s,
                 updated_at = NOW()
             WHERE id = %s
             """
             params = (status, error_message, job_id)
+        elif status == 'terminated':
+            query = """
+            UPDATE product_creation_jobs
+            SET status = %s,
+                completed_at = NOW(),
+                process_pid = NULL,
+                updated_at = NOW()
+            WHERE id = %s
+            """
+            params = (status, job_id)
         else:
             return
 
@@ -1025,7 +1085,10 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
         # ================================================================
         logger.info("")
         logger.info("=" * 80)
-        logger.info("PRODUCT CREATION COMPLETE")
+        if shutdown_requested:
+            logger.info("PRODUCT CREATION TERMINATED")
+        else:
+            logger.info("PRODUCT CREATION COMPLETE")
         logger.info("=" * 80)
         logger.info(f"Total Created: {stats['total_created']}")
         logger.info(f"  Wheels: {stats['wheels_created']}")
@@ -1038,9 +1101,10 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
         logger.info(f"  Tires: {stats['tires_failed']}")
         logger.info("=" * 80)
 
-        # Update job status to completed
+        # Update job status (terminated if shutdown requested, otherwise completed)
+        final_status = 'terminated' if shutdown_requested else 'completed'
         await update_job_status(
-            db_pool_manager, job_id, 'completed',
+            db_pool_manager, job_id, final_status,
             stats['total_created'],
             stats['wheels_created'],
             stats['tires_created'],
@@ -1108,6 +1172,10 @@ async def main():
         )
 
         logger.info("Database connections established")
+
+        # Register this process PID in database (for termination)
+        current_pid = os.getpid()
+        await update_job_pid(db_pool_manager, args.job_id, current_pid)
 
         # Run product creation with both pools
         await create_products_on_shopify(db_pool_manager, db_pool_inventory, args.job_id, args.max_products)
