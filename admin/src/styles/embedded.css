@@ -1,0 +1,148 @@
+/* Embedded App Styles - Compact design for Shopify Admin */
+
+/* Override base styles for embedded mode */
+body.embedded-app {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* Hide sidebar in embedded mode - Shopify provides its own navigation */
+.embedded-app .sidebar {
+  display: none !important;
+}
+
+/* Remove left margin when sidebar is hidden */
+.embedded-app .main-content {
+  margin-left: 0 !important;
+}
+
+/* Compact content wrapper */
+.embedded-app .content-wrapper {
+  padding: 20px !important;
+  max-width: 100% !important;
+}
+
+/* Compact headings */
+.embedded-app h1 {
+  font-size: 1.5rem !important;
+  font-weight: 600 !important;
+  margin-bottom: 0.25rem !important;
+}
+
+.embedded-app h2 {
+  font-size: 1.25rem !important;
+  font-weight: 600 !important;
+}
+
+.embedded-app h3 {
+  font-size: 1.125rem !important;
+  font-weight: 600 !important;
+}
+
+/* Reduce spacing */
+.embedded-app .space-y-6 > * + * {
+  margin-top: 1rem !important;
+}
+
+.embedded-app .space-y-4 > * + * {
+  margin-top: 0.75rem !important;
+}
+
+/* Compact padding */
+.embedded-app .p-6 {
+  padding: 1rem !important;
+}
+
+.embedded-app .p-4 {
+  padding: 0.75rem !important;
+}
+
+.embedded-app .py-6 {
+  padding-top: 1rem !important;
+  padding-bottom: 1rem !important;
+}
+
+.embedded-app .py-4 {
+  padding-top: 0.75rem !important;
+  padding-bottom: 0.75rem !important;
+}
+
+.embedded-app .px-6 {
+  padding-left: 1rem !important;
+  padding-right: 1rem !important;
+}
+
+.embedded-app .px-4 {
+  padding-left: 0.75rem !important;
+  padding-right: 0.75rem !important;
+}
+
+/* Compact buttons */
+.embedded-app button {
+  font-size: 0.875rem !important;
+}
+
+/* Compact form inputs */
+.embedded-app input,
+.embedded-app select,
+.embedded-app textarea {
+  padding: 0.5rem 0.75rem !important;
+  font-size: 0.875rem !important;
+}
+
+/* Compact cards */
+.embedded-app .bg-white {
+  border-radius: 0.5rem !important;
+}
+
+/* Reduce page margins */
+.embedded-app .container {
+  max-width: 100% !important;
+  padding-left: 1rem !important;
+  padding-right: 1rem !important;
+}
+
+/* Tighter line heights */
+.embedded-app {
+  line-height: 1.4 !important;
+}
+
+.embedded-app p {
+  line-height: 1.5 !important;
+}
+
+/* Reduce whitespace in empty states */
+.embedded-app .py-12 {
+  padding-top: 2rem !important;
+  padding-bottom: 2rem !important;
+}
+
+/* Make layout more responsive */
+@media (max-width: 1024px) {
+  .embedded-app table {
+    font-size: 0.813rem !important;
+  }
+
+  .embedded-app table th,
+  .embedded-app table td {
+    padding: 0.5rem !important;
+  }
+}
+
+/* Hide scrollbars for cleaner look */
+.embedded-app::-webkit-scrollbar {
+  width: 8px;
+}
+
+.embedded-app::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.embedded-app::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.embedded-app::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}

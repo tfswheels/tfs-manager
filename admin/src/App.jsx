@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AppProvider } from '@shopify/polaris';
+import AppBridgeProvider from './components/AppBridgeProvider';
 import Layout from './components/Layout';
 
 // Pages
@@ -28,15 +29,17 @@ function App() {
       }}
     >
       <Router>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<Orders />} />
-            <Route path="/orders/:orderId" element={<OrderDetails />} />
-            <Route path="/products" element={<Products />} />
-            <Route path="/email" element={<EmailTemplates />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
-        </Layout>
+        <AppBridgeProvider>
+          <Layout>
+            <Routes>
+              <Route path="/" element={<Orders />} />
+              <Route path="/orders/:orderId" element={<OrderDetails />} />
+              <Route path="/products" element={<Products />} />
+              <Route path="/email" element={<EmailTemplates />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </Layout>
+        </AppBridgeProvider>
       </Router>
     </AppProvider>
   );
