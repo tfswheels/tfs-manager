@@ -621,9 +621,16 @@ async def sync_shopify_data():
 
     This ensures we have the latest Shopify data before checking for duplicates.
     Streams logs in real-time to show chunk progress.
+
+    Respects shutdown_requested - can be cancelled during sync.
     """
     import subprocess
     import os
+
+    # Check if shutdown requested before starting sync
+    if shutdown_requested:
+        logger.warning("🛑 Shutdown requested - skipping Shopify data sync")
+        return
 
     logger.info("=" * 80)
     logger.info("SYNCING SHOPIFY DATA")
@@ -645,6 +652,11 @@ async def sync_shopify_data():
     ]
 
     for script in scripts:
+        # Check if shutdown requested before starting each script
+        if shutdown_requested:
+            logger.warning(f"🛑 Shutdown requested - stopping sync (skipping {script['name']})")
+            raise Exception("Sync cancelled by user")
+
         logger.info(f"\n🔄 Starting {script['name']} sync...")
 
         try:
@@ -655,11 +667,25 @@ async def sync_shopify_data():
                 stderr=subprocess.STDOUT,  # Merge stderr into stdout
                 text=True,
                 bufsize=1,  # Line buffered
-                cwd=sync_scripts_dir
+                cwd=sync_scripts_dir,
+                preexec_fn=os.setsid if hasattr(os, 'setsid') else None  # Create new process group for clean termination
             )
 
-            # Stream output line by line
+            # Stream output line by line, checking for shutdown request
             for line in process.stdout:
+                # Check shutdown during sync
+                if shutdown_requested:
+                    logger.warning(f"🛑 Shutdown requested - terminating {script['name']} sync")
+                    # Kill the entire process group
+                    try:
+                        if hasattr(os, 'killpg'):
+                            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                        else:
+                            process.terminate()
+                    except:
+                        pass
+                    raise Exception("Sync cancelled by user")
+
                 line = line.rstrip()
                 if line:  # Only log non-empty lines
                     logger.info(f"[{script['name']}] {line}")
@@ -675,9 +701,15 @@ async def sync_shopify_data():
 
         except subprocess.TimeoutExpired:
             logger.error(f"❌ {script['name']} sync timed out after 10 minutes")
-            process.kill()
+            try:
+                process.kill()
+            except:
+                pass
             raise Exception(f"{script['name']} sync timed out")
         except Exception as e:
+            # Re-raise if it's our cancellation exception
+            if "cancelled by user" in str(e):
+                raise
             logger.error(f"❌ Error running {script['name']} sync: {e}")
             raise
 
@@ -723,9 +755,15 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
     try:
         await sync_shopify_data()
     except Exception as e:
-        logger.error(f"Failed to sync Shopify data: {e}")
-        await update_job_status(db_pool_manager, job_id, 'failed', error_message=f"Shopify data sync failed: {str(e)}")
-        return
+        # Check if this was a cancellation
+        if "cancelled by user" in str(e).lower() or shutdown_requested:
+            logger.warning(f"🛑 Sync cancelled by user")
+            await update_job_status(db_pool_manager, job_id, 'terminated')
+            return
+        else:
+            logger.error(f"Failed to sync Shopify data: {e}")
+            await update_job_status(db_pool_manager, job_id, 'failed', error_message=f"Shopify data sync failed: {str(e)}")
+            return
 
     stats = {
         'wheels_created': 0,

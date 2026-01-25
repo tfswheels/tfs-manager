@@ -15,6 +15,7 @@ const runningProcesses = new Map(); // jobId -> process
 
 /**
  * Get current product creation job configuration and stats
+ * Returns the most recent job or default config (without creating a job)
  */
 router.get('/config', async (req, res) => {
   try {
@@ -32,7 +33,7 @@ router.get('/config', async (req, res) => {
 
     const shopId = rows[0].id;
 
-    // Get active product creation job
+    // Get most recent product creation job
     const [jobs] = await db.execute(
       `SELECT * FROM product_creation_jobs
        WHERE shop_id = ?
@@ -42,20 +43,10 @@ router.get('/config', async (req, res) => {
     );
 
     if (jobs.length === 0) {
-      // Create default job if none exists
+      // Return default config WITHOUT creating a job
+      // Jobs are only created when "Run Now" is clicked or scheduler runs
       const nextRunAt = new Date();
       nextRunAt.setHours(nextRunAt.getHours() + 24);
-
-      await db.execute(
-        `INSERT INTO product_creation_jobs (
-          shop_id,
-          max_products_per_run,
-          schedule_interval,
-          enabled,
-          next_run_at
-        ) VALUES (?, 1000, 24, TRUE, ?)`,
-        [shopId, nextRunAt]
-      );
 
       return res.json({
         job: {
