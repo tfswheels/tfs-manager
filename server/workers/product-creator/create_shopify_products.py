@@ -609,45 +609,6 @@ async def sync_shopify_data():
     logger.info("=" * 80)
 
 
-async def check_product_exists_on_shopify(db_pool_inventory, product_type, part_number):
-    """
-    Check if a product already exists on Shopify by checking the synced Shopify tables.
-
-    Args:
-        db_pool_inventory: Connection pool to tfs-db database
-        product_type: 'wheel' or 'tire'
-        part_number: Product part number to check
-
-    Returns:
-        tuple: (exists: bool, table_name: str or None)
-    """
-    try:
-        if product_type == 'wheel':
-            table_name = 'all_shopify_wheels'
-        else:  # tire
-            table_name = 'shopify_tires'
-
-        query = f"""
-        SELECT shopify_id
-        FROM {table_name}
-        WHERE part_number = %s
-        LIMIT 1
-        """
-
-        async with db_pool_inventory.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(query, (part_number,))
-                result = await cur.fetchone()
-
-                if result:
-                    return True, table_name
-                return False, None
-
-    except Exception as e:
-        logger.error(f"Error checking if product exists on Shopify: {e}")
-        return False, None
-
-
 async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id, max_products):
     """
     Main product creation workflow.
@@ -810,20 +771,44 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
 
                         logger.info(f"  [{i}/{wheels_target}] Creating wheel: {wheel_data.get('title', 'Unknown')}")
 
-                        # Check if product already exists on Shopify
-                        exists, table_name = await check_product_exists_on_shopify(
-                            db_pool_inventory, 'wheel', wheel_data.get('part_number')
-                        )
+                        # Check if product already exists on Shopify via API (matches reference script)
+                        # This catches products that exist on Shopify but aren't in our database
+                        existing_product = await get_existing_product_by_handle(session, wheel_data['handle'])
+                        if existing_product is not None:
+                            logger.info(f"  ⏭️  Handle '{wheel_data['handle']}' exists on Shopify. Marking as synced.")
 
-                        if exists:
-                            # Product already exists on Shopify - skip and mark as skipped
+                            # Extract product details from Shopify
+                            product_id = existing_product.get("id")
+                            shopify_handle = existing_product.get("handle")
+                            variant_edges = (existing_product.get("variants") or {}).get("edges", [])
+                            shopify_variant_id = variant_edges[0]["node"]["id"] if variant_edges else None
+
+                            # Ensure product is published to all sales channels
+                            await publish_to_sales_channels(session, product_id)
+
+                            # Update database - mark as synced and add to shopify_products
                             await update_product_sync_status(
                                 db_pool_inventory, 'wheels', product['url_part_number'],
-                                status='skipped', error_message=f'Product already exists in {table_name}'
+                                status='synced'
                             )
+
+                            # Extract numeric IDs for shopify_products table
+                            numeric_id = int(product_id.split('/')[-1]) if product_id else None
+                            numeric_variant_id = int(shopify_variant_id.split('/')[-1]) if shopify_variant_id else None
+
+                            shopify_result_existing = {
+                                'shopify_id': numeric_id,
+                                'variant_id': numeric_variant_id,
+                                'handle': shopify_handle
+                            }
+
+                            # Insert into shopify_products if not already there
+                            await insert_into_shopify_products(
+                                db_pool_inventory, wheel_data, shopify_result_existing, 'wheel'
+                            )
+
                             stats['wheels_skipped'] += 1
                             stats['total_skipped'] += 1
-                            logger.info(f"  ⏭️  Skipped: Product already exists in {table_name}")
                             continue
 
                         # Create on Shopify
