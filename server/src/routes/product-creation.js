@@ -10,6 +10,9 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
+// Track running product creation processes (for termination)
+const runningProcesses = new Map(); // jobId -> process
+
 /**
  * Get current product creation job configuration and stats
  */
@@ -302,6 +305,9 @@ router.post('/run-now', async (req, res) => {
 
     console.log(`✅ Python process spawned with PID: ${pythonProcess.pid}`);
 
+    // Track the process for potential termination
+    runningProcesses.set(newJobId, pythonProcess);
+
     // Handle output
     pythonProcess.stdout.on('data', (data) => {
       const output = data.toString().trim();
@@ -321,6 +327,9 @@ router.post('/run-now', async (req, res) => {
     });
 
     pythonProcess.on('close', (code) => {
+      // Remove from running processes map
+      runningProcesses.delete(newJobId);
+
       if (code === 0) {
         console.log(`✅ Manual product creation run #${newJobId} completed successfully`);
       } else if (code === null) {
@@ -338,6 +347,76 @@ router.post('/run-now', async (req, res) => {
   } catch (error) {
     console.error('❌ Run product creation error:', error);
     res.status(500).json({ error: 'Failed to start product creation' });
+  }
+});
+
+/**
+ * Terminate a running product creation job
+ */
+router.post('/terminate/:jobId', async (req, res) => {
+  try {
+    const jobId = parseInt(req.params.jobId);
+
+    // Check if job exists
+    const [jobs] = await db.execute(
+      'SELECT id, status FROM product_creation_jobs WHERE id = ?',
+      [jobId]
+    );
+
+    if (jobs.length === 0) {
+      return res.status(404).json({
+        error: 'Job not found',
+        message: 'This job does not exist in the database.'
+      });
+    }
+
+    const currentStatus = jobs[0].status;
+
+    // If job is not running, inform user
+    if (currentStatus !== 'running') {
+      return res.status(400).json({
+        error: 'Job not running',
+        message: `Job #${jobId} has status '${currentStatus}' and cannot be terminated.`
+      });
+    }
+
+    // Check if process is in memory
+    const process = runningProcesses.get(jobId);
+
+    if (process) {
+      // Process found - send SIGTERM for graceful shutdown
+      console.log(`✅ Found running process for job #${jobId}, sending SIGTERM...`);
+      process.kill('SIGTERM');
+    } else {
+      // Process not found - likely server restarted
+      console.log(`⚠️  Process for job #${jobId} not found in memory (server may have restarted)`);
+      console.log(`   Marking job as failed in database...`);
+    }
+
+    // Update job status in database regardless
+    await db.execute(
+      `UPDATE product_creation_jobs
+       SET status = ?,
+           completed_at = NOW()
+       WHERE id = ?`,
+      [process ? 'terminated' : 'failed', jobId]
+    );
+
+    const statusMessage = process
+      ? 'terminated successfully (will stop after current product)'
+      : 'marked as failed (process was not found - server may have restarted)';
+
+    console.log(`✅ Job #${jobId} ${statusMessage}`);
+
+    res.json({
+      success: true,
+      message: `Product creation job #${jobId} has been ${statusMessage}`,
+      jobId: jobId,
+      wasProcessFound: !!process
+    });
+  } catch (error) {
+    console.error('❌ Terminate product creation error:', error);
+    res.status(500).json({ error: 'Failed to terminate product creation job' });
   }
 });
 

@@ -80,12 +80,17 @@ try:
 
     from main import run_enhanced_scraper
 
-    # Run the scraper
-    result = asyncio.run(run_enhanced_scraper())
+    # Run the scraper (returns stats dict)
+    stats = asyncio.run(run_enhanced_scraper())
 
-    # Check if scraper actually succeeded (it returns True on success, False on error)
-    if result is False:
-        raise Exception("Scraper returned failure status")
+    # stats should be a dict with products_found, products_created_wheels_table, etc.
+    # If None or empty, default to 0
+    if not stats:
+        stats = {
+            'products_found': 0,
+            'products_created_wheels_table': 0,
+            'products_updated': 0
+        }
 
     logger.info("=" * 80)
     logger.info("SCRAPER COMPLETED SUCCESSFULLY")
@@ -103,7 +108,12 @@ try:
                products_created = %s,
                products_updated = %s
            WHERE id = %s""",
-        (0, 0, 0, job_id)  # TODO: Get actual stats from scraper
+        (
+            stats.get('products_found', 0),
+            stats.get('products_created_wheels_table', 0),  # New products saved to DB
+            stats.get('products_updated', 0),
+            job_id
+        )
     )
 
     logger.info(f"Updated job #{job_id} status to 'completed'")

@@ -13,7 +13,6 @@ from datetime import datetime, timedelta
 try:
     from .config import (
         MODE,
-        MAX_PRODUCTS_PER_DAY,
         DISCOVERY_BATCH_SIZE,
         logger
     )
@@ -23,7 +22,6 @@ try:
 except ImportError:
     from config import (
         MODE,
-        MAX_PRODUCTS_PER_DAY,
         DISCOVERY_BATCH_SIZE,
         logger
     )
@@ -63,106 +61,15 @@ def process_image_url(image_url):
 
 
 # =============================================================================
-# DAILY LIMIT TRACKING
-# =============================================================================
-
-async def check_daily_creation_limit(db_pool) -> int:
-    """
-    Check how many products can still be created today.
-
-    Returns:
-        Number of products that can be created (0-1000)
-    """
-    try:
-        # Convert MODE ('wheels'/'tires') to singular form ('wheel'/'tire') for database
-        product_type = MODE[:-1]  # 'wheels' -> 'wheel', 'tires' -> 'tire'
-
-        query = """
-        SELECT products_created_count, first_creation_timestamp
-        FROM product_creation_tracker
-        WHERE product_type = %s
-        LIMIT 1
-        """
-
-        async with db_pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(query, (product_type,))
-                result = await cur.fetchone()
-
-                if not result:
-                    return MAX_PRODUCTS_PER_DAY
-
-                count, first_timestamp = result
-
-                if first_timestamp is None:
-                    return MAX_PRODUCTS_PER_DAY
-
-                now = datetime.now()
-                reset_time = first_timestamp + timedelta(hours=24)
-
-                if now >= reset_time:
-                    # 24 hours passed, reset counter
-                    await reset_daily_creation_counter(db_pool)
-                    return MAX_PRODUCTS_PER_DAY
-
-                # Still within 24-hour window
-                remaining = MAX_PRODUCTS_PER_DAY - count
-                return max(0, remaining)
-
-    except Exception as e:
-        logger.error(f"Error checking daily creation limit: {e}")
-        return 0
-
-
-async def reset_daily_creation_counter(db_pool):
-    """Reset the daily product creation counter."""
-    try:
-        # Convert MODE ('wheels'/'tires') to singular form ('wheel'/'tire') for database
-        product_type = MODE[:-1]  # 'wheels' -> 'wheel', 'tires' -> 'tire'
-
-        query = """
-        UPDATE product_creation_tracker
-        SET products_created_count = 0,
-            first_creation_timestamp = NULL,
-            cycle_reset_at = NOW(),
-            last_reset = NOW()
-        WHERE product_type = %s
-        """
-
-        async with db_pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(query, (product_type,))
-                await conn.commit()
-                logger.info(f"Reset daily creation counter for {product_type}")
-
-    except Exception as e:
-        logger.error(f"Error resetting daily counter: {e}")
-
-
-async def increment_daily_creation_counter(db_pool, count: int = 1):
-    """Increment the daily product creation counter."""
-    try:
-        # Convert MODE ('wheels'/'tires') to singular form ('wheel'/'tire') for database
-        product_type = MODE[:-1]  # 'wheels' -> 'wheel', 'tires' -> 'tire'
-
-        query = """
-        UPDATE product_creation_tracker
-        SET products_created_count = products_created_count + %s,
-            first_creation_timestamp = COALESCE(first_creation_timestamp, NOW())
-        WHERE product_type = %s
-        """
-
-        async with db_pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(query, (count, product_type))
-                await conn.commit()
-
-    except Exception as e:
-        logger.error(f"Error incrementing daily counter: {e}")
-
-
-# =============================================================================
 # PRODUCT CREATION
+# =============================================================================
+#
+# NOTE: Daily limit tracking removed from scraper.
+# Product creation limits are now handled by the product creation worker
+# (server/workers/product-creator/create_shopify_products.py) using the
+# daily_shopify_creation_limit table in the tfs-manager database.
+#
+# The scraper only saves products to wheels/tires table with product_sync='pending'.
 # =============================================================================
 
 def map_klaviyo_to_wheels_table(klaviyo_data: Dict, product_data: Dict, gcs_image_url: str, map_price: float) -> Dict:
@@ -640,9 +547,6 @@ async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_
             )
 
             await insert_into_shopify_products(db_pool, product, shopify_result, klaviyo_data, map_price)
-
-            # Increment daily counter
-            await increment_daily_creation_counter(db_pool, 1)
 
             # Get part number based on mode
             part_number = wheel_data['part_number'] if MODE == 'wheels' else tire_data['part_number']

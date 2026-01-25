@@ -15,11 +15,29 @@ import os
 import argparse
 import aiomysql
 import aiohttp
+import signal
 from datetime import datetime, date
 
 # Import from local directory
 from shopify_create_product import create_product_on_shopify, get_existing_product_by_handle, publish_to_sales_channels
 from config import logger, SHOPIFY_STORE_URL, SHOPIFY_ACCESS_TOKEN, PLACEHOLDER_IMAGE, DB_CONFIG
+
+# =============================================================================
+# GRACEFUL SHUTDOWN HANDLING
+# =============================================================================
+
+shutdown_requested = False
+
+def signal_handler(signum, frame):
+    """Handle termination signals gracefully."""
+    global shutdown_requested
+    shutdown_requested = True
+    signal_name = 'SIGTERM' if signum == signal.SIGTERM else 'SIGINT'
+    logger.warning(f"🛑 {signal_name} received - will stop gracefully after current product")
+
+# Register signal handlers
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
 
 # =============================================================================
 # CONFIGURATION
@@ -29,9 +47,7 @@ DEFAULT_MAX_PRODUCTS = 1000
 WHEELS_RATIO = 0.70  # 70% wheels
 TIRES_RATIO = 0.30   # 30% tires
 
-# TESTING: Limit to 1 product for testing
-TESTING_MODE = True
-TESTING_LIMIT = 1
+# TESTING_MODE removed - no longer needed
 
 # =============================================================================
 # DATABASE HELPERS
@@ -122,7 +138,7 @@ async def query_products_needing_creation(db_pool_inventory, table_name, limit):
               WHERE sp.part_number = {table_name}.part_number
                  OR sp.handle = LOWER(REPLACE(REPLACE(CONCAT({table_name}.brand, '-', {table_name}.model, '-', {table_name}.size, '-', {table_name}.part_number), ' ', '-'), '/', '-'))
           )
-        ORDER BY last_modified DESC
+        ORDER BY last_modified ASC
         LIMIT %s
         """
 
@@ -689,12 +705,7 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
         # Limit to remaining daily capacity
         to_create = min(max_products, remaining)
 
-        # TESTING MODE: Override to create only N successful products
-        testing_limit = TESTING_LIMIT if TESTING_MODE else to_create
-        if TESTING_MODE:
-            logger.warning(f"🧪 TESTING MODE: Will create until {TESTING_LIMIT} successful product(s)")
-
-        logger.info(f"  Target: {to_create} products (testing: {testing_limit} successes)" if TESTING_MODE else f"  Will create: {to_create} products")
+        logger.info(f"  Will create: {to_create} products")
 
         # ================================================================
         # STEP 2: Calculate Split
@@ -732,10 +743,36 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
         logger.info(f"  Found {len(tires_products)} tires needing creation")
 
         # Adjust targets if we don't have enough products
-        wheels_target = min(wheels_target, len(wheels_products))
-        tires_target = min(tires_target, len(tires_products))
+        wheels_available = len(wheels_products)
+        tires_available = len(tires_products)
 
-        logger.info(f"  Adjusted targets: {wheels_target} wheels, {tires_target} tires")
+        wheels_target = min(wheels_target, wheels_available)
+        tires_target = min(tires_target, tires_available)
+
+        # Redistribute unused capacity to the other product type
+        # Example: If we only have 10 wheels but 900 tires, and our daily limit is 1000:
+        # - Initial targets: wheels=700, tires=300
+        # - After adjustment: wheels=10, tires=300
+        # - Unused capacity: 1000 - (10 + 300) = 690
+        # - Give unused to tires: tires = min(900, 300 + 690) = 900
+        # - Final: wheels=10, tires=900, total=910 (uses full capacity!)
+        unused_capacity = to_create - (wheels_target + tires_target)
+
+        if unused_capacity > 0:
+            if wheels_target < wheels_available:
+                # Give unused capacity to wheels
+                additional_wheels = min(wheels_available - wheels_target, unused_capacity)
+                wheels_target += additional_wheels
+                unused_capacity -= additional_wheels
+                logger.info(f"  Redistributed {additional_wheels} unused slots to wheels")
+
+            if unused_capacity > 0 and tires_target < tires_available:
+                # Give remaining unused capacity to tires
+                additional_tires = min(tires_available - tires_target, unused_capacity)
+                tires_target += additional_tires
+                logger.info(f"  Redistributed {additional_tires} unused slots to tires")
+
+        logger.info(f"  Final targets: {wheels_target} wheels, {tires_target} tires (total: {wheels_target + tires_target})")
 
         # ================================================================
         # STEP 4: Create Products on Shopify
@@ -750,21 +787,17 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
             if wheels_target > 0:
                 logger.info(f"Creating wheels (target: {wheels_target})...")
 
-                # In testing mode, keep trying until we get enough successes
-                wheels_to_try = wheels_products[:wheels_target + 50] if TESTING_MODE else wheels_products[:wheels_target]
-                product_index = 0
+                wheels_to_try = wheels_products[:wheels_target]
 
                 for i, product in enumerate(wheels_to_try, 1):
-                    # Stop if we've reached our success target in testing mode
-                    if TESTING_MODE and stats['wheels_created'] >= testing_limit:
-                        logger.info(f"✅ Reached testing limit of {testing_limit} successful creations")
+                    # Check for shutdown request
+                    if shutdown_requested:
+                        logger.warning("🛑 Shutdown requested - stopping wheels creation gracefully")
                         break
 
-                    # Stop if we've reached our target in normal mode
-                    if not TESTING_MODE and product_index >= wheels_target:
+                    # Stop if we've reached our target
+                    if i > wheels_target:
                         break
-
-                    product_index += 1
                     try:
                         # Format wheel data
                         wheel_data = format_wheel_data(product)
@@ -873,21 +906,17 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
                 logger.info("")
                 logger.info(f"Creating tires (target: {tires_target})...")
 
-                # In testing mode, keep trying until we get enough successes
-                tires_to_try = tires_products[:tires_target + 50] if TESTING_MODE else tires_products[:tires_target]
-                product_index = 0
+                tires_to_try = tires_products[:tires_target]
 
                 for i, product in enumerate(tires_to_try, 1):
-                    # Stop if we've reached our success target in testing mode
-                    if TESTING_MODE and stats['tires_created'] >= testing_limit:
-                        logger.info(f"✅ Reached testing limit successful creations")
+                    # Check for shutdown request
+                    if shutdown_requested:
+                        logger.warning("🛑 Shutdown requested - stopping tires creation gracefully")
                         break
 
-                    # Stop if we've reached our target in normal mode
-                    if not TESTING_MODE and product_index >= tires_target:
+                    # Stop if we've reached our target
+                    if i > tires_target:
                         break
-
-                    product_index += 1
                     try:
                         # Format tire data
                         tire_data = format_tire_data(product)

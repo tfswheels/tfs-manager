@@ -29,7 +29,6 @@ try:
     from . import config
     from .config import (
         MODE,
-        MAX_PRODUCTS_PER_DAY,
         DB_CONFIG,
         SCRAPE_SPECIFIC_BRANDS,
         logger
@@ -40,7 +39,6 @@ try:
         extract_product_data_batch
     )
     from .product_creation import (
-        check_daily_creation_limit,
         create_products_batch
     )
 except ImportError:
@@ -48,7 +46,6 @@ except ImportError:
     import config
     from config import (
         MODE,
-        MAX_PRODUCTS_PER_DAY,
         DB_CONFIG,
         SCRAPE_SPECIFIC_BRANDS,
         logger
@@ -59,7 +56,6 @@ except ImportError:
         extract_product_data_batch
     )
     from product_creation import (
-        check_daily_creation_limit,
         create_products_batch
     )
 
@@ -408,12 +404,17 @@ async def run_enhanced_scraper():
         logger.info(f"  Errors: {stats['errors']}")
         logger.info("=" * 80)
 
+        # Return stats for use by calling script (run_scraper.py)
+        return stats
+
     except KeyboardInterrupt:
         logger.info("Scraper interrupted by user")
+        return stats  # Return stats even if interrupted
     except Exception as e:
         logger.error(f"Fatal error: {e}")
         import traceback
         logger.error(traceback.format_exc())
+        return stats  # Return stats even on error
     finally:
         # Cleanup
         try:

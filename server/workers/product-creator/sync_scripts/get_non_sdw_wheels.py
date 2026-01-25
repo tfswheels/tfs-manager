@@ -50,10 +50,13 @@ def gather_all_product_ids():
     Gather all *active* products that have product_type 'wheels'
     (regardless of whether they include SDW Wholesale tag),
     returning just the Product IDs as a list.
+
+    Returns None if pagination fails mid-fetch to prevent data loss.
     """
     product_ids = []
     after_cursor = None
     has_next_page = True
+    pagination_completed = False
 
     query = """
     query getWheelProductIDs($first: Int!, $after: String) {
@@ -86,7 +89,10 @@ def gather_all_product_ids():
 
         resp_json = shopify_graphql_call(query, variables)
         if not resp_json:
-            break
+            print(f"[ERROR] ❌ API call failed on page {page_count}!")
+            print(f"[ERROR] ❌ Pagination incomplete! Fetched {len(product_ids)} products so far.")
+            print(f"[ERROR] ❌ Returning None to prevent data loss from incomplete sync.")
+            return None  # Return None instead of partial list
 
         products_data = resp_json["data"]["products"]
         edges = products_data["edges"]
@@ -100,7 +106,9 @@ def gather_all_product_ids():
 
         print(f"[ID GATHER] Page {page_count}, fetched {len(edges)} IDs, total so far: {len(product_ids)}")
 
-    print(f"[ID GATHER] Complete. Found {len(product_ids)} total product IDs.")
+    pagination_completed = True
+    print(f"[ID GATHER] ✅ Pagination completed successfully.")
+    print(f"[ID GATHER] ✅ Found {len(product_ids)} total product IDs.")
     return product_ids
 
 
@@ -496,10 +504,39 @@ def main():
     db = mysql.connector.connect(**DB_CONFIG)
     create_table_if_not_exists(db)
 
+    # Get current database count for safety check
+    cursor = db.cursor()
+    cursor.execute("SELECT COUNT(DISTINCT shopify_id) FROM all_shopify_wheels")
+    current_db_count = cursor.fetchone()[0]
+    print(f"[INFO] Current database has {current_db_count} products")
+
     all_product_ids = gather_all_product_ids()
-    if not all_product_ids:
-        print("[INFO] No products found or error gathering IDs.")
+    if all_product_ids is None:
+        print("[ERROR] ❌ Failed to gather complete product list (API error during pagination).")
+        print("[ERROR] ❌ Aborting sync to prevent data loss. Please retry later.")
+        db.close()
         return
+
+    if not all_product_ids:
+        print("[INFO] No products found in Shopify.")
+        if current_db_count > 0:
+            print(f"[WARNING] ⚠️  Database has {current_db_count} products but Shopify returned 0!")
+            print(f"[WARNING] ⚠️  This is suspicious. Aborting to prevent accidental deletion.")
+            db.close()
+            return
+        db.close()
+        return
+
+    # Safety check: New count shouldn't be drastically lower than existing
+    if current_db_count > 100 and len(all_product_ids) < current_db_count * 0.5:
+        print(f"[ERROR] ❌ SAFETY CHECK FAILED!")
+        print(f"[ERROR] ❌ New count ({len(all_product_ids)}) is less than 50% of current database count ({current_db_count})")
+        print(f"[ERROR] ❌ This likely indicates incomplete data fetch. Aborting to prevent data loss.")
+        print(f"[ERROR] ❌ If this is expected (e.g., bulk product deletion), manually disable this check.")
+        db.close()
+        return
+
+    print(f"[SAFETY CHECK] ✅ New count ({len(all_product_ids)}) vs Current ({current_db_count}): OK")
 
     chunks = [all_product_ids[i:i+CHUNK_SIZE] for i in range(0, len(all_product_ids), CHUNK_SIZE)]
     print(f"[INFO] Split {len(all_product_ids)} products into {len(chunks)} chunks (size ~{CHUNK_SIZE}).")

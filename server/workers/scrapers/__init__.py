@@ -8,9 +8,8 @@ __version__ = "1.0.0"
 __author__ = "TFS Wheels"
 
 # Make key components available at package level
-from .config import MODE, MAX_PRODUCTS_PER_DAY
+from .config import MODE
 
 __all__ = [
     'MODE',
-    'MAX_PRODUCTS_PER_DAY',
 ]

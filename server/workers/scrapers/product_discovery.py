@@ -107,7 +107,7 @@ async def get_failed_products_for_retry(db_pool, max_retries: int = 3) -> List[D
                 WHERE product_sync IN ('error', 'pending')
                   AND url_part_number IS NOT NULL
                   AND url_part_number != ''
-                ORDER BY last_modified DESC
+                ORDER BY last_modified ASC
                 """
             else:  # tires
                 query = f"""
@@ -118,7 +118,7 @@ async def get_failed_products_for_retry(db_pool, max_retries: int = 3) -> List[D
                 WHERE product_sync IN ('error', 'pending')
                   AND url_part_number IS NOT NULL
                   AND url_part_number != ''
-                ORDER BY last_modified DESC
+                ORDER BY last_modified ASC
                 """
 
             await cur.execute(query)

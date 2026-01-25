@@ -385,12 +385,10 @@ class DatabaseClient:
                     quantity = int(qty_str) if qty_str.isdigit() else 0
                     self._product_data_cache[url_part]['quantity'] = quantity
 
-        # Process unmatched products (new products to store)
-        if unmatched_products:
-            stored_count = await self._store_new_products(unmatched_products)
-            total_stored += stored_count
-            logger.debug(f"Stored {stored_count} new products in not_scraped table")
-        
+        # Note: unmatched_products are now handled by product discovery phase
+        # No longer storing to not_scraped table - products are discovered and
+        # stored directly to wheels/tires table with product_sync='pending'
+
         return total_updates, total_stored
     
     async def _batch_update_quantity_only(self, products: List[Dict]) -> int:
@@ -529,116 +527,9 @@ class DatabaseClient:
             if connection:
                 connection.close()
 
-    async def _store_new_products(self, products: List[Dict]) -> int:
-        """Store new products (not in main database) to not_scraped table."""
-        if self.no_db or not products:
-            return 0
-        
-        # Filter products with valid data (non-zero quantity and has pricing)
-        valid_products = []
-        for product in products:
-            try:
-                # Skip products marked for quantity-only update as they shouldn't be new
-                if product.get('quantity_only_update'):
-                    continue
-                
-                # Parse quantity - only store if quantity > 0 (not backordered)
-                qty_str = product.get('quantity', '').replace(',', '') if product.get('quantity') else '0'
-                quantity = int(qty_str) if qty_str.isdigit() else 0
-                
-                # Parse prices
-                price_str = product.get('price_map', '')
-                price = float(price_str) if price_str and price_str.replace('.', '').isdigit() else None
-                
-                cost_str = product.get('cost', '')
-                cost = float(cost_str) if cost_str and cost_str.replace('.', '').isdigit() else None
-                
-                # Parse compare at price
-                compare_price = product.get('compare_at_price')
-                if compare_price is not None and not isinstance(compare_price, (int, float)):
-                    compare_price = None
-                
-                # Only store if quantity > 0 and has at least one price
-                if quantity > 0 and (price is not None or cost is not None):
-                    valid_products.append({
-                        'brand': product.get('brand', ''),
-                        'part_number': product.get('url_part_number', ''),
-                        'url_part_number': product.get('url_part_number', ''),
-                        'quantity': quantity,
-                        'map_price': price,
-                        'sdw_cost': cost,
-                        'compare_at_price': compare_price,
-                        'url': product.get('url', ''),
-                        'product_type': self._db_product_type()
-                    })
-                    
-            except (ValueError, TypeError) as e:
-                logger.debug(f"Error parsing new product data: {e}")
-                continue
-        
-        if not valid_products:
-            logger.debug("No valid new products to store")
-            return 0
-        
-        # Batch insert/update to not_scraped table
-        batch_size = 100
-        total_stored = 0
-        
-        for i in range(0, len(valid_products), batch_size):
-            batch = valid_products[i:i+batch_size]
-            
-            connection = None
-            try:
-                connection = await self._get_connection()
-                cursor = connection.cursor(buffered=True)
-                
-                # Update query to include compare_at_price
-                placeholders = "(%s, %s, %s, %s, %s, %s, %s, %s, %s)"  # Added one more %s
-                values_clause = ", ".join([placeholders] * len(batch))
-                
-                query = f"""
-                    INSERT INTO not_scraped 
-                    (brand, part_number, url_part_number, quantity, map_price, sdw_cost, compare_at_price, url, product_type)
-                    VALUES {values_clause}
-                    ON DUPLICATE KEY UPDATE
-                        quantity = VALUES(quantity),
-                        map_price = VALUES(map_price),
-                        sdw_cost = VALUES(sdw_cost),
-                        compare_at_price = VALUES(compare_at_price),
-                        url = VALUES(url),
-                        product_type = VALUES(product_type)
-                """
-                
-                # Flatten product data for query
-                params = []
-                for product in batch:
-                    params.extend([
-                        product['brand'],
-                        product['part_number'],
-                        product['url_part_number'],
-                        product['quantity'],
-                        product['map_price'],
-                        product['sdw_cost'],
-                        product['compare_at_price'],
-                        product['url'],
-                        product['product_type']
-                    ])
-                
-                cursor.execute(query, params)
-                affected = cursor.rowcount
-                total_stored += affected
-                connection.commit()
-                cursor.close()
-                
-                logger.debug(f"Stored/updated {affected} new products (batch {i//batch_size + 1})")
-                
-            except Exception as e:
-                logger.error(f"Error storing new products batch: {e}")
-            finally:
-                if connection:
-                    connection.close()
-        
-        return total_stored
+    # REMOVED: _store_new_products() function
+    # New products are now handled by product discovery phase and stored directly
+    # to wheels/tires table with product_sync='pending'
 
     async def _optimized_batch_update(self, url_parts: List[str], quantities: List[int], 
                                     prices: List[Optional[float]], costs: List[Optional[float]],
