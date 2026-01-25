@@ -25,6 +25,7 @@ export default function ProductCreationTab() {
   const [scheduleInterval, setScheduleInterval] = useState('24');
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     fetchConfig();
@@ -151,6 +152,26 @@ export default function ProductCreationTab() {
     }
   };
 
+  const handleCancelJob = async (jobId) => {
+    if (!window.confirm('Cancel this product creation job? It will stop gracefully after the current product.')) {
+      return;
+    }
+
+    try {
+      setCancelling(true);
+      await axios.post(`${API_URL}/api/product-creation/terminate/${jobId}`, {}, {
+        params: { shop: '2f3d7a-2.myshopify.com' }
+      });
+      await fetchHistory();
+      alert('Job cancellation requested. It will stop after the current product.');
+    } catch (error) {
+      console.error('Failed to cancel job:', error);
+      alert('Failed to cancel job');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const formatNextRun = (dateString) => {
     if (!dateString) return '-';
     const date = new Date(dateString);
@@ -184,7 +205,12 @@ export default function ProductCreationTab() {
     job.tires_created || 0,
     job.products_skipped || 0,
     job.products_failed || 0,
-    job.completed_at ? new Date(job.completed_at).toLocaleString() : '-'
+    job.completed_at ? new Date(job.completed_at).toLocaleString() : '-',
+    job.status === 'running' ? (
+      <Button size="slim" tone="critical" onClick={() => handleCancelJob(job.id)} loading={cancelling}>
+        Cancel
+      </Button>
+    ) : '-'
   ]);
 
   const progressPercentage = todayStats
@@ -359,8 +385,8 @@ export default function ProductCreationTab() {
             <Text>No execution history yet</Text>
           ) : (
             <DataTable
-              columnContentTypes={['text', 'text', 'numeric', 'numeric', 'numeric', 'numeric', 'numeric', 'text']}
-              headings={['Started', 'Status', 'Total', 'Wheels', 'Tires', 'Skipped', 'Failed', 'Completed']}
+              columnContentTypes={['text', 'text', 'numeric', 'numeric', 'numeric', 'numeric', 'numeric', 'text', 'text']}
+              headings={['Started', 'Status', 'Total', 'Wheels', 'Tires', 'Skipped', 'Failed', 'Completed', 'Action']}
               rows={historyRows}
             />
           )}
