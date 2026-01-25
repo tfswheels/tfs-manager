@@ -425,10 +425,13 @@ def format_offset(offset):
         return ""
     try:
         val = float(offset)
-        if val >= 0:
-            return f"+{int(val)}mm"
-        else:
-            return f"{int(val)}mm"
+        if val.is_integer():
+            val = int(val)
+        if val > 0:
+            return f"+{val}mm"
+        elif val < 0:
+            return f"{val}mm"
+        return "0mm"  # Zero has no sign
     except (ValueError, TypeError):
         return str(offset)
 
