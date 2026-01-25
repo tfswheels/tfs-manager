@@ -113,28 +113,35 @@ async def increment_daily_limit(db_pool, product_type):
         logger.error(f"Error incrementing daily limit: {e}")
 
 
-async def query_products_needing_creation(db_pool_inventory, table_name, limit):
+async def query_next_product_for_creation(db_pool_inventory, table_name, skip_url_parts=None):
     """
-    Query products that need to be created on Shopify.
-    Returns oldest modified products first (oldest products get created first).
-    Uses db_pool_inventory which connects to tfs-db database.
+    Query the NEXT single product that needs to be created on Shopify.
+    Queries fresh from database on EACH call (no memory caching).
 
-    Queries from 'wheels' and 'tires' tables (not all_shopify_wheels/shopify_tires).
-    Excludes products that already exist in:
-    - shopify_products table (by part_number)
-    - all_shopify_wheels/shopify_tires tables (by part_number)
+    This ensures database changes during job execution are respected.
+    If a product is deleted or modified during the job, it won't be created.
 
-    This prevents creating duplicates even if products were manually created on Shopify.
+    Args:
+        db_pool_inventory: Database connection pool
+        table_name: 'wheels' or 'tires'
+        skip_url_parts: Set of url_part_numbers already processed (to avoid duplicates in one run)
+
+    Returns:
+        Single product dict or None if no products need creation
     """
     try:
         # Determine the corresponding Shopify table to check
         shopify_table = 'all_shopify_wheels' if table_name == 'wheels' else 'shopify_tires'
 
-        # Query products where product_sync = 'pending' or 'error' (need Shopify creation)
-        # Exclude products that already exist in BOTH shopify_products AND all_shopify_wheels/shopify_tires
-        # This catches:
-        # 1. Products tracked in shopify_products
-        # 2. Products that exist on Shopify but aren't in shopify_products (manual creations, sync issues)
+        # Build skip clause if we have processed products
+        skip_clause = ""
+        params = []
+        if skip_url_parts and len(skip_url_parts) > 0:
+            placeholders = ','.join(['%s'] * len(skip_url_parts))
+            skip_clause = f"AND url_part_number NOT IN ({placeholders})"
+            params = list(skip_url_parts)
+
+        # Query ONE product that needs creation (oldest first)
         query = f"""
         SELECT *
         FROM {table_name}
@@ -151,19 +158,57 @@ async def query_products_needing_creation(db_pool_inventory, table_name, limit):
               SELECT 1 FROM {shopify_table} st
               WHERE st.part_number = {table_name}.part_number
           )
+          {skip_clause}
         ORDER BY last_modified ASC
-        LIMIT %s
+        LIMIT 1
         """
 
         async with db_pool_inventory.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
-                await cur.execute(query, (limit,))
-                results = await cur.fetchall()
-                return results
+                await cur.execute(query, params)
+                result = await cur.fetchone()
+                return result
 
     except Exception as e:
-        logger.error(f"Error querying products from {table_name}: {e}")
-        return []
+        logger.error(f"Error querying next product from {table_name}: {e}")
+        return None
+
+
+async def count_products_needing_creation(db_pool_inventory, table_name):
+    """
+    Count how many products need to be created (for progress display).
+    Fast count query without fetching all rows.
+    """
+    try:
+        shopify_table = 'all_shopify_wheels' if table_name == 'wheels' else 'shopify_tires'
+
+        query = f"""
+        SELECT COUNT(*) as count
+        FROM {table_name}
+        WHERE product_sync IN ('pending', 'error')
+          AND url_part_number IS NOT NULL
+          AND url_part_number != ''
+          AND part_number IS NOT NULL
+          AND part_number != ''
+          AND NOT EXISTS (
+              SELECT 1 FROM shopify_products sp
+              WHERE sp.part_number = {table_name}.part_number
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM {shopify_table} st
+              WHERE st.part_number = {table_name}.part_number
+          )
+        """
+
+        async with db_pool_inventory.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute(query)
+                result = await cur.fetchone()
+                return result['count'] if result else 0
+
+    except Exception as e:
+        logger.error(f"Error counting products from {table_name}: {e}")
+        return 0
 
 
 async def update_product_sync_status(db_pool_inventory, table_name, url_part_number, status, error_message=None):
@@ -822,27 +867,22 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
         logger.info(f"  Tires target: {tires_target}")
 
         # ================================================================
-        # STEP 3: Query Products
+        # STEP 3: Count Available Products
         # ================================================================
         logger.info("")
-        logger.info("STEP 3: Querying products needing creation...")
+        logger.info("STEP 3: Counting products needing creation...")
 
-        # Query more than we need in case some fail
-        # Use db_pool_inventory for tfs-db database
-        # Query from 'wheels' and 'tires' tables (not all_shopify_wheels/shopify_tires)
-        wheels_products = await query_products_needing_creation(
-            db_pool_inventory, 'wheels', wheels_target + 50
+        # Count products (don't load into memory - query dynamically later)
+        # This ensures database changes during job are respected
+        wheels_available = await count_products_needing_creation(
+            db_pool_inventory, 'wheels'
         )
-        tires_products = await query_products_needing_creation(
-            db_pool_inventory, 'tires', tires_target + 50
+        tires_available = await count_products_needing_creation(
+            db_pool_inventory, 'tires'
         )
 
-        logger.info(f"  Found {len(wheels_products)} wheels needing creation")
-        logger.info(f"  Found {len(tires_products)} tires needing creation")
-
-        # Adjust targets if we don't have enough products
-        wheels_available = len(wheels_products)
-        tires_available = len(tires_products)
+        logger.info(f"  Found {wheels_available} wheels needing creation")
+        logger.info(f"  Found {tires_available} tires needing creation")
 
         wheels_target = min(wheels_target, wheels_available)
         tires_target = min(tires_target, tires_available)
@@ -881,26 +921,40 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
 
         # Create aiohttp session for Shopify API calls
         async with aiohttp.ClientSession() as session:
+            # Track processed products to avoid duplicates in this run
+            processed_wheel_parts = set()
+            processed_tire_parts = set()
+
             # Create wheels
             if wheels_target > 0:
                 logger.info(f"Creating wheels (target: {wheels_target})...")
 
-                wheels_to_try = wheels_products[:wheels_target]
+                wheels_created_count = 0
 
-                for i, product in enumerate(wheels_to_try, 1):
+                while wheels_created_count < wheels_target:
                     # Check for shutdown request
                     if shutdown_requested:
                         logger.warning("🛑 Shutdown requested - stopping wheels creation gracefully")
                         break
 
-                    # Stop if we've reached our target
-                    if i > wheels_target:
+                    # Query NEXT product from database (fresh data every time)
+                    product = await query_next_product_for_creation(
+                        db_pool_inventory, 'wheels', processed_wheel_parts
+                    )
+
+                    if product is None:
+                        logger.info(f"  No more wheels available to create (created {wheels_created_count}/{wheels_target})")
                         break
+
+                    # Mark as processed
+                    processed_wheel_parts.add(product['url_part_number'])
+
                     try:
                         # Format wheel data
                         wheel_data = format_wheel_data(product)
 
-                        logger.info(f"  [{i}/{wheels_target}] Creating wheel: {wheel_data.get('title', 'Unknown')}")
+                        current_count = stats['wheels_created'] + stats['wheels_skipped'] + stats['wheels_failed'] + 1
+                        logger.info(f"  [{current_count}/{wheels_target}] Creating wheel: {wheel_data.get('title', 'Unknown')}")
 
                         # Check if product already exists on Shopify via API (matches reference script)
                         # This catches products that exist on Shopify but aren't in our database
@@ -964,6 +1018,7 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
 
                             stats['wheels_created'] += 1
                             stats['total_created'] += 1
+                            wheels_created_count += 1  # Increment loop counter
 
                             logger.info(f"  ✅ Created wheel with Shopify ID: {shopify_product_id}")
 
@@ -1004,22 +1059,32 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
                 logger.info("")
                 logger.info(f"Creating tires (target: {tires_target})...")
 
-                tires_to_try = tires_products[:tires_target]
+                tires_created_count = 0
 
-                for i, product in enumerate(tires_to_try, 1):
+                while tires_created_count < tires_target:
                     # Check for shutdown request
                     if shutdown_requested:
                         logger.warning("🛑 Shutdown requested - stopping tires creation gracefully")
                         break
 
-                    # Stop if we've reached our target
-                    if i > tires_target:
+                    # Query NEXT product from database (fresh data every time)
+                    product = await query_next_product_for_creation(
+                        db_pool_inventory, 'tires', processed_tire_parts
+                    )
+
+                    if product is None:
+                        logger.info(f"  No more tires available to create (created {tires_created_count}/{tires_target})")
                         break
+
+                    # Mark as processed
+                    processed_tire_parts.add(product['url_part_number'])
+
                     try:
                         # Format tire data
                         tire_data = format_tire_data(product)
 
-                        logger.info(f"  [{i}/{tires_target}] Creating tire: {tire_data.get('title', 'Unknown')}")
+                        current_count = stats['tires_created'] + stats['tires_skipped'] + stats['tires_failed'] + 1
+                        logger.info(f"  [{current_count}/{tires_target}] Creating tire: {tire_data.get('title', 'Unknown')}")
 
                         # Check if product already exists on Shopify via API (matches reference script)
                         # This catches products that exist on Shopify but aren't in our database
@@ -1083,6 +1148,7 @@ async def create_products_on_shopify(db_pool_manager, db_pool_inventory, job_id,
 
                             stats['tires_created'] += 1
                             stats['total_created'] += 1
+                            tires_created_count += 1  # Increment loop counter
 
                             logger.info(f"  ✅ Created tire with Shopify ID: {shopify_product_id}")
 
