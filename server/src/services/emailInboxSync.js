@@ -66,8 +66,25 @@ async function syncInbox(shopId, accountEmail) {
           }
         }
 
-        // Fetch full email details including body
-        const fullEmail = await fetchEmailDetails(shopId, email.messageId, accountEmail);
+        // Try to fetch full email details including body, but use basic info if it fails
+        let fullEmail = null;
+        try {
+          fullEmail = await fetchEmailDetails(shopId, email.messageId, accountEmail);
+        } catch (detailsError) {
+          console.log(`⚠️  Could not fetch full details for ${email.messageId}, using basic info from list`);
+          // Use basic email info from the list response
+          fullEmail = {
+            messageId: email.messageId,
+            subject: email.subject,
+            fromAddress: email.fromAddress || email.sender,
+            sender: { name: email.senderName || email.fromAddress },
+            inReplyTo: email.inReplyTo,
+            references: email.references,
+            cc: email.cc,
+            receivedTime: email.receivedTime || email.time,
+            content: email.summary || '',  // Use summary as fallback for body
+          };
+        }
 
         // Find or create conversation thread
         const emailData = {
@@ -97,7 +114,7 @@ async function syncInbox(shopId, accountEmail) {
           toName: 'TFS Wheels',
           cc: fullEmail.cc,
           subject: fullEmail.subject,
-          bodyText: fullEmail.content?.plainContent || fullEmail.content,
+          bodyText: fullEmail.content?.plainContent || fullEmail.content || fullEmail.summary,
           bodyHtml: fullEmail.content?.htmlContent || null,
           receivedAt: new Date(fullEmail.receivedTime)
         });

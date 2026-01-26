@@ -341,15 +341,12 @@ export async function fetchEmailDetails(shopId, messageId, accountEmail = EMAIL_
     // Get Zoho account ID
     const accountId = await getZohoAccountId(accessToken, accountEmail);
 
-    // Use view endpoint to get message details
+    // Use direct message endpoint - Zoho doesn't accept params in view endpoint
     const response = await axios.get(
-      `${ZOHO_API_BASE}/accounts/${accountId}/messages/view`,
+      `${ZOHO_API_BASE}/accounts/${accountId}/messages/${messageId}`,
       {
         headers: {
           'Authorization': `Zoho-oauthtoken ${accessToken}`
-        },
-        params: {
-          messageId: messageId
         }
       }
     );
