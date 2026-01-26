@@ -86,25 +86,17 @@ try:
 
     if sync_script and os.path.exists(sync_script):
         import subprocess
+        # Stream output in real-time instead of capturing
         result = subprocess.run(
             [sys.executable, sync_script],
             cwd=sync_script_dir,
-            capture_output=True,
-            text=True,
             timeout=600  # 10 minute timeout
         )
 
         if result.returncode == 0:
             logger.info("✅ Pre-sync completed successfully")
-            if result.stdout:
-                # Print last few lines of output
-                lines = result.stdout.strip().split('\n')
-                for line in lines[-10:]:  # Last 10 lines
-                    logger.info(f"  {line}")
         else:
             logger.error(f"❌ Pre-sync failed with exit code {result.returncode}")
-            if result.stderr:
-                logger.error(f"Sync error: {result.stderr}")
             # Continue anyway - scraper can still work
     elif sync_script:
         logger.error(f"Sync script not found: {sync_script}")
