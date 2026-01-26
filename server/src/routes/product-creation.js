@@ -13,6 +13,19 @@ const router = express.Router();
 // Track running product creation processes (for termination)
 const runningProcesses = new Map(); // jobId -> process
 
+// Cleanup completed processes periodically to prevent memory leaks
+setInterval(() => {
+  const now = Date.now();
+  for (const [jobId, processData] of runningProcesses.entries()) {
+    // Remove processes that have exited or are older than 1 hour
+    if (processData.exitCode !== null ||
+        (processData.startTime && now - processData.startTime > 3600000)) {
+      console.log(`🧹 Cleaning up completed/stale product creation process for job ${jobId}`);
+      runningProcesses.delete(jobId);
+    }
+  }
+}, 300000); // Run every 5 minutes
+
 /**
  * Get current product creation job configuration and stats
  * Returns the most recent job config with dynamically calculated next_run_at

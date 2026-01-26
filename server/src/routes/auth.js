@@ -52,7 +52,6 @@ router.get('/callback', async (req, res) => {
     const { shop, accessToken } = session;
 
     console.log('🎫 OAuth callback successful for:', shop);
-    console.log('🔑 Access Token received:', accessToken);
     console.log('📋 Token preview: shpat_***' + accessToken.slice(-4));
 
     // Store shop credentials

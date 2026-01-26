@@ -4,6 +4,7 @@ import db from '../config/database.js';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { verifyShopInstalled } from '../middleware/auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,11 +18,13 @@ const router = express.Router();
  * - page: page number (default: 1)
  * - search: search query (searches order_number, customer_name, customer_email)
  */
-router.get('/', async (req, res) => {
+router.get('/', verifyShopInstalled, async (req, res) => {
   try {
     const shop = req.query.shop || '2f3d7a-2.myshopify.com';
-    const limit = parseInt(req.query.limit) || 50;
-    const page = parseInt(req.query.page) || 1;
+
+    // Validate and sanitize limit and page parameters to prevent SQL injection
+    const limit = Math.max(1, Math.min(parseInt(req.query.limit) || 50, 500));
+    const page = Math.max(1, parseInt(req.query.page) || 1);
     const search = req.query.search || '';
 
     // Get shop ID
@@ -84,10 +87,10 @@ router.get('/', async (req, res) => {
       query += ` WHERE o.shop_id = ?`;
     }
 
-    // Add ordering and pagination
-    // Note: LIMIT and OFFSET are safe to insert directly since they're validated integers
+    // Add ordering and pagination using parameterized queries
     const offset = (page - 1) * limit;
-    query += ` ORDER BY o.created_at DESC LIMIT ${limit} OFFSET ${offset}`;
+    query += ` ORDER BY o.created_at DESC LIMIT ? OFFSET ?`;
+    params.push(limit, offset);
 
     // Fetch orders from database
     const [orders] = await db.execute(query, params);
@@ -223,7 +226,7 @@ function parseVehicleInfo(vehicleStr) {
 /**
  * Sync orders from Shopify to database using GraphQL
  */
-router.post('/sync', async (req, res) => {
+router.post('/sync', verifyShopInstalled, async (req, res) => {
   try {
     const shop = req.query.shop || '2f3d7a-2.myshopify.com';
 
@@ -551,7 +554,7 @@ router.post('/sync', async (req, res) => {
 /**
  * Get full order details from Shopify including line items
  */
-router.get('/:shopifyOrderId/details', async (req, res) => {
+router.get('/:shopifyOrderId/details', verifyShopInstalled, async (req, res) => {
   try {
     const shop = req.query.shop || '2f3d7a-2.myshopify.com';
     const { shopifyOrderId } = req.params;
@@ -642,7 +645,7 @@ router.get('/:shopifyOrderId/details', async (req, res) => {
 /**
  * Update vehicle information for an order
  */
-router.patch('/:orderId/vehicle', async (req, res) => {
+router.patch('/:orderId/vehicle', verifyShopInstalled, async (req, res) => {
   try {
     const shop = req.query.shop || '2f3d7a-2.myshopify.com';
     const { orderId } = req.params;
@@ -702,7 +705,7 @@ router.patch('/:orderId/vehicle', async (req, res) => {
 /**
  * Get single order by Shopify order ID
  */
-router.get('/:orderId', async (req, res) => {
+router.get('/:orderId', verifyShopInstalled, async (req, res) => {
   try {
     const shop = req.query.shop || '2f3d7a-2.myshopify.com';
     const { orderId } = req.params;
@@ -925,7 +928,7 @@ async function processSDWInBackground(jobId, config) {
  * Start SDW processing (Phase 1: Calculate shipping/total)
  * Returns a job ID for tracking progress
  */
-router.post('/process-sdw/start', async (req, res) => {
+router.post('/process-sdw/start', verifyShopInstalled, async (req, res) => {
   try {
     const {
       orderNumber,
@@ -937,7 +940,7 @@ router.post('/process-sdw/start', async (req, res) => {
       quoteLink
     } = req.body;
 
-    // Validate
+    // Validate required fields
     if (!orderNumber) {
       return res.status(400).json({ error: 'Order number is required' });
     }
@@ -946,8 +949,31 @@ router.post('/process-sdw/start', async (req, res) => {
       return res.status(400).json({ error: 'No items selected' });
     }
 
-    if (mode === 'quote' && !quoteLink) {
-      return res.status(400).json({ error: 'Quote link is required for quote mode' });
+    // Validate card selection (whitelist to prevent command injection)
+    const VALID_CARDS = ['1', '2', '3', '4', '5'];
+    if (!VALID_CARDS.includes(card)) {
+      return res.status(400).json({ error: 'Invalid card selection' });
+    }
+
+    // Validate mode (whitelist to prevent command injection)
+    const VALID_MODES = ['manual', 'quote'];
+    if (!VALID_MODES.includes(mode)) {
+      return res.status(400).json({ error: 'Invalid processing mode' });
+    }
+
+    // Sanitize order number (allow only alphanumeric and common order characters)
+    if (!/^[A-Z0-9#-]+$/i.test(orderNumber)) {
+      return res.status(400).json({ error: 'Invalid order number format' });
+    }
+
+    // Validate quote link domain if provided
+    if (mode === 'quote') {
+      if (!quoteLink) {
+        return res.status(400).json({ error: 'Quote link is required for quote mode' });
+      }
+      if (!quoteLink.startsWith('https://www.sdwheelwholesale.com/')) {
+        return res.status(400).json({ error: 'Invalid quote link domain. Must be from sdwheelwholesale.com' });
+      }
     }
 
     // Create job
@@ -991,7 +1017,7 @@ router.post('/process-sdw/start', async (req, res) => {
 /**
  * Get SDW job status and progress
  */
-router.get('/sdw-job/:jobId', async (req, res) => {
+router.get('/sdw-job/:jobId', verifyShopInstalled, async (req, res) => {
   try {
     const { jobId } = req.params;
     const { getJob } = await import('../services/sdwJobManager.js');
@@ -1020,7 +1046,7 @@ router.get('/sdw-job/:jobId', async (req, res) => {
 /**
  * Confirm and complete SDW purchase (Phase 2)
  */
-router.post('/sdw-job/:jobId/confirm', async (req, res) => {
+router.post('/sdw-job/:jobId/confirm', verifyShopInstalled, async (req, res) => {
   try {
     const { jobId } = req.params;
     const { getJob, updateJobProgress } = await import('../services/sdwJobManager.js');
@@ -1077,10 +1103,16 @@ router.post('/sdw-job/:jobId/confirm', async (req, res) => {
 /**
  * Submit user input response for interactive prompts
  */
-router.post('/sdw-job/:jobId/user-input', async (req, res) => {
+router.post('/sdw-job/:jobId/user-input', verifyShopInstalled, async (req, res) => {
   try {
     const { jobId } = req.params;
     const { response } = req.body;
+
+    // Validate jobId format to prevent path traversal (only allow alphanumeric, dash, underscore)
+    if (!/^[a-zA-Z0-9_-]+$/.test(jobId)) {
+      return res.status(400).json({ error: 'Invalid job ID format' });
+    }
+
     const { getJob } = await import('../services/sdwJobManager.js');
     const job = getJob(jobId);
 
@@ -1132,7 +1164,7 @@ router.post('/sdw-job/:jobId/user-input', async (req, res) => {
 });
 
 // Cancel SDW job processing
-router.post('/sdw-job/:jobId/cancel', async (req, res) => {
+router.post('/sdw-job/:jobId/cancel', verifyShopInstalled, async (req, res) => {
   try {
     const { jobId } = req.params;
     const { getJob } = await import('../services/sdwJobManager.js');
