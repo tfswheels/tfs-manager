@@ -11,52 +11,76 @@ import {
   Text,
   Banner,
   Spinner,
-  Icon,
   TextField,
   Modal,
   ChoiceList
 } from '@shopify/polaris';
-import { ChevronDownIcon, ChevronUpIcon } from '@shopify/polaris-icons';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://tfs-manager-server-production.up.railway.app';
 
-const SKIP_BRANDS_DEFAULT = [
-  "4 Play", "American Racing", "American Truxx", "Asanti", "Black Rhino",
-  "DUB", "Dropstars", "Fuel", "ICON Alloys", "KMC", "Luxxx", "Mayhem",
-  "Moto Metal", "XD Series", "Ultra Wheel", "Milanni", "Red Dirt Road",
-  "RTX", "Seventy7", "Status", "TIS", "TSW", "Vision Wheel", "XF Off-Road",
-  "Lexani", "Factory Reproductions", "Grid Off-Road", "17x9 Matte Black",
-  "17x9 Gloss Black Milled", "Cali Off-Road", "OE Creations", "Helo",
-  "Alliance", "Foose", "Rotiform", "Verde", "US Mags", "DPR Off-Road",
-  "American Force", "American Racing Custom", "Asanti Off-Road", "ATX",
-  "Ballistic", "Black Label", "BMF Off-Road", "Brute", "Contrast",
-  "Cruiser Alloy", "Dick Cepek", "Dirty Life", "DLUX", "Dropstar", "F1R",
-  "F1R Wheels", "Forgiato", "Fuel Off-Road", "HE Wheels", "ION", "Kansei",
-  "Konig", "Konig Wheels", "Mayhem Wheels", "Method Race", "OE Performance",
-  "Offroad Monster", "RBP", "Red Sport", "Rosso"
-];
+// Load config from localStorage or return defaults
+const loadSavedConfig = () => {
+  try {
+    const saved = localStorage.getItem('manualScrapingConfig');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (error) {
+    console.error('Failed to load saved config:', error);
+  }
+
+  // Default config (no excluded brands by default)
+  return {
+    scrapingMode: 'hybrid',
+    hybridRetryCount: 3,
+    backorderCount: 5,
+    retryFailed: true,
+    saleOnly: false,
+    useSpecificBrands: false,
+    excludedBrands: [],
+    specificBrandsInput: ''
+  };
+};
+
+// Save config to localStorage
+const saveConfig = (config) => {
+  try {
+    localStorage.setItem('manualScrapingConfig', JSON.stringify(config));
+  } catch (error) {
+    console.error('Failed to save config:', error);
+  }
+};
 
 export default function ManualScrapingTab() {
   const [loading, setLoading] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [brands, setBrands] = useState([]);
   const [configOpen, setConfigOpen] = useState(false);
-  const [brandsOpen, setBrandsOpen] = useState(false);
 
-  const [excludedBrands, setExcludedBrands] = useState(SKIP_BRANDS_DEFAULT);
+  const savedConfig = loadSavedConfig();
+  const [excludedBrands, setExcludedBrands] = useState(savedConfig.excludedBrands);
   const [config, setConfig] = useState({
-    scrapingMode: 'zenrows',
-    hybridRetryCount: 3,
-    backorderCount: 5,
-    retryFailed: true,
-    saleOnly: false,
-    useSpecificBrands: false
+    scrapingMode: savedConfig.scrapingMode,
+    hybridRetryCount: savedConfig.hybridRetryCount,
+    backorderCount: savedConfig.backorderCount,
+    retryFailed: savedConfig.retryFailed,
+    saleOnly: savedConfig.saleOnly,
+    useSpecificBrands: savedConfig.useSpecificBrands
   });
-  const [specificBrandsInput, setSpecificBrandsInput] = useState('');
+  const [specificBrandsInput, setSpecificBrandsInput] = useState(savedConfig.specificBrandsInput);
 
   const [selectedJob, setSelectedJob] = useState(null);
   const [jobLogsOpen, setJobLogsOpen] = useState(false);
+
+  // Save config whenever it changes
+  useEffect(() => {
+    saveConfig({
+      ...config,
+      excludedBrands,
+      specificBrandsInput
+    });
+  }, [config, excludedBrands, specificBrandsInput]);
 
   useEffect(() => {
     fetchJobs();
@@ -153,7 +177,6 @@ export default function ManualScrapingTab() {
     <Button plain onClick={() => viewJobLogs(job)}>{job.id}</Button>,
     job.scraper_type,
     getStatusBadge(job.status),
-    job.products_found || 0,
     job.products_created || 0,
     job.products_updated || 0,
     new Date(job.created_at).toLocaleString('en-US', {
@@ -178,35 +201,6 @@ export default function ManualScrapingTab() {
         <p>Run one-time scraping jobs on demand with custom configuration.</p>
         <p>Use this for immediate needs or testing before creating scheduled jobs.</p>
       </Banner>
-
-      {/* Quick Actions */}
-      <Card>
-        <BlockStack gap="400">
-          <Text variant="headingMd" as="h2">Quick Scrape</Text>
-
-          {runningJobs.length > 0 && (
-            <Banner tone="warning">
-              {runningJobs.length} job(s) currently running
-            </Banner>
-          )}
-
-          <InlineStack gap="300">
-            <Button
-              primary
-              loading={loading}
-              onClick={() => startScraping('wheels')}
-            >
-              Scrape Wheels Now
-            </Button>
-            <Button
-              loading={loading}
-              onClick={() => startScraping('tires')}
-            >
-              Scrape Tires Now
-            </Button>
-          </InlineStack>
-        </BlockStack>
-      </Card>
 
       {/* Configuration */}
       <Card>
@@ -297,103 +291,110 @@ export default function ManualScrapingTab() {
                 autoComplete="off"
                 helpText="Stop after N consecutive backorder-only products"
               />
+
+              {/* Excluded Brands Section (now inside Configuration) */}
+              <BlockStack gap="300">
+                <Text variant="headingMd" as="h3">
+                  Excluded Brands ({excludedBrands.length} selected)
+                </Text>
+                <Text tone="subdued">
+                  Select brands to exclude from scraping:
+                </Text>
+
+                <InlineStack gap="200">
+                  <Button
+                    size="slim"
+                    onClick={() => {
+                      const allBrands = brands.length > 0 ? brands : [];
+                      setExcludedBrands(allBrands);
+                    }}
+                  >
+                    Select All
+                  </Button>
+                  <Button
+                    size="slim"
+                    onClick={() => setExcludedBrands([])}
+                  >
+                    Deselect All
+                  </Button>
+                </InlineStack>
+
+                <div style={{
+                  maxHeight: '400px',
+                  overflowY: 'auto',
+                  padding: '16px',
+                  backgroundColor: '#f6f6f7',
+                  borderRadius: '8px'
+                }}>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '12px'
+                  }}>
+                    {brands.map((brand) => (
+                      <Checkbox
+                        key={brand}
+                        label={brand}
+                        checked={excludedBrands.includes(brand)}
+                        onChange={(checked) => {
+                          if (checked) {
+                            setExcludedBrands([...excludedBrands, brand]);
+                          } else {
+                            setExcludedBrands(excludedBrands.filter(b => b !== brand));
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <TextField
+                  label="Add custom brand to exclude (comma-separated)"
+                  placeholder="e.g., Brand1, Brand2, Brand3"
+                  autoComplete="off"
+                  onBlur={(e) => {
+                    const newBrands = e.target.value
+                      .split(',')
+                      .map(b => b.trim())
+                      .filter(b => b && !excludedBrands.includes(b));
+                    if (newBrands.length > 0) {
+                      setExcludedBrands([...excludedBrands, ...newBrands]);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+              </BlockStack>
             </BlockStack>
           </Collapsible>
         </BlockStack>
       </Card>
 
-      {/* Excluded Brands */}
+      {/* Quick Actions - NOW BELOW CONFIG */}
       <Card>
         <BlockStack gap="400">
-          <Button
-            onClick={() => setBrandsOpen(!brandsOpen)}
-            ariaExpanded={brandsOpen}
-            ariaControls="excluded-brands"
-            fullWidth
-            textAlign="left"
-            disclosure={brandsOpen ? 'up' : 'down'}
-          >
-            <InlineStack align="space-between" blockAlign="center">
-              <Text variant="headingMd" as="h2">
-                Excluded Brands ({excludedBrands.length} selected)
-              </Text>
-            </InlineStack>
-          </Button>
+          <Text variant="headingMd" as="h2">Quick Scrape</Text>
 
-          <Collapsible
-            open={brandsOpen}
-            id="excluded-brands"
-            transition={{duration: '200ms', timingFunction: 'ease-in-out'}}
-          >
-            <BlockStack gap="400">
-              <Text tone="subdued">
-                Select brands to exclude from scraping:
-              </Text>
+          {runningJobs.length > 0 && (
+            <Banner tone="warning">
+              {runningJobs.length} job(s) currently running
+            </Banner>
+          )}
 
-              <InlineStack gap="200">
-                <Button
-                  size="slim"
-                  onClick={() => {
-                    const allBrands = brands.length > 0 ? brands : SKIP_BRANDS_DEFAULT;
-                    setExcludedBrands(allBrands);
-                  }}
-                >
-                  Select All
-                </Button>
-                <Button
-                  size="slim"
-                  onClick={() => setExcludedBrands([])}
-                >
-                  Deselect All
-                </Button>
-              </InlineStack>
-
-              <div style={{
-                maxHeight: '400px',
-                overflowY: 'auto',
-                padding: '16px',
-                backgroundColor: '#f6f6f7',
-                borderRadius: '8px'
-              }}>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
-                  gap: '12px'
-                }}>
-                  {(brands.length > 0 ? brands : SKIP_BRANDS_DEFAULT).map((brand) => (
-                    <Checkbox
-                      key={brand}
-                      label={brand}
-                      checked={excludedBrands.includes(brand)}
-                      onChange={(checked) => {
-                        if (checked) {
-                          setExcludedBrands([...excludedBrands, brand]);
-                        } else {
-                          setExcludedBrands(excludedBrands.filter(b => b !== brand));
-                        }
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <TextField
-                label="Add custom brand to exclude (comma-separated)"
-                placeholder="e.g., Brand1, Brand2, Brand3"
-                autoComplete="off"
-                onBlur={(e) => {
-                  const newBrands = e.target.value
-                    .split(',')
-                    .map(b => b.trim())
-                    .filter(b => b && !excludedBrands.includes(b));
-                  if (newBrands.length > 0) {
-                    setExcludedBrands([...excludedBrands, ...newBrands]);
-                    e.target.value = '';
-                  }
-                }}
-              />
-            </BlockStack>
-          </Collapsible>
+          <InlineStack gap="300">
+            <Button
+              primary
+              loading={loading}
+              onClick={() => startScraping('wheels')}
+            >
+              Scrape Wheels Now
+            </Button>
+            <Button
+              loading={loading}
+              onClick={() => startScraping('tires')}
+            >
+              Scrape Tires Now
+            </Button>
+          </InlineStack>
         </BlockStack>
       </Card>
 
@@ -406,8 +407,8 @@ export default function ManualScrapingTab() {
           </InlineStack>
 
           <DataTable
-            columnContentTypes={['text', 'text', 'text', 'numeric', 'numeric', 'numeric', 'text', 'text']}
-            headings={['ID', 'Type', 'Status', 'Found', 'Created', 'Updated', 'Started', 'Actions']}
+            columnContentTypes={['text', 'text', 'text', 'numeric', 'numeric', 'text', 'text']}
+            headings={['ID', 'Type', 'Status', 'Created', 'Updated', 'Started', 'Actions']}
             rows={jobRows}
           />
         </BlockStack>
@@ -428,7 +429,6 @@ export default function ManualScrapingTab() {
 
             <Text variant="headingMd" as="h3">Statistics</Text>
             <InlineStack gap="400">
-              <Text>Found: {selectedJob?.products_found || 0}</Text>
               <Text>Created: {selectedJob?.products_created || 0}</Text>
               <Text>Updated: {selectedJob?.products_updated || 0}</Text>
             </InlineStack>

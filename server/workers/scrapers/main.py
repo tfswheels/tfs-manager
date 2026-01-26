@@ -404,6 +404,10 @@ async def run_enhanced_scraper():
         logger.info(f"  Errors: {stats['errors']}")
         logger.info("=" * 80)
 
+        # Merge db_client stats into main stats (db_client tracks actual updates)
+        if hasattr(db_client, '_stats'):
+            stats['products_updated'] = db_client._stats.get('products_updated', stats['products_updated'])
+
         # Return stats for use by calling script (run_scraper.py)
         return stats
 
