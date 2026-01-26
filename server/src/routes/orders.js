@@ -87,10 +87,11 @@ router.get('/', verifyShopInstalled, async (req, res) => {
       query += ` WHERE o.shop_id = ?`;
     }
 
-    // Add ordering and pagination using parameterized queries
+    // Add ordering and pagination
+    // Note: LIMIT and OFFSET cannot be parameterized in MySQL prepared statements
+    // They must be literal integers (already validated above)
     const offset = (page - 1) * limit;
-    query += ` ORDER BY o.created_at DESC LIMIT ? OFFSET ?`;
-    params.push(limit, offset);
+    query += ` ORDER BY o.created_at DESC LIMIT ${limit} OFFSET ${offset}`;
 
     // Fetch orders from database
     const [orders] = await db.execute(query, params);
