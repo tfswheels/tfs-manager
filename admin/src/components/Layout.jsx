@@ -16,7 +16,8 @@ function Layout({ children }) {
 
   const isActive = (href) => {
     if (href === '/') return location.pathname === '/';
-    return location.pathname.startsWith(href);
+    // Exact match or starts with href followed by a slash (prevents /email matching /emails)
+    return location.pathname === href || location.pathname.startsWith(href + '/');
   };
 
   return (
