@@ -61,8 +61,8 @@ router.get('/logs', verifyShopInstalled, async (req, res) => {
       `SELECT * FROM email_logs
       WHERE shop_id = ?
       ORDER BY sent_at DESC
-      LIMIT ? OFFSET ?`,
-      [shopId, parseInt(limit), parseInt(offset)]
+      LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}`,
+      [shopId]
     );
 
     res.json({ logs });

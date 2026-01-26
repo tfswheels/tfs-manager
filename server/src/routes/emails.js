@@ -435,9 +435,8 @@ router.get('/inbox', async (req, res) => {
     // Order by last message
     query += ' ORDER BY c.last_message_at DESC';
 
-    // Add pagination
-    query += ' LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    // Add pagination (using template literals - MySQL 8.0 doesn't support parameterized LIMIT/OFFSET)
+    query += ` LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}`;
 
     const [conversations] = await db.execute(query, params);
 
@@ -533,16 +532,15 @@ router.get('/conversations', async (req, res) => {
     }
 
     // Order by last message (active conversations first)
-    query += ' AND c.status = "active" ORDER BY c.last_message_at DESC';
+    query += ' AND c.status = \'active\' ORDER BY c.last_message_at DESC';
 
-    // Add pagination
-    query += ' LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    // Add pagination (using template literals - MySQL 8.0 doesn't support parameterized LIMIT/OFFSET)
+    query += ` LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}`;
 
     const [conversations] = await db.execute(query, params);
 
     // Get total count
-    let countQuery = 'SELECT COUNT(*) as total FROM email_conversations c WHERE c.shop_id = ? AND c.status = "active"';
+    let countQuery = 'SELECT COUNT(*) as total FROM email_conversations c WHERE c.shop_id = ? AND c.status = \'active\'';
     const countParams = [shopId];
 
     if (unreadOnly === 'true') {

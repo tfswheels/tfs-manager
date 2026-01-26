@@ -50,9 +50,8 @@ router.get('/', async (req, res) => {
     }
 
     // Add ordering and pagination
-    query += ' ORDER BY ce.received_at DESC LIMIT ? OFFSET ?';
     const offset = (page - 1) * limit;
-    params.push(limit, offset);
+    query += ` ORDER BY ce.received_at DESC LIMIT ${limit} OFFSET ${offset}`;
 
     // Fetch emails
     const [emails] = await db.execute(query, params);
