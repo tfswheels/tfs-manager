@@ -139,13 +139,32 @@ async function getZohoAccountId(accessToken, accountEmail) {
 
     const accounts = response.data.data || [];
 
+    // Log the accounts structure for debugging
+    console.log(`📋 Found ${accounts.length} Zoho accounts`);
+    if (accounts.length > 0) {
+      console.log(`📋 First account structure:`, JSON.stringify(accounts[0], null, 2));
+    }
+
     // Find account matching the email
+    // Try multiple possible field names as Zoho API varies
     const account = accounts.find(acc =>
       acc.accountAddress === accountEmail ||
-      acc.emailAddress === accountEmail
+      acc.emailAddress === accountEmail ||
+      acc.primaryEmailAddress === accountEmail ||
+      acc.mailBoxAddress === accountEmail ||
+      acc.fromAddress === accountEmail ||
+      (acc.accountName && acc.accountName.includes(accountEmail))
     );
 
     if (!account) {
+      console.error(`❌ No account found matching ${accountEmail}`);
+      console.error(`Available accounts:`, accounts.map(a => ({
+        accountId: a.accountId,
+        accountAddress: a.accountAddress,
+        emailAddress: a.emailAddress,
+        primaryEmailAddress: a.primaryEmailAddress,
+        accountName: a.accountName
+      })));
       throw new Error(`Zoho account not found for ${accountEmail}`);
     }
 

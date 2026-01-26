@@ -238,12 +238,16 @@ export async function generateEmailResponse(shopId, options) {
     console.log('📤 Sending request to Claude...');
 
     // Call Claude API
-    const temperature = options.temperature !== undefined ? options.temperature : aiSettings.ai_temperature;
+    // Ensure temperature is a number (database returns strings)
+    const temperature = options.temperature !== undefined
+      ? parseFloat(options.temperature)
+      : parseFloat(aiSettings.ai_temperature || 0.7);
     const model = aiSettings.ai_model || 'claude-opus-4-20250514';
+    const maxTokens = parseInt(aiSettings.ai_max_tokens || 4000);
 
     const message = await anthropic.messages.create({
       model: model,
-      max_tokens: aiSettings.ai_max_tokens,
+      max_tokens: maxTokens,
       temperature: temperature,
       system: systemPrompt,
       messages: [
