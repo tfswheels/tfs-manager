@@ -306,7 +306,10 @@ export async function getConversationWithEmails(conversationId) {
         c.*,
         o.order_number,
         o.customer_name as order_customer_name,
-        o.vehicle_full
+        o.vehicle_year,
+        o.vehicle_make,
+        o.vehicle_model,
+        o.vehicle_trim
       FROM email_conversations c
       LEFT JOIN orders o ON c.order_id = o.id
       WHERE c.id = ?`,
