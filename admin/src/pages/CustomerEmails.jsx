@@ -17,7 +17,6 @@ import {
 } from '@shopify/polaris';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import EmailThreadView from '../components/EmailThreadView';
 import EmailComposer from '../components/EmailComposer';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://tfs-manager-server-production.up.railway.app';
@@ -32,10 +31,6 @@ export default function CustomerEmails() {
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [stats, setStats] = useState({ total: 0, unread: 0, read: 0, replied: 0, archived: 0 });
-
-  // Thread view modal
-  const [selectedConversationId, setSelectedConversationId] = useState(null);
-  const [threadViewOpen, setThreadViewOpen] = useState(false);
 
   // New email composer
   const [composerOpen, setComposerOpen] = useState(false);
@@ -100,18 +95,6 @@ export default function CustomerEmails() {
     setPage(1);
   };
 
-  const handleConversationClick = (conversationId) => {
-    setSelectedConversationId(conversationId);
-    setThreadViewOpen(true);
-  };
-
-  const handleThreadViewClose = () => {
-    setThreadViewOpen(false);
-    setSelectedConversationId(null);
-    fetchEmails();
-    fetchStats();
-  };
-
   const formatDate = (date) => {
     return new Date(date).toLocaleString('en-US', {
       month: 'short',
@@ -134,30 +117,50 @@ export default function CustomerEmails() {
     return <Badge tone={config.tone}>{config.label}</Badge>;
   };
 
-  const rows = conversations.map((conv) => [
-    <Button plain onClick={() => handleConversationClick(conv.id)}>
-      <Text variant="bodyMd" as="span" fontWeight={conv.unread_count > 0 ? 'semibold' : 'regular'}>
-        {conv.customer_name || conv.customer_email}
-      </Text>
-    </Button>,
-    <Button plain onClick={() => handleConversationClick(conv.id)}>
-      <Text variant="bodyMd" as="span" fontWeight={conv.unread_count > 0 ? 'semibold' : 'regular'}>
-        {conv.subject || '(No Subject)'}
-      </Text>
-    </Button>,
-    <InlineStack gap="100">
-      <Badge tone="info">{conv.message_count || 0}</Badge>
-      {conv.unread_count > 0 && (
-        <Badge tone="attention">{conv.unread_count} new</Badge>
-      )}
-    </InlineStack>,
-    conv.order_id ? (
-      <Button plain size="slim" onClick={() => navigate(`/orders/${conv.order_id}`)}>
-        {conv.order_number || `#${conv.order_id}`}
-      </Button>
-    ) : '-',
-    formatDate(conv.last_message_at)
-  ]);
+  const rows = conversations.map((conv) => {
+    const rowStyle = {
+      cursor: 'pointer'
+    };
+
+    return [
+      <div onClick={() => navigate(`/emails/${conv.id}`)} style={rowStyle}>
+        <Text variant="bodyMd" as="span" fontWeight={conv.unread_count > 0 ? 'semibold' : 'regular'}>
+          {conv.customer_name || conv.customer_email}
+        </Text>
+      </div>,
+      <div onClick={() => navigate(`/emails/${conv.id}`)} style={rowStyle}>
+        <Text variant="bodyMd" as="span" fontWeight={conv.unread_count > 0 ? 'semibold' : 'regular'}>
+          {conv.subject || '(No Subject)'}
+        </Text>
+      </div>,
+      <div onClick={() => navigate(`/emails/${conv.id}`)} style={rowStyle}>
+        <InlineStack gap="100">
+          <Badge tone="info">{conv.message_count || 0}</Badge>
+          {conv.unread_count > 0 && (
+            <Badge tone="attention">{conv.unread_count} new</Badge>
+          )}
+        </InlineStack>
+      </div>,
+      <div onClick={(e) => {
+        if (conv.order_id) {
+          e.stopPropagation();
+          navigate(`/orders/${conv.order_id}`);
+        }
+      }} style={rowStyle}>
+        {conv.order_id ? (
+          <Button plain size="slim" onClick={(e) => {
+            e.stopPropagation();
+            navigate(`/orders/${conv.order_id}`);
+          }}>
+            #{conv.order_number || conv.order_id}
+          </Button>
+        ) : '-'}
+      </div>,
+      <div onClick={() => navigate(`/emails/${conv.id}`)} style={rowStyle}>
+        {formatDate(conv.last_message_at)}
+      </div>
+    ];
+  });
 
   const headings = ['From', 'Subject', 'Messages', 'Order', 'Last Activity'];
 
@@ -290,13 +293,6 @@ export default function CustomerEmails() {
           </Tabs>
         </Card>
       </BlockStack>
-
-      {/* Thread View Modal */}
-      <EmailThreadView
-        conversationId={selectedConversationId}
-        open={threadViewOpen}
-        onClose={handleThreadViewClose}
-      />
 
       {/* New Email Composer */}
       <EmailComposer

@@ -101,7 +101,7 @@ async function getThreadContext(conversationId) {
 }
 
 /**
- * Format thread history for Claude context
+ * Format thread history for Claude context with clear speaker distinction
  */
 function formatThreadForContext(emails) {
   if (!emails || emails.length === 0) return '';
@@ -110,12 +110,17 @@ function formatThreadForContext(emails) {
 
   emails.forEach((email, index) => {
     const timestamp = email.sent_at || email.received_at;
-    const direction = email.direction === 'inbound' ? 'Customer' : 'Us';
+    const isFromCustomer = email.direction === 'inbound';
+    const speaker = isFromCustomer ? '**CUSTOMER**' : '**TFS WHEELS (US)**';
     const body = email.body_text || email.body_html || '';
 
-    context += `### Message ${index + 1} (${direction} - ${timestamp})\n`;
-    context += `From: ${email.from_name || email.from_email}\n`;
-    context += `Subject: ${email.subject}\n\n`;
+    context += `### Message ${index + 1} - ${speaker}\n`;
+    context += `**From:** ${email.from_name || email.from_email}\n`;
+    context += `**Time:** ${timestamp}\n`;
+    if (index === 0 && email.subject) {
+      context += `**Subject:** ${email.subject}\n`;
+    }
+    context += `**Direction:** ${isFromCustomer ? 'Inbound (from customer)' : 'Outbound (from us)'}\n\n`;
     context += `${body}\n\n`;
     context += '---\n\n';
   });
@@ -212,12 +217,40 @@ export async function generateEmailResponse(shopId, options) {
     // Build system prompt
     const systemPrompt = buildSystemPrompt(brandVoice, context);
 
-    // Build user prompt
+    // Build user prompt with auto-suggestion support
     let userPrompt = options.prompt;
 
-    // Add thread context
-    if (threadContext) {
-      userPrompt = threadContext + '\n\n' + userPrompt;
+    // If no specific prompt provided and we have thread history, auto-suggest a response
+    if (!userPrompt && threadEmails && threadEmails.length > 0) {
+      const lastEmail = threadEmails[threadEmails.length - 1];
+      const isLastFromCustomer = lastEmail.direction === 'inbound';
+
+      if (isLastFromCustomer) {
+        userPrompt = `Based on the entire conversation history below, generate an appropriate response to the customer's latest message.
+
+Key instructions:
+1. Read and understand the FULL conversation history
+2. Address all points raised by the customer in their latest message
+3. Maintain consistency with our previous responses
+4. Use a natural, helpful tone
+5. Include relevant placeholders (like {{customer_name}}, {{order_number}}, etc.) where appropriate
+6. Keep the response concise but complete
+
+${threadContext}
+
+Now generate an appropriate email response that addresses the customer's needs.`;
+      } else {
+        userPrompt = `Based on the conversation history below, suggest a follow-up message to the customer.
+
+${threadContext}
+
+Generate a brief follow-up message to check in with the customer.`;
+      }
+    } else if (userPrompt && threadContext) {
+      // Add thread context before user's specific prompt
+      userPrompt = threadContext + '\n\n## Your Instructions:\n' + userPrompt;
+    } else if (!userPrompt) {
+      throw new Error('No prompt provided and no thread context available for auto-suggestion');
     }
 
     // Add customer data context
@@ -326,16 +359,24 @@ export async function generateThreadSummary(shopId, conversationId) {
     // Format thread
     const threadContext = formatThreadForContext(threadEmails);
 
-    // Build summary prompt
-    const summaryPrompt = `Please provide a concise summary of this email conversation thread. Include:
+    // Build summary prompt with explicit speaker distinction
+    const summaryPrompt = `Please provide a concise summary of this email conversation thread between a CUSTOMER and TFS WHEELS (us).
 
-1. Main topic/issue discussed
-2. Key points from customer
-3. Our responses and actions taken
-4. Current status (resolved, pending, needs follow-up)
+IMPORTANT: Clearly distinguish between what the CUSTOMER said/asked and what WE (TFS Wheels) said/responded.
+
+Include:
+1. Main topic/issue the CUSTOMER discussed
+2. Key points and requests FROM the CUSTOMER
+3. OUR (TFS Wheels) responses and actions taken
+4. Current status (resolved, pending customer response, needs our follow-up)
 5. Any important dates, order numbers, or product details mentioned
 
-Keep the summary brief (3-5 sentences) but informative for a team member who needs to quickly understand the situation.
+Format your summary clearly showing:
+- What the CUSTOMER said/wants
+- What WE said/did in response
+- What still needs to be done
+
+Keep the summary brief (4-6 sentences) but informative for a team member who needs to quickly understand the situation.
 
 ${threadContext}`;
 

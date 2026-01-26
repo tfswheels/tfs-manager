@@ -309,7 +309,8 @@ export async function getConversationWithEmails(conversationId) {
         o.vehicle_year,
         o.vehicle_make,
         o.vehicle_model,
-        o.vehicle_trim
+        o.vehicle_trim,
+        o.vehicle_full
       FROM email_conversations c
       LEFT JOIN orders o ON c.order_id = o.id
       WHERE c.id = ?`,
@@ -331,6 +332,19 @@ export async function getConversationWithEmails(conversationId) {
     );
 
     conversation.emails = emails;
+
+    // Fix message count if inconsistent
+    const actualCount = emails.length;
+    if (conversation.message_count !== actualCount) {
+      console.log(`⚠️  Fixing message count for conversation #${conversationId}: ${conversation.message_count} -> ${actualCount}`);
+      await db.execute(
+        `UPDATE email_conversations
+         SET message_count = ?
+         WHERE id = ?`,
+        [actualCount, conversationId]
+      );
+      conversation.message_count = actualCount;
+    }
 
     return conversation;
 

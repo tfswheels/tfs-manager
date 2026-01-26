@@ -267,60 +267,89 @@ export async function sendEmail(shopId, emailData) {
 }
 
 /**
- * Fetch emails from Zoho inbox
+ * Fetch emails from Zoho inbox with retry logic
  *
  * @param {number} shopId - Shop ID
  * @param {object} options - Fetch options
  * @returns {Promise<Array>} Array of emails
  */
 export async function fetchInbox(shopId, options = {}) {
-  try {
-    const accessToken = await getAccessToken(shopId);
+  const {
+    accountEmail = EMAIL_ACCOUNTS.sales,
+    folderId = '1', // 1 = Inbox
+    limit = 50,
+    start = 0,
+    sortBy = 'receivedTime',
+    sortOrder = 'desc',
+    searchKey = null
+  } = options;
 
-    const {
-      accountEmail = EMAIL_ACCOUNTS.sales,
-      folderId = '1', // 1 = Inbox
-      limit = 50,
-      start = 0,
-      sortBy = 'receivedTime',
-      sortOrder = 'desc',
-      searchKey = null
-    } = options;
+  const maxRetries = 3;
+  const retryDelay = 2000; // 2 seconds
 
-    console.log(`📥 Fetching emails from ${accountEmail}...`);
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const accessToken = await getAccessToken(shopId);
 
-    // Get Zoho account ID for this email address
-    const accountId = await getZohoAccountId(accessToken, accountEmail);
+      console.log(`📥 Fetching emails from ${accountEmail}... (attempt ${attempt}/${maxRetries})`);
 
-    // Build search query - Zoho Mail API requires using search endpoint
-    const searchQuery = searchKey || 'in:inbox';  // Default to inbox folder
+      // Get Zoho account ID for this email address
+      const accountId = await getZohoAccountId(accessToken, accountEmail);
 
-    const params = {
-      limit: limit,
-      start: start,
-      searchKey: `fid:${folderId}`  // Search by folder ID
-    };
+      // Build search query - Zoho Mail API requires using search endpoint
+      const params = {
+        limit: limit,
+        start: start,
+        searchKey: `fid:${folderId}`  // Search by folder ID
+      };
 
-    // Fetch messages using Zoho Mail search API
-    const response = await axios.get(
-      `${ZOHO_API_BASE}/accounts/${accountId}/messages/search`,
-      {
-        headers: {
-          'Authorization': `Zoho-oauthtoken ${accessToken}`
-        },
-        params: params
+      // Fetch messages using Zoho Mail search API
+      const response = await axios.get(
+        `${ZOHO_API_BASE}/accounts/${accountId}/messages/search`,
+        {
+          headers: {
+            'Authorization': `Zoho-oauthtoken ${accessToken}`
+          },
+          params: params,
+          timeout: 30000 // 30 second timeout
+        }
+      );
+
+      const messages = response.data.data || [];
+
+      console.log(`✅ Fetched ${messages.length} emails from ${accountEmail}`);
+
+      return messages;
+
+    } catch (error) {
+      const isLastAttempt = attempt === maxRetries;
+      const status = error.response?.status;
+      const errorData = error.response?.data || {};
+
+      // Log detailed error information
+      console.error(`❌ Failed to fetch inbox (attempt ${attempt}/${maxRetries}):`, {
+        status: status,
+        statusText: error.response?.statusText,
+        data: errorData,
+        message: error.message
+      });
+
+      // Don't retry on 4xx errors (client errors) except 429 (rate limit)
+      if (status && status >= 400 && status < 500 && status !== 429) {
+        console.error(`❌ Client error (${status}), not retrying`);
+        throw new Error(`Failed to fetch inbox: ${errorData.message || error.message}`);
       }
-    );
 
-    const messages = response.data.data || [];
+      // If this is the last attempt, throw the error
+      if (isLastAttempt) {
+        throw new Error(`Failed to fetch inbox after ${maxRetries} attempts: ${errorData.message || error.message}`);
+      }
 
-    console.log(`✅ Fetched ${messages.length} emails from ${accountEmail}`);
-
-    return messages;
-
-  } catch (error) {
-    console.error('❌ Failed to fetch inbox:', error.response?.data || error.message);
-    throw new Error('Failed to fetch inbox');
+      // Wait before retrying (exponential backoff)
+      const delay = retryDelay * attempt;
+      console.log(`⏳ Waiting ${delay}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
 }
 

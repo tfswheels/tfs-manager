@@ -21,16 +21,19 @@ const lastSyncTimes = {
 /**
  * Sync emails from a specific inbox
  */
-async function syncInbox(shopId, accountEmail) {
+async function syncInbox(shopId, accountEmail, options = {}) {
   try {
     console.log(`🔄 Syncing inbox: ${accountEmail}`);
 
     const lastSync = lastSyncTimes[accountEmail === 'sales@tfswheels.com' ? 'sales' : 'support'];
 
-    // Fetch recent emails (last 50)
+    // Fetch recent emails - use configurable limit (default: 20 for performance)
+    // User requested to limit emails to avoid API issues
+    const limit = options.limit || 20;
+
     const emails = await fetchInbox(shopId, {
       accountEmail: accountEmail,
-      limit: 50,
+      limit: limit,
       sortBy: 'receivedTime',
       sortOrder: 'desc'
     });
@@ -159,17 +162,17 @@ async function syncInbox(shopId, accountEmail) {
 }
 
 /**
- * Sync all inboxes (sales@ and support@)
+ * Sync all inboxes - prioritizing sales@ over support@
  */
-export async function syncAllInboxes(shopId) {
+export async function syncAllInboxes(shopId, options = {}) {
   try {
     console.log('📬 Starting inbox sync...');
 
     const results = [];
 
-    // Sync sales@
+    // IMPORTANT: Sync sales@ FIRST (higher priority, limit to 20 emails per sync)
     try {
-      const salesResult = await syncInbox(shopId, 'sales@tfswheels.com');
+      const salesResult = await syncInbox(shopId, 'sales@tfswheels.com', { limit: 20 });
       results.push(salesResult);
     } catch (error) {
       // Check if error is due to missing OAuth credentials
@@ -189,9 +192,9 @@ export async function syncAllInboxes(shopId) {
       });
     }
 
-    // Sync support@ (only emails linked to orders)
+    // Sync support@ SECOND (only emails linked to orders, limit to 20 emails per sync)
     try {
-      const supportResult = await syncInbox(shopId, 'support@tfswheels.com');
+      const supportResult = await syncInbox(shopId, 'support@tfswheels.com', { limit: 20 });
       results.push(supportResult);
     } catch (error) {
       // Don't log OAuth errors repeatedly for support@ if we already logged for sales@
