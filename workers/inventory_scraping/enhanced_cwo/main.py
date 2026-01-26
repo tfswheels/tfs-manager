@@ -31,8 +31,6 @@ try:
         MODE,
         ENABLE_PRODUCT_DISCOVERY,
         ENABLE_SHOPIFY_SYNC,
-        RETRY_FAILED_PRODUCTS,
-        MAX_PRODUCTS_PER_DAY,
         DB_CONFIG,
         logger
     )
@@ -40,8 +38,7 @@ try:
     from .shopify_ops_new import sync_shopify_products_table
     from .product_discovery import (
         discover_new_products,
-        extract_product_data_batch,
-        get_failed_products_for_retry
+        extract_product_data_batch
     )
     from .product_creation import (
         check_daily_creation_limit,
@@ -54,8 +51,6 @@ except ImportError:
         MODE,
         ENABLE_PRODUCT_DISCOVERY,
         ENABLE_SHOPIFY_SYNC,
-        RETRY_FAILED_PRODUCTS,
-        MAX_PRODUCTS_PER_DAY,
         DB_CONFIG,
         logger
     )
@@ -63,8 +58,7 @@ except ImportError:
     from shopify_ops_new import sync_shopify_products_table
     from product_discovery import (
         discover_new_products,
-        extract_product_data_batch,
-        get_failed_products_for_retry
+        extract_product_data_batch
     )
     from product_creation import (
         check_daily_creation_limit,
@@ -93,7 +87,6 @@ stats = {
     'products_created_wheels_table': 0,
     'products_created_shopify': 0,
     'failed_shopify_creations': 0,
-    'retried_products': 0,
     'images_processed': 0,
 }
 
@@ -164,46 +157,6 @@ async def run_enhanced_scraper():
             logger.info("✅ GCS manager initialized")
 
         async with aiohttp.ClientSession() as session:
-
-            # ================================================================
-            # STEP 0: Retry Failed Products
-            # ================================================================
-            if ENABLE_PRODUCT_DISCOVERY and RETRY_FAILED_PRODUCTS:
-                logger.info("")
-                logger.info("=" * 80)
-                logger.info("STEP 0: RETRYING FAILED PRODUCTS FROM PREVIOUS RUNS")
-                logger.info("=" * 80)
-
-                failed_products = await get_failed_products_for_retry(db_pool)
-
-                if len(failed_products) > 0:
-                    # Check daily limit
-                    remaining_limit = await check_daily_creation_limit(db_pool)
-                    logger.info(f"Daily limit: {remaining_limit} products can be created today")
-
-                    if remaining_limit > 0:
-                        retry_count = min(len(failed_products), remaining_limit)
-                        logger.info(f"Retrying {retry_count} failed products...")
-
-                        # Failed products already have full data in database - no need to re-scrape
-                        failed_batch = failed_products[:retry_count]
-
-                        logger.info(f"✅ Loaded {len(failed_batch)} products from database (skipping re-scrape)")
-
-                        # Create products on Shopify directly (table data already exists)
-                        if len(failed_batch) > 0:
-                            await create_products_batch(
-                                session,
-                                gcs_manager,
-                                db_pool,
-                                failed_batch,  # Already has extracted_data from DB
-                                stats
-                            )
-                            stats['retried_products'] = len(failed_batch)
-                    else:
-                        logger.warning("Daily limit reached - cannot retry products")
-                else:
-                    logger.info("No failed products to retry")
 
             # ================================================================
             # STEP 1: Sync Shopify Product Tables
@@ -279,7 +232,7 @@ async def run_enhanced_scraper():
             # STEP 3: Discover New Products
             # ================================================================
             if ENABLE_PRODUCT_DISCOVERY and len(scraped_products) > 0:
-                discovery_queue, _ = await discover_new_products(
+                discovery_queue = await discover_new_products(
                     session,
                     db_pool,
                     scraped_products,
@@ -297,42 +250,32 @@ async def run_enhanced_scraper():
                     logger.info("STEP 4: EXTRACTING PRODUCT DATA")
                     logger.info("=" * 80)
 
-                    # Check daily limit
-                    remaining_limit = await check_daily_creation_limit(db_pool)
-                    logger.info(f"Daily limit: {remaining_limit} products can be created today")
+                    logger.info(f"Processing ALL {len(discovery_queue)} discovered products")
 
-                    if remaining_limit > 0:
-                        # Limit to daily max
-                        products_to_process = discovery_queue[:remaining_limit]
+                    # Extract product data
+                    extracted_products = await extract_product_data_batch(
+                        session,
+                        discovery_queue,
+                        [],  # cookies from scraper
+                        stats  # Pass stats to track discontinued products
+                    )
 
-                        logger.info(f"Processing {len(products_to_process)} products (limit: {remaining_limit})")
+                    # ================================================================
+                    # STEP 5: Create Products
+                    # ================================================================
+                    if len(extracted_products) > 0:
+                        logger.info("")
+                        logger.info("=" * 80)
+                        logger.info("STEP 5: CREATING PRODUCTS")
+                        logger.info("=" * 80)
 
-                        # Extract product data
-                        extracted_products = await extract_product_data_batch(
+                        await create_products_batch(
                             session,
-                            products_to_process,
-                            [],  # cookies from scraper
-                            stats  # Pass stats to track discontinued products
+                            gcs_manager,
+                            db_pool,
+                            extracted_products,
+                            stats
                         )
-
-                        # ================================================================
-                        # STEP 5: Create Products
-                        # ================================================================
-                        if len(extracted_products) > 0:
-                            logger.info("")
-                            logger.info("=" * 80)
-                            logger.info("STEP 5: CREATING PRODUCTS")
-                            logger.info("=" * 80)
-
-                            await create_products_batch(
-                                session,
-                                gcs_manager,
-                                db_pool,
-                                extracted_products,
-                                stats
-                            )
-                    else:
-                        logger.warning("Daily limit reached - cannot create new products")
 
             # ================================================================
             # STEP 5.5: Restore Prices for Ended Sales
@@ -467,7 +410,6 @@ async def run_enhanced_scraper():
         logger.info(f"  Products Created (Table): {stats['products_created_wheels_table']}")
         logger.info(f"  Products Created (Shopify): {stats['products_created_shopify']}")
         logger.info(f"  Failed Creations: {stats['failed_shopify_creations']}")
-        logger.info(f"  Products Retried: {stats['retried_products']}")
         logger.info(f"  Images Processed: {stats['images_processed']}")
         logger.info("")
         logger.info(f"  Pages Scraped: {stats['pages_scraped']}")

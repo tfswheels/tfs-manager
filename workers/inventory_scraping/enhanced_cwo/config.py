@@ -34,8 +34,6 @@ SALE_ONLY = False
 
 ENABLE_PRODUCT_DISCOVERY = True  # Enable new product creation
 ENABLE_SHOPIFY_SYNC = True  # Sync Shopify tables before scraping
-MAX_PRODUCTS_PER_DAY = 1000  # Daily creation limit
-RETRY_FAILED_PRODUCTS = True  # Retry products with product_sync='error'
 
 # =============================================================================
 # COMMAND LINE ARGUMENTS

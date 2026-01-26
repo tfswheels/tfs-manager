@@ -7,7 +7,7 @@ Identifies new products during scraping and extracts full product data.
 import asyncio
 import aiohttp
 import re
-from typing import Dict, List, Set, Optional, Tuple
+from typing import Dict, List, Set, Optional
 from bs4 import BeautifulSoup
 
 # Try relative imports first (when run as module), fall back to absolute
@@ -78,109 +78,6 @@ async def check_product_in_main_table(db_pool, url_part_number: str) -> Optional
             return result[0]
 
 
-async def get_failed_products_for_retry(db_pool) -> List[Dict]:
-    """
-    Get products from wheels/tires table that need retry (product_sync='error' or 'pending').
-
-    Returns products with FULL data from database (no need to re-scrape).
-    """
-    table_name = MODE
-
-    async with db_pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            # Get ALL fields for failed products - they already have complete data
-            if MODE == 'wheels':
-                query = f"""
-                SELECT
-                    url_part_number, brand, part_number, model, model_other, size,
-                    diameter, width, bolt_pattern, bolt_pattern2, offset, backspace,
-                    finish, short_color, primary_color, hub_bore, load_rating, weight,
-                    available_finishes, available_bolt_patterns, image, map_price, quantity,
-                    supplier, status, custom_build
-                FROM {table_name}
-                WHERE product_sync IN ('error', 'pending')
-                  AND url_part_number IS NOT NULL
-                  AND url_part_number != ''
-                ORDER BY last_modified DESC
-                """
-            else:  # tires
-                query = f"""
-                SELECT
-                    url_part_number, brand, part_number, model, size, image1, image2, image3,
-                    map_price, quantity, weight, supplier
-                FROM {table_name}
-                WHERE product_sync IN ('error', 'pending')
-                  AND url_part_number IS NOT NULL
-                  AND url_part_number != ''
-                ORDER BY last_modified DESC
-                """
-
-            await cur.execute(query)
-            results = await cur.fetchall()
-
-            logger.info(f"📦 Loading {len(results)} failed products from {table_name} table (no re-scraping needed)")
-
-            products = []
-            for row in results:
-                if MODE == 'wheels':
-                    # Map database row to product dict with klaviyo-like structure
-                    products.append({
-                        'url_part_number': row[0],
-                        'brand': row[1],
-                        'part_number': row[2],
-                        'quantity': row[22] or 0,
-                        'extracted_data': {
-                            'klaviyo_data': {
-                                'partnumber': row[2],
-                                'brand': row[1],
-                                'model': row[3],
-                                'modelOther': row[4],
-                                'size': row[5],
-                                'wheelsize': row[6],  # diameter
-                                'wheelwidth': row[7],  # width
-                                'boltpattern': row[8],
-                                'boltpattern2': row[9],
-                                'offset': row[10],
-                                'backspace': row[11],
-                                'colorlong': row[12],  # finish
-                                'colorshort': row[13],  # short_color
-                                'color': row[14],  # primary_color
-                                'hubbore': row[15],
-                                'loadrating': row[16],
-                                'weight': row[17],
-                                'supplier': row[23],  # actual manufacturer
-                                'status': row[24],
-                                'custom': row[25],
-                            },
-                            'images': [row[20]] if row[20] else [],  # image already processed/uploaded
-                            'available_finishes': row[18],
-                            'available_bolt_patterns': row[19],
-                            'html': None,  # Not needed for retry
-                        },
-                        'map_price': row[21],
-                    })
-                else:  # tires
-                    products.append({
-                        'url_part_number': row[0],
-                        'brand': row[1],
-                        'part_number': row[2],
-                        'quantity': row[9] or 0,
-                        'extracted_data': {
-                            'klaviyo_data': {
-                                'inventoryNumber': row[2],
-                                'brand': row[1],
-                                'model': row[3],
-                                'size': row[4],
-                                'weight': row[10],
-                                'supplier': row[11],
-                            },
-                            'images': [img for img in [row[5], row[6], row[7]] if img],  # image1, image2, image3
-                            'html': None,
-                        },
-                        'map_price': row[8],
-                    })
-
-            return products
 
 
 # =============================================================================
@@ -307,7 +204,7 @@ async def extract_product_page_data(session: aiohttp.ClientSession, product_url:
         return None
 
 
-async def discover_new_products(session: aiohttp.ClientSession, db_pool, scraped_products: List[Dict], cookies: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
+async def discover_new_products(session: aiohttp.ClientSession, db_pool, scraped_products: List[Dict], cookies: List[Dict]) -> List[Dict]:
     """
     Analyze scraped products and identify which ones need to be created.
 
@@ -318,9 +215,7 @@ async def discover_new_products(session: aiohttp.ClientSession, db_pool, scraped
         cookies: Authentication cookies
 
     Returns:
-        Tuple of (discovery_queue, retry_queue)
-        - discovery_queue: New products to create
-        - retry_queue: Existing products to retry
+        List of new products to create
     """
     logger.info("")
     logger.info("=" * 80)
@@ -328,60 +223,63 @@ async def discover_new_products(session: aiohttp.ClientSession, db_pool, scraped
     logger.info("=" * 80)
 
     discovery_queue = []
-    retry_queue = []
-
-    # Get failed products for retry
-    failed_products = await get_failed_products_for_retry(db_pool)
-    logger.info(f"Found {len(failed_products)} products to retry from previous runs")
 
     # Extract all URL part numbers
     url_part_numbers = [p.get('url_part_number') for p in scraped_products if p.get('url_part_number')]
 
     if not url_part_numbers:
         logger.warning("No valid URL part numbers in scraped products")
-        return discovery_queue, retry_queue
+        return discovery_queue
 
     logger.info(f"Checking {len(url_part_numbers)} products against database (batched)...")
 
-    # BATCHED Check 1: Get all existing products from Shopify table
+    # BATCHED Check 1: Get all existing products from Shopify table (with batching to avoid memory issues)
     shopify_table_name = 'all_shopify_wheels' if MODE == 'wheels' else 'shopify_tires'
     existing_in_shopify = set()
 
-    async with db_pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            placeholders = ','.join(['%s'] * len(url_part_numbers))
-            query = f"SELECT part_number FROM {shopify_table_name} WHERE part_number IN ({placeholders})"
-            await cur.execute(query, url_part_numbers)
-            results = await cur.fetchall()
-            existing_in_shopify = {row[0] for row in results}
+    # Process in batches of 1000 to avoid range_optimizer_max_mem_size exceeded
+    batch_size = 1000
+    for i in range(0, len(url_part_numbers), batch_size):
+        batch = url_part_numbers[i:i+batch_size]
+        async with db_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                placeholders = ','.join(['%s'] * len(batch))
+                query = f"SELECT part_number FROM {shopify_table_name} WHERE part_number IN ({placeholders})"
+                await cur.execute(query, batch)
+                results = await cur.fetchall()
+                existing_in_shopify.update(row[0] for row in results)
 
     logger.info(f"  - Found {len(existing_in_shopify)} products in {shopify_table_name}")
 
-    # BATCHED Check 2: Get all existing products from shopify_products
+    # BATCHED Check 2: Get all existing products from shopify_products (with batching)
     existing_in_shopify_products = set()
 
-    async with db_pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            placeholders = ','.join(['%s'] * len(url_part_numbers))
-            query = f"SELECT url_part_number FROM shopify_products WHERE url_part_number IN ({placeholders}) AND product_type = %s"
-            await cur.execute(query, url_part_numbers + [MODE[:-1]])  # 'wheels' -> 'wheel'
-            results = await cur.fetchall()
-            existing_in_shopify_products = {row[0] for row in results}
+    for i in range(0, len(url_part_numbers), batch_size):
+        batch = url_part_numbers[i:i+batch_size]
+        async with db_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                placeholders = ','.join(['%s'] * len(batch))
+                query = f"SELECT url_part_number FROM shopify_products WHERE url_part_number IN ({placeholders}) AND product_type = %s"
+                await cur.execute(query, batch + [MODE[:-1]])  # 'wheels' -> 'wheel'
+                results = await cur.fetchall()
+                existing_in_shopify_products.update(row[0] for row in results)
 
     logger.info(f"  - Found {len(existing_in_shopify_products)} products in shopify_products")
 
-    # BATCHED Check 3: Get all products from main table with sync status
+    # BATCHED Check 3: Get all products from main table with sync status (with batching)
     main_table_name = MODE  # 'wheels' or 'tires'
     sync_statuses = {}
 
-    async with db_pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            placeholders = ','.join(['%s'] * len(url_part_numbers))
-            # url_part_number is unique for CWO products, no need for supplier filter
-            query = f"SELECT url_part_number, product_sync FROM {main_table_name} WHERE url_part_number IN ({placeholders})"
-            await cur.execute(query, url_part_numbers)
-            results = await cur.fetchall()
-            sync_statuses = {row[0]: row[1] for row in results}
+    for i in range(0, len(url_part_numbers), batch_size):
+        batch = url_part_numbers[i:i+batch_size]
+        async with db_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                placeholders = ','.join(['%s'] * len(batch))
+                # url_part_number is unique for CWO products, no need for supplier filter
+                query = f"SELECT url_part_number, product_sync FROM {main_table_name} WHERE url_part_number IN ({placeholders})"
+                await cur.execute(query, batch)
+                results = await cur.fetchall()
+                sync_statuses.update({row[0]: row[1] for row in results})
 
     logger.info(f"  - Found {len(sync_statuses)} products in {main_table_name} table")
 
@@ -408,24 +306,13 @@ async def discover_new_products(session: aiohttp.ClientSession, db_pool, scraped
         if sync_status is None:
             # New product - add to discovery queue
             discovery_queue.append(product)
-        elif sync_status in ['error', 'pending']:
-            # Failed/pending product - add to retry queue
-            retry_queue.append(product)
-        else:  # 'synced'
-            # Already successfully synced
-            logger.debug(f"Product already synced: {url_part_number}")
-            continue
+        # Ignore products with status 'error', 'pending', or 'synced' - only process truly new products
 
     logger.info(f"Discovery results:")
     logger.info(f"  - New products to create: {len(discovery_queue)}")
-    logger.info(f"  - Products to retry: {len(retry_queue)}")
-    logger.info(f"  - Failed products from DB: {len(failed_products)}")
     logger.info("=" * 80)
 
-    # Add failed products from DB to retry queue
-    retry_queue.extend(failed_products)
-
-    return discovery_queue, retry_queue
+    return discovery_queue
 
 
 async def extract_product_data_batch(session: aiohttp.ClientSession, products: List[Dict], cookies: List[Dict], stats: Optional[Dict] = None) -> List[Dict]:
