@@ -121,6 +121,55 @@ try:
     cursor.close()
     conn.close()
 
+    # Auto-sync: Populate all_shopify_wheels or shopify_tires table
+    logger.info("=" * 80)
+    logger.info(f"STARTING AUTO-SYNC FOR {scraper_type.upper()}")
+    logger.info("=" * 80)
+
+    try:
+        sync_script_dir = os.path.join(os.path.dirname(__file__), '..', 'product-creator', 'sync_scripts')
+
+        if scraper_type == 'wheels':
+            sync_script = os.path.join(sync_script_dir, 'get_non_sdw_wheels.py')
+            logger.info("Running sync script: get_non_sdw_wheels.py")
+        elif scraper_type == 'tires':
+            sync_script = os.path.join(sync_script_dir, 'get_shopify_tires.py')
+            logger.info("Running sync script: get_shopify_tires.py")
+        else:
+            logger.warning(f"Unknown scraper_type '{scraper_type}', skipping auto-sync")
+            sync_script = None
+
+        if sync_script and os.path.exists(sync_script):
+            import subprocess
+            result = subprocess.run(
+                [sys.executable, sync_script],
+                cwd=sync_script_dir,
+                capture_output=True,
+                text=True,
+                timeout=600  # 10 minute timeout
+            )
+
+            if result.returncode == 0:
+                logger.info("✅ Auto-sync completed successfully")
+                if result.stdout:
+                    logger.info(f"Sync output: {result.stdout}")
+            else:
+                logger.error(f"❌ Auto-sync failed with exit code {result.returncode}")
+                if result.stderr:
+                    logger.error(f"Sync error: {result.stderr}")
+        elif sync_script:
+            logger.error(f"Sync script not found: {sync_script}")
+
+    except Exception as sync_error:
+        logger.error(f"Failed to run auto-sync: {sync_error}")
+        import traceback
+        logger.error(traceback.format_exc())
+        # Don't fail the entire job if sync fails - scraping was successful
+
+    logger.info("=" * 80)
+    logger.info("JOB COMPLETED")
+    logger.info("=" * 80)
+
 except Exception as e:
     logger.error(f"Scraper failed: {e}")
     import traceback

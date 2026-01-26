@@ -492,18 +492,42 @@ router.get('/stats/pending', async (req, res) => {
       queueLimit: 0
     });
 
-    // Query wheels table
+    // Query wheels table - use same logic as Python worker's count_products_needing_creation()
     const [wheelsResult] = await inventoryDb.execute(
       `SELECT COUNT(*) as count
        FROM wheels
-       WHERE product_sync IN ('pending', 'error')`
+       WHERE product_sync IN ('pending', 'error')
+         AND url_part_number IS NOT NULL
+         AND url_part_number != ''
+         AND part_number IS NOT NULL
+         AND part_number != ''
+         AND NOT EXISTS (
+             SELECT 1 FROM shopify_products sp
+             WHERE sp.part_number = wheels.part_number
+         )
+         AND NOT EXISTS (
+             SELECT 1 FROM all_shopify_wheels asw
+             WHERE asw.part_number = wheels.part_number
+         )`
     );
 
-    // Query tires table
+    // Query tires table - use same logic as Python worker's count_products_needing_creation()
     const [tiresResult] = await inventoryDb.execute(
       `SELECT COUNT(*) as count
        FROM tires
-       WHERE product_sync IN ('pending', 'error')`
+       WHERE product_sync IN ('pending', 'error')
+         AND url_part_number IS NOT NULL
+         AND url_part_number != ''
+         AND part_number IS NOT NULL
+         AND part_number != ''
+         AND NOT EXISTS (
+             SELECT 1 FROM shopify_products sp
+             WHERE sp.part_number = tires.part_number
+         )
+         AND NOT EXISTS (
+             SELECT 1 FROM shopify_tires st
+             WHERE st.part_number = tires.part_number
+         )`
     );
 
     const wheelsPending = wheelsResult[0]?.count || 0;
