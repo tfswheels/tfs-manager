@@ -82,6 +82,10 @@ stats = {
     'products_created_shopify': 0,
     'failed_shopify_creations': 0,
     'images_processed': 0,
+    # ZenRows stats (for hybrid mode)
+    'zenrows_used': 0,
+    'zenrows_success': 0,
+    'zenrows_failed': 0,
 }
 
 
@@ -402,11 +406,29 @@ async def run_enhanced_scraper():
         logger.info(f"  Products Updated: {stats['products_updated']}")
         logger.info(f"  Products New: {stats['products_new']}")
         logger.info(f"  Errors: {stats['errors']}")
+
+        # Display ZenRows stats if hybrid mode was used
+        from scraper_core import zenrows_stats
+        if zenrows_stats['used'] > 0:
+            logger.info("")
+            logger.info("ZENROWS USAGE (Hybrid Mode):")
+            logger.info(f"  Times Used: {zenrows_stats['used']} (pages that failed direct scraping)")
+            logger.info(f"  Successful: {zenrows_stats['success']}")
+            logger.info(f"  Failed: {zenrows_stats['failed']}")
+            if zenrows_stats['used'] > 0:
+                accuracy = (zenrows_stats['success'] / zenrows_stats['used']) * 100
+                logger.info(f"  Accuracy: {accuracy:.1f}%")
+
         logger.info("=" * 80)
 
         # Merge db_client stats into main stats (db_client tracks actual updates)
         if hasattr(db_client, '_stats'):
             stats['products_updated'] = db_client._stats.get('products_updated', stats['products_updated'])
+
+        # Merge ZenRows stats for storage (optional)
+        stats['zenrows_used'] = zenrows_stats['used']
+        stats['zenrows_success'] = zenrows_stats['success']
+        stats['zenrows_failed'] = zenrows_stats['failed']
 
         # Return stats for use by calling script (run_scraper.py)
         return stats

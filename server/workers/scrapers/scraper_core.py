@@ -389,8 +389,18 @@ async def solve_waf_challenge(driver: Driver) -> bool:
 # PAGE FETCHING
 # =============================================================================
 
-async def fetch_page_with_zenrows(session: aiohttp.ClientSession, url: str, cookies: List[Dict], max_retries: int = 3) -> Optional[str]:
+# ZenRows usage tracking (for hybrid mode analytics)
+zenrows_stats = {
+    'used': 0,
+    'success': 0,
+    'failed': 0
+}
+
+async def fetch_page_with_zenrows(session: aiohttp.ClientSession, url: str, cookies: List[Dict], max_retries: int = 3, track_stats: bool = False) -> Optional[str]:
     """Fetch a page using ZenRows API with cookies from initial authentication."""
+    if track_stats:
+        zenrows_stats['used'] += 1
+
     for attempt in range(max_retries):
         try:
             # Format cookies for ZenRows
@@ -454,11 +464,15 @@ async def fetch_page_with_zenrows(session: aiohttp.ClientSession, url: str, cook
 
                 if is_valid:
                     logger.debug(f"Successfully fetched page via ZenRows")
+                    if track_stats:
+                        zenrows_stats['success'] += 1
                     return text
                 else:
                     if attempt < max_retries - 1:
                         await asyncio.sleep(2 * (attempt + 1))
                         continue
+                    if track_stats:
+                        zenrows_stats['failed'] += 1
                     return None
 
         except asyncio.TimeoutError:
@@ -466,12 +480,16 @@ async def fetch_page_with_zenrows(session: aiohttp.ClientSession, url: str, cook
             if attempt < max_retries - 1:
                 await asyncio.sleep(2 * (attempt + 1))
                 continue
+            if track_stats:
+                zenrows_stats['failed'] += 1
             return None
         except Exception as e:
             logger.error(f"Error fetching via ZenRows (attempt {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
                 await asyncio.sleep(2 * (attempt + 1))
                 continue
+            if track_stats:
+                zenrows_stats['failed'] += 1
             return None
 
     return None
@@ -598,7 +616,7 @@ async def fetch_page(session: aiohttp.ClientSession, url: str, cookies: List[Dic
 
         # Direct fetch failed, fallback to ZenRows
         logger.info(f"[Hybrid Mode] Direct fetch failed after {HYBRID_RETRY_COUNT} attempts, trying ZenRows: {url}")
-        return await fetch_page_with_zenrows(session, url, cookies, max_retries)
+        return await fetch_page_with_zenrows(session, url, cookies, max_retries, track_stats=True)
 
     else:
         # Fallback to legacy USE_ZENROWS for backward compatibility
