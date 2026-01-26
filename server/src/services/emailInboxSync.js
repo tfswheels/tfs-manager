@@ -1,0 +1,237 @@
+import { fetchInbox, fetchEmailDetails } from './zohoMailEnhanced.js';
+import { findOrCreateConversation, saveEmail } from './emailThreading.js';
+import db from '../config/database.js';
+
+/**
+ * Email Inbox Synchronization Service
+ *
+ * Hybrid approach: API polling + Webhooks
+ * - Polls sales@ and support@ every minute
+ * - Stores emails in database with threading
+ * - Links emails to orders when possible
+ * - Webhooks handle real-time events (opens, clicks, bounces)
+ */
+
+// Track last sync times to avoid duplicate processing
+const lastSyncTimes = {
+  sales: null,
+  support: null
+};
+
+/**
+ * Sync emails from a specific inbox
+ */
+async function syncInbox(shopId, accountEmail) {
+  try {
+    console.log(`🔄 Syncing inbox: ${accountEmail}`);
+
+    const lastSync = lastSyncTimes[accountEmail === 'sales@tfswheels.com' ? 'sales' : 'support'];
+
+    // Fetch recent emails (last 50)
+    const emails = await fetchInbox(shopId, {
+      accountEmail: accountEmail,
+      limit: 50,
+      sortBy: 'receivedTime',
+      sortOrder: 'desc'
+    });
+
+    let newCount = 0;
+    let skippedCount = 0;
+
+    for (const email of emails) {
+      try {
+        // Check if we already have this email
+        const [existing] = await db.execute(
+          'SELECT id FROM customer_emails WHERE zoho_message_id = ?',
+          [email.messageId]
+        );
+
+        if (existing.length > 0) {
+          skippedCount++;
+          continue;
+        }
+
+        // If support@ email, check if it's related to an order
+        if (accountEmail === 'support@tfswheels.com') {
+          const [orders] = await db.execute(
+            'SELECT id FROM orders WHERE customer_email = ?',
+            [email.fromAddress]
+          );
+
+          if (orders.length === 0) {
+            // Not related to any order, skip
+            console.log(`⏭️  Skipping support email from ${email.fromAddress} - no order found`);
+            skippedCount++;
+            continue;
+          }
+        }
+
+        // Fetch full email details including body
+        const fullEmail = await fetchEmailDetails(shopId, email.messageId);
+
+        // Find or create conversation thread
+        const emailData = {
+          subject: fullEmail.subject,
+          fromEmail: fullEmail.fromAddress,
+          fromName: fullEmail.sender?.name || fullEmail.fromAddress,
+          toEmail: accountEmail,
+          toName: 'TFS Wheels',
+          messageId: fullEmail.messageId,
+          inReplyTo: fullEmail.inReplyTo,
+          references: fullEmail.references,
+          direction: 'inbound'
+        };
+
+        const conversationId = await findOrCreateConversation(shopId, emailData);
+
+        // Save email to database
+        await saveEmail(shopId, conversationId, {
+          zohoMessageId: fullEmail.messageId,
+          messageId: fullEmail.messageId,
+          inReplyTo: fullEmail.inReplyTo,
+          references: fullEmail.references,
+          direction: 'inbound',
+          fromEmail: fullEmail.fromAddress,
+          fromName: fullEmail.sender?.name || fullEmail.fromAddress,
+          toEmail: accountEmail,
+          toName: 'TFS Wheels',
+          cc: fullEmail.cc,
+          subject: fullEmail.subject,
+          bodyText: fullEmail.content?.plainContent || fullEmail.content,
+          bodyHtml: fullEmail.content?.htmlContent || null,
+          receivedAt: new Date(fullEmail.receivedTime)
+        });
+
+        newCount++;
+
+      } catch (emailError) {
+        console.error(`❌ Failed to process email ${email.messageId}:`, emailError);
+        continue;
+      }
+    }
+
+    // Update last sync time
+    lastSyncTimes[accountEmail === 'sales@tfswheels.com' ? 'sales' : 'support'] = new Date();
+
+    console.log(`✅ Synced ${accountEmail}: ${newCount} new, ${skippedCount} skipped`);
+
+    return {
+      account: accountEmail,
+      new: newCount,
+      skipped: skippedCount,
+      total: emails.length
+    };
+
+  } catch (error) {
+    console.error(`❌ Failed to sync inbox ${accountEmail}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Sync all inboxes (sales@ and support@)
+ */
+export async function syncAllInboxes(shopId) {
+  try {
+    console.log('📬 Starting inbox sync...');
+
+    const results = [];
+
+    // Sync sales@
+    try {
+      const salesResult = await syncInbox(shopId, 'sales@tfswheels.com');
+      results.push(salesResult);
+    } catch (error) {
+      console.error('❌ Failed to sync sales@:', error);
+      results.push({
+        account: 'sales@tfswheels.com',
+        error: error.message
+      });
+    }
+
+    // Sync support@ (only emails linked to orders)
+    try {
+      const supportResult = await syncInbox(shopId, 'support@tfswheels.com');
+      results.push(supportResult);
+    } catch (error) {
+      console.error('❌ Failed to sync support@:', error);
+      results.push({
+        account: 'support@tfswheels.com',
+        error: error.message
+      });
+    }
+
+    const totalNew = results.reduce((sum, r) => sum + (r.new || 0), 0);
+
+    console.log(`✅ Inbox sync complete: ${totalNew} new emails`);
+
+    return {
+      success: true,
+      results: results,
+      totalNew: totalNew
+    };
+
+  } catch (error) {
+    console.error('❌ Inbox sync failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Start automatic inbox polling (every minute)
+ */
+let syncInterval = null;
+
+export function startInboxPolling(shopId) {
+  if (syncInterval) {
+    console.log('⚠️  Inbox polling already running');
+    return;
+  }
+
+  console.log('🔄 Starting inbox polling (every 1 minute)...');
+
+  // Initial sync
+  syncAllInboxes(shopId).catch(error => {
+    console.error('❌ Initial sync failed:', error);
+  });
+
+  // Poll every minute
+  syncInterval = setInterval(() => {
+    syncAllInboxes(shopId).catch(error => {
+      console.error('❌ Scheduled sync failed:', error);
+    });
+  }, 60 * 1000); // 60 seconds
+
+  console.log('✅ Inbox polling started');
+}
+
+/**
+ * Stop automatic inbox polling
+ */
+export function stopInboxPolling() {
+  if (syncInterval) {
+    clearInterval(syncInterval);
+    syncInterval = null;
+    console.log('⏹️  Inbox polling stopped');
+  }
+}
+
+/**
+ * Get sync status
+ */
+export function getSyncStatus() {
+  return {
+    polling: syncInterval !== null,
+    lastSync: {
+      sales: lastSyncTimes.sales,
+      support: lastSyncTimes.support
+    }
+  };
+}
+
+export default {
+  syncAllInboxes,
+  startInboxPolling,
+  stopInboxPolling,
+  getSyncStatus
+};

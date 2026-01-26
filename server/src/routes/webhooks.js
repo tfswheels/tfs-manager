@@ -2,6 +2,8 @@ import express from 'express';
 import crypto from 'crypto';
 import db from '../config/database.js';
 import { shopify } from '../config/shopify.js';
+import { fetchEmailDetails } from '../services/zohoMailEnhanced.js';
+import { findOrCreateConversation, saveEmail } from '../services/emailThreading.js';
 
 const router = express.Router();
 
@@ -310,6 +312,588 @@ router.post('/updated', verifyWebhook, async (req, res) => {
   } catch (error) {
     console.error('Orders updated webhook error:', error);
     res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
+/**
+ * ============================================================================
+ * EMAIL TRACKING (Open & Click Tracking)
+ * ============================================================================
+ */
+
+/**
+ * GET /track/open/:emailLogId/pixel.gif
+ * Tracking pixel for email opens
+ */
+router.get('/track/open/:emailLogId/pixel.gif', async (req, res) => {
+  try {
+    const emailLogId = parseInt(req.params.emailLogId);
+
+    // Check if email_delivery_stats record exists
+    const [existing] = await db.execute(
+      'SELECT * FROM email_delivery_stats WHERE email_log_id = ?',
+      [emailLogId]
+    );
+
+    if (existing.length === 0) {
+      // Create new stats record
+      await db.execute(
+        `INSERT INTO email_delivery_stats (
+          email_log_id,
+          opened_at,
+          open_count,
+          last_opened_at,
+          user_agent,
+          ip_address
+        ) VALUES (?, NOW(), 1, NOW(), ?, ?)`,
+        [
+          emailLogId,
+          req.headers['user-agent'] || null,
+          req.ip || req.headers['x-forwarded-for'] || null
+        ]
+      );
+
+      console.log(`📧 Email #${emailLogId} opened (first time)`);
+    } else {
+      // Increment open count
+      await db.execute(
+        `UPDATE email_delivery_stats
+         SET open_count = open_count + 1,
+             last_opened_at = NOW(),
+             user_agent = ?,
+             ip_address = ?
+         WHERE email_log_id = ?`,
+        [
+          req.headers['user-agent'] || existing[0].user_agent,
+          req.ip || req.headers['x-forwarded-for'] || existing[0].ip_address,
+          emailLogId
+        ]
+      );
+
+      console.log(`📧 Email #${emailLogId} opened again (count: ${existing[0].open_count + 1})`);
+    }
+
+    // Update email log status
+    await db.execute(
+      `UPDATE email_logs
+       SET status = 'delivered'
+       WHERE id = ? AND status = 'sent'`,
+      [emailLogId]
+    );
+
+    // Return 1x1 transparent GIF
+    const transparentGif = Buffer.from(
+      'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+      'base64'
+    );
+
+    res.set('Content-Type', 'image/gif');
+    res.set('Content-Length', transparentGif.length);
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.send(transparentGif);
+
+  } catch (error) {
+    console.error('❌ Open tracking failed:', error);
+
+    // Still return the pixel even on error
+    const transparentGif = Buffer.from(
+      'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+      'base64'
+    );
+    res.set('Content-Type', 'image/gif');
+    res.send(transparentGif);
+  }
+});
+
+/**
+ * GET /track/click/:emailLogId
+ * Click tracking and redirect
+ */
+router.get('/track/click/:emailLogId', async (req, res) => {
+  try {
+    const emailLogId = parseInt(req.params.emailLogId);
+    const targetUrl = req.query.url;
+
+    if (!targetUrl) {
+      return res.status(400).send('Missing target URL');
+    }
+
+    // Check if email_delivery_stats record exists
+    const [existing] = await db.execute(
+      'SELECT * FROM email_delivery_stats WHERE email_log_id = ?',
+      [emailLogId]
+    );
+
+    if (existing.length === 0) {
+      // Create new stats record with click
+      await db.execute(
+        `INSERT INTO email_delivery_stats (
+          email_log_id,
+          clicked_at,
+          click_count,
+          last_clicked_at,
+          last_clicked_url,
+          user_agent,
+          ip_address
+        ) VALUES (?, NOW(), 1, NOW(), ?, ?, ?)`,
+        [
+          emailLogId,
+          targetUrl,
+          req.headers['user-agent'] || null,
+          req.ip || req.headers['x-forwarded-for'] || null
+        ]
+      );
+
+      console.log(`🖱️  Email #${emailLogId} link clicked (first time): ${targetUrl}`);
+    } else {
+      // Update click stats
+      await db.execute(
+        `UPDATE email_delivery_stats
+         SET clicked_at = COALESCE(clicked_at, NOW()),
+             click_count = click_count + 1,
+             last_clicked_at = NOW(),
+             last_clicked_url = ?,
+             user_agent = ?,
+             ip_address = ?
+         WHERE email_log_id = ?`,
+        [
+          targetUrl,
+          req.headers['user-agent'] || existing[0].user_agent,
+          req.ip || req.headers['x-forwarded-for'] || existing[0].ip_address,
+          emailLogId
+        ]
+      );
+
+      console.log(`🖱️  Email #${emailLogId} link clicked again (count: ${existing[0].click_count + 1})`);
+    }
+
+    // Redirect to target URL
+    res.redirect(targetUrl);
+
+  } catch (error) {
+    console.error('❌ Click tracking failed:', error);
+
+    // Still redirect even on error
+    const targetUrl = req.query.url;
+    if (targetUrl) {
+      res.redirect(targetUrl);
+    } else {
+      res.status(400).send('Missing target URL');
+    }
+  }
+});
+
+/**
+ * ============================================================================
+ * ZOHO MAIL WEBHOOKS
+ * ============================================================================
+ */
+
+/**
+ * POST /zoho/email-received
+ * Zoho webhook for new incoming emails
+ *
+ * Note: This is supplementary to polling - provides real-time notifications
+ */
+router.post('/zoho/email-received', async (req, res) => {
+  try {
+    const { messageId, accountEmail, fromAddress, subject } = req.body;
+
+    console.log(`📨 Webhook: New email received - ${messageId}`);
+
+    // Log webhook
+    await db.execute(
+      `INSERT INTO zoho_webhook_logs (
+        event_type,
+        payload,
+        processed_at
+      ) VALUES ('email.received', ?, NOW())`,
+      [JSON.stringify(req.body)]
+    );
+
+    // Check if we already processed this email
+    const [existing] = await db.execute(
+      'SELECT id FROM customer_emails WHERE zoho_message_id = ?',
+      [messageId]
+    );
+
+    if (existing.length > 0) {
+      console.log(`⏭️  Email ${messageId} already processed, skipping`);
+      return res.json({ success: true, message: 'Already processed' });
+    }
+
+    // Determine shop ID (default to 1 for now)
+    const shopId = 1;
+
+    // If support@ email, check if it's related to an order
+    if (accountEmail === 'support@tfswheels.com') {
+      const [orders] = await db.execute(
+        'SELECT id FROM orders WHERE customer_email = ?',
+        [fromAddress]
+      );
+
+      if (orders.length === 0) {
+        console.log(`⏭️  Skipping support email from ${fromAddress} - no order found`);
+        return res.json({ success: true, message: 'Not order-related' });
+      }
+    }
+
+    // Fetch full email details from Zoho
+    const fullEmail = await fetchEmailDetails(shopId, messageId);
+
+    // Find or create conversation thread
+    const emailData = {
+      subject: fullEmail.subject,
+      fromEmail: fullEmail.fromAddress,
+      fromName: fullEmail.sender?.name || fullEmail.fromAddress,
+      toEmail: accountEmail,
+      toName: 'TFS Wheels',
+      messageId: fullEmail.messageId,
+      inReplyTo: fullEmail.inReplyTo,
+      references: fullEmail.references,
+      direction: 'inbound'
+    };
+
+    const conversationId = await findOrCreateConversation(shopId, emailData);
+
+    // Save email to database
+    await saveEmail(shopId, conversationId, {
+      zohoMessageId: fullEmail.messageId,
+      messageId: fullEmail.messageId,
+      inReplyTo: fullEmail.inReplyTo,
+      references: fullEmail.references,
+      direction: 'inbound',
+      fromEmail: fullEmail.fromAddress,
+      fromName: fullEmail.sender?.name || fullEmail.fromAddress,
+      toEmail: accountEmail,
+      toName: 'TFS Wheels',
+      cc: fullEmail.cc,
+      subject: fullEmail.subject,
+      bodyText: fullEmail.content?.plainContent || fullEmail.content,
+      bodyHtml: fullEmail.content?.htmlContent || null,
+      receivedAt: new Date(fullEmail.receivedTime)
+    });
+
+    console.log(`✅ Webhook: Email ${messageId} processed successfully`);
+
+    res.json({
+      success: true,
+      message: 'Email processed',
+      conversationId: conversationId
+    });
+
+  } catch (error) {
+    console.error('❌ Webhook email processing failed:', error);
+
+    // Log failed webhook
+    await db.execute(
+      `INSERT INTO zoho_webhook_logs (
+        event_type,
+        payload,
+        error_message,
+        processed_at
+      ) VALUES ('email.received', ?, ?, NOW())`,
+      [JSON.stringify(req.body), error.message]
+    );
+
+    // Return 200 even on error to prevent Zoho from retrying
+    res.json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /zoho/bounce
+ * Zoho webhook for email bounces
+ */
+router.post('/zoho/bounce', async (req, res) => {
+  try {
+    const {
+      messageId,
+      toAddress,
+      bounceType,
+      bounceReason,
+      timestamp
+    } = req.body;
+
+    console.log(`⚠️  Webhook: Email bounced - ${messageId} (${bounceType})`);
+
+    // Log webhook
+    await db.execute(
+      `INSERT INTO zoho_webhook_logs (
+        event_type,
+        payload,
+        processed_at
+      ) VALUES ('email.bounced', ?, NOW())`,
+      [JSON.stringify(req.body)]
+    );
+
+    // Find email log by message ID
+    const [logs] = await db.execute(
+      'SELECT id FROM email_logs WHERE zoho_message_id = ?',
+      [messageId]
+    );
+
+    if (logs.length === 0) {
+      console.log(`⚠️  Email log not found for message ${messageId}`);
+      return res.json({ success: true, message: 'Email log not found' });
+    }
+
+    const emailLogId = logs[0].id;
+
+    // Update email log status
+    await db.execute(
+      `UPDATE email_logs
+       SET status = 'bounced',
+           error_message = ?
+       WHERE id = ?`,
+      [bounceReason, emailLogId]
+    );
+
+    // Update or create delivery stats
+    const [existing] = await db.execute(
+      'SELECT * FROM email_delivery_stats WHERE email_log_id = ?',
+      [emailLogId]
+    );
+
+    if (existing.length === 0) {
+      await db.execute(
+        `INSERT INTO email_delivery_stats (
+          email_log_id,
+          bounced_at,
+          bounce_type,
+          bounce_reason
+        ) VALUES (?, ?, ?, ?)`,
+        [emailLogId, timestamp || new Date(), bounceType, bounceReason]
+      );
+    } else {
+      await db.execute(
+        `UPDATE email_delivery_stats
+         SET bounced_at = ?,
+             bounce_type = ?,
+             bounce_reason = ?
+         WHERE email_log_id = ?`,
+        [timestamp || new Date(), bounceType, bounceReason, emailLogId]
+      );
+    }
+
+    console.log(`✅ Webhook: Bounce recorded for email #${emailLogId}`);
+
+    res.json({
+      success: true,
+      message: 'Bounce recorded'
+    });
+
+  } catch (error) {
+    console.error('❌ Webhook bounce processing failed:', error);
+
+    // Log failed webhook
+    await db.execute(
+      `INSERT INTO zoho_webhook_logs (
+        event_type,
+        payload,
+        error_message,
+        processed_at
+      ) VALUES ('email.bounced', ?, ?, NOW())`,
+      [JSON.stringify(req.body), error.message]
+    );
+
+    res.json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /zoho/spam
+ * Zoho webhook for spam reports
+ */
+router.post('/zoho/spam', async (req, res) => {
+  try {
+    const {
+      messageId,
+      toAddress,
+      timestamp
+    } = req.body;
+
+    console.log(`🚫 Webhook: Spam reported - ${messageId}`);
+
+    // Log webhook
+    await db.execute(
+      `INSERT INTO zoho_webhook_logs (
+        event_type,
+        payload,
+        processed_at
+      ) VALUES ('email.spam', ?, NOW())`,
+      [JSON.stringify(req.body)]
+    );
+
+    // Find email log by message ID
+    const [logs] = await db.execute(
+      'SELECT id FROM email_logs WHERE zoho_message_id = ?',
+      [messageId]
+    );
+
+    if (logs.length === 0) {
+      console.log(`⚠️  Email log not found for message ${messageId}`);
+      return res.json({ success: true, message: 'Email log not found' });
+    }
+
+    const emailLogId = logs[0].id;
+
+    // Update email log status
+    await db.execute(
+      `UPDATE email_logs
+       SET status = 'spam_reported'
+       WHERE id = ?`,
+      [emailLogId]
+    );
+
+    // Update or create delivery stats
+    const [existing] = await db.execute(
+      'SELECT * FROM email_delivery_stats WHERE email_log_id = ?',
+      [emailLogId]
+    );
+
+    if (existing.length === 0) {
+      await db.execute(
+        `INSERT INTO email_delivery_stats (
+          email_log_id,
+          spam_reported_at
+        ) VALUES (?, ?)`,
+        [emailLogId, timestamp || new Date()]
+      );
+    } else {
+      await db.execute(
+        `UPDATE email_delivery_stats
+         SET spam_reported_at = ?
+         WHERE email_log_id = ?`,
+        [timestamp || new Date(), emailLogId]
+      );
+    }
+
+    console.log(`✅ Webhook: Spam report recorded for email #${emailLogId}`);
+
+    res.json({
+      success: true,
+      message: 'Spam report recorded'
+    });
+
+  } catch (error) {
+    console.error('❌ Webhook spam processing failed:', error);
+
+    // Log failed webhook
+    await db.execute(
+      `INSERT INTO zoho_webhook_logs (
+        event_type,
+        payload,
+        error_message,
+        processed_at
+      ) VALUES ('email.spam', ?, ?, NOW())`,
+      [JSON.stringify(req.body), error.message]
+    );
+
+    res.json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /zoho/delivery
+ * Zoho webhook for successful delivery confirmation
+ */
+router.post('/zoho/delivery', async (req, res) => {
+  try {
+    const {
+      messageId,
+      toAddress,
+      timestamp
+    } = req.body;
+
+    console.log(`✅ Webhook: Email delivered - ${messageId}`);
+
+    // Log webhook
+    await db.execute(
+      `INSERT INTO zoho_webhook_logs (
+        event_type,
+        payload,
+        processed_at
+      ) VALUES ('email.delivered', ?, NOW())`,
+      [JSON.stringify(req.body)]
+    );
+
+    // Find email log by message ID
+    const [logs] = await db.execute(
+      'SELECT id FROM email_logs WHERE zoho_message_id = ?',
+      [messageId]
+    );
+
+    if (logs.length === 0) {
+      console.log(`⚠️  Email log not found for message ${messageId}`);
+      return res.json({ success: true, message: 'Email log not found' });
+    }
+
+    const emailLogId = logs[0].id;
+
+    // Update email log status (only if not already opened)
+    await db.execute(
+      `UPDATE email_logs
+       SET status = 'delivered'
+       WHERE id = ? AND status = 'sent'`,
+      [emailLogId]
+    );
+
+    console.log(`✅ Webhook: Delivery confirmed for email #${emailLogId}`);
+
+    res.json({
+      success: true,
+      message: 'Delivery confirmed'
+    });
+
+  } catch (error) {
+    console.error('❌ Webhook delivery processing failed:', error);
+
+    // Log failed webhook
+    await db.execute(
+      `INSERT INTO zoho_webhook_logs (
+        event_type,
+        payload,
+        error_message,
+        processed_at
+      ) VALUES ('email.delivered', ?, ?, NOW())`,
+      [JSON.stringify(req.body), error.message]
+    );
+
+    res.json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * ============================================================================
+ * WEBHOOK VERIFICATION (for Zoho webhook setup)
+ * ============================================================================
+ */
+
+/**
+ * GET /zoho/verify
+ * Verification endpoint for Zoho webhook setup
+ */
+router.get('/zoho/verify', (req, res) => {
+  const challenge = req.query.challenge;
+
+  if (challenge) {
+    console.log('✅ Zoho webhook verification successful');
+    res.send(challenge);
+  } else {
+    res.status(400).send('Missing challenge parameter');
   }
 });
 

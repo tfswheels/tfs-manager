@@ -15,11 +15,14 @@ import productCreationRoutes from './routes/product-creation.js';
 import emailRoutes from './routes/email.js';
 import emailTemplatesRoutes from './routes/email-templates.js';
 import customerEmailsRoutes from './routes/customer-emails.js';
+import emailsRoutes from './routes/emails.js';  // New comprehensive email routes
+import brandVoiceRoutes from './routes/brandVoice.js';  // Brand voice management
 import brandsRoutes from './routes/brands.js';
 import migrationsRoutes from './routes/migrations.js';
 import { applyAllSecurityHeaders } from './middleware/securityHeaders.js';
 import './config/database.js';
 import { jobScheduler } from './services/jobScheduler.js';
+import { startInboxPolling, stopInboxPolling } from './services/emailInboxSync.js';
 
 dotenv.config();
 
@@ -43,8 +46,9 @@ app.use(cors({
 // Must be applied BEFORE express.json() middleware
 app.use('/webhooks/orders', express.raw({ type: 'application/json' }));
 app.use('/webhooks/gdpr', express.raw({ type: 'application/json' }));
-// Zoho webhooks can use JSON parsing
+// Zoho webhooks and email tracking can use JSON parsing
 app.use('/webhooks/zoho', express.json());
+app.use('/webhooks/track', express.json());
 
 // JSON parsing for all other routes (webhooks already handled above)
 app.use(express.json());
@@ -53,7 +57,8 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 app.use('/webhooks/orders', webhookRoutes);  // Shopify order webhooks
 app.use('/webhooks/gdpr', gdprWebhookRoutes);  // Shopify GDPR webhooks
-app.use('/webhooks/zoho', zohoWebhookRoutes);  // Zoho Mail webhooks
+app.use('/webhooks/zoho', zohoWebhookRoutes);  // Zoho Mail webhooks (legacy)
+app.use('/webhooks', webhookRoutes);  // Email tracking & Zoho webhooks (new)
 app.use('/auth', authRoutes);
 app.use('/auth/zoho', zohoAuthRoutes);  // Zoho OAuth flow
 app.use('/api/admin', adminRoutes);
@@ -62,9 +67,11 @@ app.use('/api/products', productsRoutes);
 app.use('/api/scraping', scrapingRoutes);
 app.use('/api/scheduled-scraping', scheduledScrapingRoutes);
 app.use('/api/product-creation', productCreationRoutes);
-app.use('/api/email', emailRoutes);
+app.use('/api/email', emailRoutes);  // Legacy email routes
+app.use('/api/emails', emailsRoutes);  // New comprehensive email routes
 app.use('/api/email-templates', emailTemplatesRoutes);
 app.use('/api/customer-emails', customerEmailsRoutes);
+app.use('/api/brand-voice', brandVoiceRoutes);  // Brand voice management
 app.use('/api/brands', brandsRoutes);
 app.use('/api/migrations', migrationsRoutes);
 
@@ -99,10 +106,18 @@ app.use((req, res, next) => {
       'POST /webhooks/orders/create',
       'POST /webhooks/orders/updated',
       'POST /webhooks/zoho/email-received',
+      'GET /webhooks/track/open/:emailLogId/pixel.gif',
+      'GET /webhooks/track/click/:emailLogId',
       'GET /api/admin/*',
       'GET /api/orders',
+      'GET /api/emails/inbox',
+      'GET /api/emails/threads/:id',
+      'POST /api/emails/send',
+      'POST /api/emails/ai/generate',
       'GET /api/email-templates',
-      'GET /api/customer-emails'
+      'GET /api/customer-emails',
+      'GET /api/brand-voice',
+      'POST /api/brand-voice'
     ]
   });
 });
@@ -135,17 +150,29 @@ app.listen(PORT, '0.0.0.0', () => {
 
   // Start job scheduler
   jobScheduler.start();
+
+  // Start email inbox polling (every 1 minute)
+  // Shop ID: 1 (default shop)
+  try {
+    startInboxPolling(1);
+    console.log('📬 Email inbox polling started (every 1 minute)');
+  } catch (error) {
+    console.error('⚠️  Failed to start inbox polling:', error.message);
+    console.error('   Email sync will not be available. Check Zoho credentials.');
+  }
 });
 
 // Handle graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully');
   jobScheduler.stop();
+  stopInboxPolling();
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
   console.log('SIGINT received, shutting down gracefully');
   jobScheduler.stop();
+  stopInboxPolling();
   process.exit(0);
 });
