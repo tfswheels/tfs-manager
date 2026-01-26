@@ -293,7 +293,8 @@ export async function fetchInbox(shopId, options = {}) {
       limit: limit,
       start: start,
       sortBy: sortBy,
-      sortOrder: sortOrder
+      sortOrder: sortOrder,
+      folderId: folderId  // Pass folder ID as param instead of in URL
     };
 
     if (searchKey) {
@@ -302,7 +303,7 @@ export async function fetchInbox(shopId, options = {}) {
 
     // Fetch messages from Zoho using the actual account ID
     const response = await axios.get(
-      `${ZOHO_API_BASE}/accounts/${accountId}/folders/${folderId}/messages`,
+      `${ZOHO_API_BASE}/accounts/${accountId}/messages/view`,
       {
         headers: {
           'Authorization': `Zoho-oauthtoken ${accessToken}`
