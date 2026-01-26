@@ -203,8 +203,8 @@ export async function saveEmail(shopId, conversationId, emailData) {
         conversationId,
         zohoMessageId,
         messageId,
-        inReplyTo,
-        references,
+        inReplyTo || null,  // Convert undefined to null
+        references || null,  // Convert undefined to null
         direction,
         fromEmail,
         fromName,
@@ -214,12 +214,12 @@ export async function saveEmail(shopId, conversationId, emailData) {
         bcc ? JSON.stringify(Array.isArray(bcc) ? bcc : [bcc]) : null,
         subject,
         bodyText,
-        bodyHtml,
+        bodyHtml || null,  // Convert undefined to null
         direction === 'inbound' ? 'unread' : 'sent',
         isAiGenerated,
         aiConfidenceScore,
-        receivedAt,
-        sentAt
+        receivedAt || null,  // Convert undefined to null
+        sentAt || null  // Convert undefined to null
       ]
     );
 
