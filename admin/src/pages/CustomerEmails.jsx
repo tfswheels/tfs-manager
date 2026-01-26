@@ -4,8 +4,6 @@ import {
   Card,
   DataTable,
   Button,
-  Modal,
-  TextField,
   Badge,
   Banner,
   Spinner,
@@ -18,11 +16,13 @@ import {
   Divider
 } from '@shopify/polaris';
 import axios from 'axios';
+import EmailThreadView from '../components/EmailThreadView';
+import EmailComposer from '../components/EmailComposer';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://tfs-manager-server-production.up.railway.app';
 
 export default function CustomerEmails() {
-  const [emails, setEmails] = useState([]);
+  const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedTab, setSelectedTab] = useState(0);
@@ -31,15 +31,12 @@ export default function CustomerEmails() {
   const [hasMore, setHasMore] = useState(false);
   const [stats, setStats] = useState({ total: 0, unread: 0, read: 0, replied: 0, archived: 0 });
 
-  // Email detail modal
-  const [selectedEmail, setSelectedEmail] = useState(null);
-  const [emailDetailOpen, setEmailDetailOpen] = useState(false);
+  // Thread view modal
+  const [selectedConversationId, setSelectedConversationId] = useState(null);
+  const [threadViewOpen, setThreadViewOpen] = useState(false);
 
-  // Reply modal
-  const [replyModalOpen, setReplyModalOpen] = useState(false);
-  const [replySubject, setReplySubject] = useState('');
-  const [replyBody, setReplyBody] = useState('');
-  const [sendingReply, setSendingReply] = useState(false);
+  // New email composer
+  const [composerOpen, setComposerOpen] = useState(false);
 
   const tabs = [
     { id: 'all', content: 'All', status: '' },
@@ -74,22 +71,23 @@ export default function CustomerEmails() {
       setError(null);
 
       const status = tabs[selectedTab].status;
+      const offset = (page - 1) * 50;
 
-      const response = await axios.get(`${API_URL}/api/customer-emails`, {
+      const response = await axios.get(`${API_URL}/api/emails/conversations`, {
         params: {
           shop: '2f3d7a-2.myshopify.com',
           limit: 50,
-          page: page,
-          status: status
+          offset: offset,
+          unreadOnly: status === 'unread'
         }
       });
 
-      setEmails(response.data.emails || []);
+      setConversations(response.data.conversations || []);
       setTotal(response.data.total || 0);
-      setHasMore(response.data.hasMore || false);
+      setHasMore((page * 50) < response.data.total);
     } catch (err) {
-      console.error('Error fetching emails:', err);
-      setError(err.response?.data?.message || 'Failed to load emails');
+      console.error('Error fetching conversations:', err);
+      setError(err.response?.data?.error || 'Failed to load conversations');
     } finally {
       setLoading(false);
     }
@@ -100,92 +98,16 @@ export default function CustomerEmails() {
     setPage(1);
   };
 
-  const handleEmailClick = async (email) => {
-    try {
-      // Fetch full email details
-      const response = await axios.get(`${API_URL}/api/customer-emails/${email.id}`, {
-        params: {
-          shop: '2f3d7a-2.myshopify.com'
-        }
-      });
-
-      setSelectedEmail(response.data.email);
-      setEmailDetailOpen(true);
-
-      // Refresh list and stats after marking as read
-      fetchEmails();
-      fetchStats();
-    } catch (err) {
-      console.error('Error fetching email details:', err);
-      alert('Failed to load email details');
-    }
+  const handleConversationClick = (conversationId) => {
+    setSelectedConversationId(conversationId);
+    setThreadViewOpen(true);
   };
 
-  const openReplyModal = () => {
-    if (!selectedEmail) return;
-
-    const subject = selectedEmail.subject.startsWith('Re:')
-      ? selectedEmail.subject
-      : `Re: ${selectedEmail.subject}`;
-
-    setReplySubject(subject);
-    setReplyBody('');
-    setReplyModalOpen(true);
-  };
-
-  const handleSendReply = async () => {
-    if (!replySubject || !replyBody) {
-      alert('Please enter both subject and body');
-      return;
-    }
-
-    try {
-      setSendingReply(true);
-
-      await axios.post(
-        `${API_URL}/api/customer-emails/${selectedEmail.id}/reply`,
-        {
-          subject: replySubject,
-          body: replyBody
-        },
-        {
-          params: {
-            shop: '2f3d7a-2.myshopify.com'
-          }
-        }
-      );
-
-      alert('Reply sent successfully!');
-      setReplyModalOpen(false);
-      setEmailDetailOpen(false);
-      fetchEmails();
-      fetchStats();
-    } catch (err) {
-      console.error('Error sending reply:', err);
-      alert(err.response?.data?.message || 'Failed to send reply');
-    } finally {
-      setSendingReply(false);
-    }
-  };
-
-  const handleUpdateStatus = async (emailId, newStatus) => {
-    try {
-      await axios.patch(
-        `${API_URL}/api/customer-emails/${emailId}/status`,
-        { status: newStatus },
-        {
-          params: {
-            shop: '2f3d7a-2.myshopify.com'
-          }
-        }
-      );
-
-      fetchEmails();
-      fetchStats();
-    } catch (err) {
-      console.error('Error updating status:', err);
-      alert('Failed to update status');
-    }
+  const handleThreadViewClose = () => {
+    setThreadViewOpen(false);
+    setSelectedConversationId(null);
+    fetchEmails();
+    fetchStats();
   };
 
   const formatDate = (date) => {
@@ -210,43 +132,50 @@ export default function CustomerEmails() {
     return <Badge tone={config.tone}>{config.label}</Badge>;
   };
 
-  const rows = emails.map((email) => [
-    <Button plain onClick={() => handleEmailClick(email)}>
-      <Text variant="bodyMd" as="span" fontWeight={email.status === 'unread' ? 'semibold' : 'regular'}>
-        {email.from_name || email.from_email}
+  const rows = conversations.map((conv) => [
+    <Button plain onClick={() => handleConversationClick(conv.id)}>
+      <Text variant="bodyMd" as="span" fontWeight={conv.unread_count > 0 ? 'semibold' : 'regular'}>
+        {conv.customer_name || conv.customer_email}
       </Text>
     </Button>,
-    <Text variant="bodyMd" as="span" fontWeight={email.status === 'unread' ? 'semibold' : 'regular'}>
-      {email.subject || '(No Subject)'}
-    </Text>,
-    email.order_number ? (
+    <Button plain onClick={() => handleConversationClick(conv.id)}>
+      <Text variant="bodyMd" as="span" fontWeight={conv.unread_count > 0 ? 'semibold' : 'regular'}>
+        {conv.subject || '(No Subject)'}
+      </Text>
+    </Button>,
+    <InlineStack gap="100">
+      <Badge tone="info">{conv.message_count || 0}</Badge>
+      {conv.unread_count > 0 && (
+        <Badge tone="attention">{conv.unread_count} new</Badge>
+      )}
+    </InlineStack>,
+    conv.order_id ? (
       <Button plain size="slim">
-        {email.order_number}
+        {conv.order_id}
       </Button>
     ) : '-',
-    getStatusBadge(email.status),
-    formatDate(email.received_at)
+    formatDate(conv.last_message_at)
   ]);
 
-  const headings = ['From', 'Subject', 'Order', 'Status', 'Received'];
+  const headings = ['From', 'Subject', 'Messages', 'Order', 'Last Activity'];
 
-  if (loading && emails.length === 0) {
+  if (loading && conversations.length === 0) {
     return (
       <Page title="Customer Emails">
         <div style={{ display: 'flex', justifyContent: 'center', padding: '100px 0' }}>
           <Spinner size="large" />
           <Text variant="bodyMd" as="p" tone="subdued" style={{ marginLeft: '12px' }}>
-            Loading emails...
+            Loading conversations...
           </Text>
         </div>
       </Page>
     );
   }
 
-  if (error && emails.length === 0) {
+  if (error && conversations.length === 0) {
     return (
       <Page title="Customer Emails">
-        <Banner tone="critical" title="Error loading emails">
+        <Banner tone="critical" title="Error loading conversations">
           <p>{error}</p>
           <div style={{ marginTop: '16px' }}>
             <Button onClick={() => fetchEmails()}>Retry</Button>
@@ -259,7 +188,11 @@ export default function CustomerEmails() {
   return (
     <Page
       title="Customer Emails"
-      subtitle={`${total} total email${total !== 1 ? 's' : ''}`}
+      subtitle={`${total} total conversation${total !== 1 ? 's' : ''}`}
+      primaryAction={{
+        content: 'New Email',
+        onAction: () => setComposerOpen(true)
+      }}
       secondaryActions={[
         {
           content: 'Refresh',
@@ -305,13 +238,13 @@ export default function CustomerEmails() {
             ...tab,
             content: `${tab.content}${tab.status === 'unread' ? ` (${stats.unread})` : ''}`
           }))} selected={selectedTab} onSelect={handleTabChange}>
-            {emails.length === 0 && !loading ? (
+            {conversations.length === 0 && !loading ? (
               <Box padding="800">
                 <EmptyState
-                  heading="No emails found"
+                  heading="No conversations found"
                   image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
                 >
-                  <p>Customer emails will appear here when received.</p>
+                  <p>Customer email conversations will appear here when received.</p>
                 </EmptyState>
               </Box>
             ) : (
@@ -329,7 +262,7 @@ export default function CustomerEmails() {
                 <Box padding="400">
                   <InlineStack align="space-between" blockAlign="center">
                     <Text variant="bodyMd" as="p" tone="subdued">
-                      Showing {emails.length} of {total} email{total !== 1 ? 's' : ''}
+                      Showing {conversations.length} of {total} conversation{total !== 1 ? 's' : ''}
                     </Text>
                     <InlineStack gap="200">
                       <Button
@@ -356,149 +289,23 @@ export default function CustomerEmails() {
         </Card>
       </BlockStack>
 
-      {/* Email Detail Modal */}
-      {selectedEmail && (
-        <Modal
-          open={emailDetailOpen}
-          onClose={() => setEmailDetailOpen(false)}
-          title={`Email from ${selectedEmail.from_name || selectedEmail.from_email}`}
-          primaryAction={{
-            content: 'Reply',
-            onAction: openReplyModal
-          }}
-          secondaryActions={[
-            {
-              content: 'Mark as Unread',
-              onAction: () => handleUpdateStatus(selectedEmail.id, 'unread')
-            },
-            {
-              content: 'Archive',
-              onAction: () => {
-                handleUpdateStatus(selectedEmail.id, 'archived');
-                setEmailDetailOpen(false);
-              }
-            },
-            {
-              content: 'Close',
-              onAction: () => setEmailDetailOpen(false)
-            }
-          ]}
-          large
-        >
-          <Modal.Section>
-            <BlockStack gap="400">
-              <InlineStack align="space-between">
-                <div>
-                  <Text variant="headingMd" as="h3">
-                    {selectedEmail.subject || '(No Subject)'}
-                  </Text>
-                  <Text variant="bodyMd" as="p" tone="subdued">
-                    From: {selectedEmail.from_email}
-                  </Text>
-                  <Text variant="bodyMd" as="p" tone="subdued">
-                    Received: {formatDate(selectedEmail.received_at)}
-                  </Text>
-                </div>
-                <div>
-                  {getStatusBadge(selectedEmail.status)}
-                </div>
-              </InlineStack>
+      {/* Thread View Modal */}
+      <EmailThreadView
+        conversationId={selectedConversationId}
+        open={threadViewOpen}
+        onClose={handleThreadViewClose}
+      />
 
-              {selectedEmail.order_number && (
-                <Card>
-                  <Box padding="400">
-                    <BlockStack gap="200">
-                      <Text variant="headingMd" as="h4">Associated Order</Text>
-                      <InlineStack gap="400">
-                        <div>
-                          <Text variant="bodyMd" as="p">
-                            <strong>Order #:</strong> {selectedEmail.order_number}
-                          </Text>
-                          <Text variant="bodyMd" as="p">
-                            <strong>Customer:</strong> {selectedEmail.customer_name}
-                          </Text>
-                        </div>
-                        {(selectedEmail.vehicle_year || selectedEmail.vehicle_make) && (
-                          <div>
-                            <Text variant="bodyMd" as="p">
-                              <strong>Vehicle:</strong> {[
-                                selectedEmail.vehicle_year,
-                                selectedEmail.vehicle_make,
-                                selectedEmail.vehicle_model,
-                                selectedEmail.vehicle_trim
-                              ].filter(Boolean).join(' ')}
-                            </Text>
-                          </div>
-                        )}
-                      </InlineStack>
-                    </BlockStack>
-                  </Box>
-                </Card>
-              )}
-
-              <Divider />
-
-              <div style={{
-                padding: '16px',
-                background: '#f6f6f7',
-                borderRadius: '8px',
-                whiteSpace: 'pre-wrap',
-                fontFamily: 'monospace',
-                fontSize: '13px'
-              }}>
-                {selectedEmail.body_text || '(No content)'}
-              </div>
-            </BlockStack>
-          </Modal.Section>
-        </Modal>
-      )}
-
-      {/* Reply Modal */}
-      <Modal
-        open={replyModalOpen}
-        onClose={() => setReplyModalOpen(false)}
-        title="Reply to Email"
-        primaryAction={{
-          content: 'Send Reply',
-          onAction: handleSendReply,
-          loading: sendingReply
+      {/* New Email Composer */}
+      <EmailComposer
+        open={composerOpen}
+        onClose={() => setComposerOpen(false)}
+        onSent={() => {
+          setComposerOpen(false);
+          fetchEmails();
+          fetchStats();
         }}
-        secondaryActions={[
-          {
-            content: 'Cancel',
-            onAction: () => setReplyModalOpen(false)
-          }
-        ]}
-        large
-      >
-        <Modal.Section>
-          <BlockStack gap="400">
-            <TextField
-              label="Subject"
-              value={replySubject}
-              onChange={setReplySubject}
-              autoComplete="off"
-            />
-
-            <TextField
-              label="Message"
-              value={replyBody}
-              onChange={setReplyBody}
-              multiline={10}
-              autoComplete="off"
-              placeholder="Type your reply here..."
-            />
-
-            {selectedEmail && (
-              <div style={{ padding: '12px', background: '#f6f6f7', borderRadius: '8px' }}>
-                <Text variant="bodyMd" as="p" tone="subdued">
-                  Replying to: {selectedEmail.from_email}
-                </Text>
-              </div>
-            )}
-          </BlockStack>
-        </Modal.Section>
-      </Modal>
+      />
     </Page>
   );
 }
