@@ -453,6 +453,7 @@ export function validateAPIKey() {
     throw new Error('ANTHROPIC_API_KEY environment variable is not set. Please add it to Railway.');
   }
 
+  // Accept both old format (sk-ant-) and new format (sk-ant-api03-)
   if (!process.env.ANTHROPIC_API_KEY.startsWith('sk-ant-')) {
     throw new Error('ANTHROPIC_API_KEY appears to be invalid. It should start with "sk-ant-"');
   }
