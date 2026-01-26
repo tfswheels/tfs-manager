@@ -404,7 +404,10 @@ router.get('/inbox', async (req, res) => {
         c.*,
         o.order_number,
         o.customer_name as order_customer_name,
-        o.vehicle_full,
+        o.vehicle_year,
+        o.vehicle_make,
+        o.vehicle_model,
+        o.vehicle_trim,
         (SELECT COUNT(*) FROM customer_emails WHERE conversation_id = c.id AND status = 'unread') as unread_count
       FROM email_conversations c
       LEFT JOIN orders o ON c.order_id = o.id
@@ -463,6 +466,211 @@ router.get('/inbox', async (req, res) => {
 
   } catch (error) {
     console.error('❌ Inbox fetch failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/emails/conversations
+ * Fetch conversations (alias for /inbox with frontend-compatible parameters)
+ */
+router.get('/conversations', async (req, res) => {
+  try {
+    const shop = req.query.shop || '2f3d7a-2.myshopify.com';
+    const {
+      unreadOnly,
+      priority,
+      hasOrder,
+      limit = 50,
+      offset = 0
+    } = req.query;
+
+    // Get shop ID
+    const [shops] = await db.execute(
+      'SELECT id FROM shops WHERE shop_name = ?',
+      [shop]
+    );
+
+    if (shops.length === 0) {
+      return res.status(404).json({ error: 'Shop not found' });
+    }
+
+    const shopId = shops[0].id;
+
+    // Build query
+    let query = `
+      SELECT
+        c.*,
+        o.order_number,
+        o.customer_name as order_customer_name,
+        o.vehicle_year,
+        o.vehicle_make,
+        o.vehicle_model,
+        o.vehicle_trim
+      FROM email_conversations c
+      LEFT JOIN orders o ON c.order_id = o.id
+      WHERE c.shop_id = ?
+    `;
+    const params = [shopId];
+
+    // Add filters
+    if (unreadOnly === 'true') {
+      query += ' AND c.unread_count > 0';
+    }
+
+    if (priority) {
+      query += ' AND c.priority = ?';
+      params.push(priority);
+    }
+
+    if (hasOrder === 'true') {
+      query += ' AND c.order_id IS NOT NULL';
+    } else if (hasOrder === 'false') {
+      query += ' AND c.order_id IS NULL';
+    }
+
+    // Order by last message (active conversations first)
+    query += ' AND c.status = "active" ORDER BY c.last_message_at DESC';
+
+    // Add pagination
+    query += ' LIMIT ? OFFSET ?';
+    params.push(parseInt(limit), parseInt(offset));
+
+    const [conversations] = await db.execute(query, params);
+
+    // Get total count
+    let countQuery = 'SELECT COUNT(*) as total FROM email_conversations c WHERE c.shop_id = ? AND c.status = "active"';
+    const countParams = [shopId];
+
+    if (unreadOnly === 'true') {
+      countQuery += ' AND c.unread_count > 0';
+    }
+
+    const [countResult] = await db.execute(countQuery, countParams);
+    const total = countResult[0].total;
+
+    res.json({
+      success: true,
+      conversations: conversations,
+      total: total,
+      count: conversations.length,
+      hasMore: (parseInt(offset) + conversations.length) < total
+    });
+
+  } catch (error) {
+    console.error('❌ Conversations fetch failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/emails/conversations/:id
+ * Get single conversation with emails (frontend-compatible alias)
+ */
+router.get('/conversations/:id', async (req, res) => {
+  try {
+    const shop = req.query.shop || '2f3d7a-2.myshopify.com';
+    const conversationId = parseInt(req.params.id);
+
+    // Get shop ID
+    const [shops] = await db.execute(
+      'SELECT id FROM shops WHERE shop_name = ?',
+      [shop]
+    );
+
+    if (shops.length === 0) {
+      return res.status(404).json({ error: 'Shop not found' });
+    }
+
+    const conversation = await getConversationWithEmails(conversationId);
+
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Conversation not found'
+      });
+    }
+
+    // Mark as read
+    await markConversationAsRead(conversationId);
+
+    // Transform to frontend-compatible format
+    res.json({
+      success: true,
+      conversation: {
+        ...conversation,
+        messages: conversation.emails || [],
+        customer: conversation.customer_email ? {
+          name: conversation.customer_name,
+          email: conversation.customer_email
+        } : null,
+        order: conversation.order_id ? {
+          id: conversation.order_id,
+          order_number: conversation.order_number,
+          vehicle: {
+            year: conversation.vehicle_year,
+            make: conversation.vehicle_make,
+            model: conversation.vehicle_model,
+            trim: conversation.vehicle_trim
+          }
+        } : null
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Conversation fetch failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/emails/conversations/:id/summary
+ * Generate AI summary for conversation
+ */
+router.post('/conversations/:id/summary', async (req, res) => {
+  try {
+    const shop = req.query.shop || '2f3d7a-2.myshopify.com';
+    const conversationId = parseInt(req.params.id);
+
+    // Get shop ID
+    const [shops] = await db.execute(
+      'SELECT id FROM shops WHERE shop_name = ?',
+      [shop]
+    );
+
+    if (shops.length === 0) {
+      return res.status(404).json({ error: 'Shop not found' });
+    }
+
+    const shopId = shops[0].id;
+
+    const result = await generateThreadSummary(shopId, conversationId);
+
+    // Save summary to conversation
+    await db.execute(
+      `UPDATE email_conversations
+       SET ai_summary = ?, ai_summary_generated_at = NOW()
+       WHERE id = ?`,
+      [result.summary, conversationId]
+    );
+
+    res.json({
+      success: true,
+      summary: result.summary,
+      metadata: result.metadata
+    });
+
+  } catch (error) {
+    console.error('❌ Conversation summary failed:', error);
     res.status(500).json({
       success: false,
       error: error.message

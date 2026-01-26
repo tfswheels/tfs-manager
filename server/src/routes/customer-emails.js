@@ -313,7 +313,7 @@ router.get('/stats/summary', async (req, res) => {
       `SELECT
         COUNT(*) as total,
         SUM(CASE WHEN status = 'unread' THEN 1 ELSE 0 END) as unread,
-        SUM(CASE WHEN status = 'read' THEN 1 ELSE 0 END) as read,
+        SUM(CASE WHEN status = 'read' THEN 1 ELSE 0 END) as \`read\`,
         SUM(CASE WHEN status = 'replied' THEN 1 ELSE 0 END) as replied,
         SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) as archived
       FROM customer_emails
