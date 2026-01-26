@@ -67,7 +67,7 @@ async function syncInbox(shopId, accountEmail) {
         }
 
         // Fetch full email details including body
-        const fullEmail = await fetchEmailDetails(shopId, email.messageId);
+        const fullEmail = await fetchEmailDetails(shopId, email.messageId, accountEmail);
 
         // Find or create conversation thread
         const emailData = {

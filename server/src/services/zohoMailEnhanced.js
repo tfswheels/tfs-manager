@@ -21,6 +21,9 @@ const EMAIL_ACCOUNTS = {
   support: 'support@tfswheels.com'
 };
 
+// Cache for Zoho account IDs (to avoid repeated API calls)
+const accountIdCache = {};
+
 /**
  * Get Zoho settings from database
  */
@@ -109,6 +112,54 @@ async function getAccessToken(shopId) {
   }
 
   return zoho_access_token;
+}
+
+/**
+ * Get Zoho Mail account ID for a specific email address
+ * @param {string} accessToken - Zoho access token
+ * @param {string} accountEmail - Email address (e.g., sales@tfswheels.com)
+ * @returns {Promise<string>} Account ID
+ */
+async function getZohoAccountId(accessToken, accountEmail) {
+  // Check cache first
+  if (accountIdCache[accountEmail]) {
+    return accountIdCache[accountEmail];
+  }
+
+  try {
+    // Get all accounts
+    const response = await axios.get(
+      `${ZOHO_API_BASE}/accounts`,
+      {
+        headers: {
+          'Authorization': `Zoho-oauthtoken ${accessToken}`
+        }
+      }
+    );
+
+    const accounts = response.data.data || [];
+
+    // Find account matching the email
+    const account = accounts.find(acc =>
+      acc.accountAddress === accountEmail ||
+      acc.emailAddress === accountEmail
+    );
+
+    if (!account) {
+      throw new Error(`Zoho account not found for ${accountEmail}`);
+    }
+
+    // Cache the account ID
+    accountIdCache[accountEmail] = account.accountId;
+
+    console.log(`✅ Found Zoho account ID for ${accountEmail}: ${account.accountId}`);
+
+    return account.accountId;
+
+  } catch (error) {
+    console.error(`❌ Failed to get Zoho account ID for ${accountEmail}:`, error.response?.data || error.message);
+    throw new Error(`Failed to get Zoho account ID for ${accountEmail}`);
+  }
 }
 
 /**
@@ -216,6 +267,9 @@ export async function fetchInbox(shopId, options = {}) {
 
     console.log(`📥 Fetching emails from ${accountEmail}...`);
 
+    // Get Zoho account ID for this email address
+    const accountId = await getZohoAccountId(accessToken, accountEmail);
+
     const params = {
       limit: limit,
       start: start,
@@ -227,9 +281,9 @@ export async function fetchInbox(shopId, options = {}) {
       params.searchKey = searchKey;
     }
 
-    // Fetch messages from Zoho
+    // Fetch messages from Zoho using the actual account ID
     const response = await axios.get(
-      `${ZOHO_API_BASE}/accounts/self/folders/${folderId}/messages`,
+      `${ZOHO_API_BASE}/accounts/${accountId}/folders/${folderId}/messages`,
       {
         headers: {
           'Authorization': `Zoho-oauthtoken ${accessToken}`
@@ -255,16 +309,20 @@ export async function fetchInbox(shopId, options = {}) {
  *
  * @param {number} shopId - Shop ID
  * @param {string} messageId - Zoho message ID
+ * @param {string} accountEmail - Email account (e.g., sales@tfswheels.com)
  * @returns {Promise<object>} Full email details
  */
-export async function fetchEmailDetails(shopId, messageId) {
+export async function fetchEmailDetails(shopId, messageId, accountEmail = EMAIL_ACCOUNTS.sales) {
   try {
     const accessToken = await getAccessToken(shopId);
 
     console.log(`📧 Fetching email details for message ${messageId}...`);
 
+    // Get Zoho account ID
+    const accountId = await getZohoAccountId(accessToken, accountEmail);
+
     const response = await axios.get(
-      `${ZOHO_API_BASE}/accounts/self/messages/${messageId}`,
+      `${ZOHO_API_BASE}/accounts/${accountId}/messages/${messageId}`,
       {
         headers: {
           'Authorization': `Zoho-oauthtoken ${accessToken}`

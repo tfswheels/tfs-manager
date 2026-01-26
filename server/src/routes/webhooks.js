@@ -539,7 +539,7 @@ router.post('/zoho/email-received', async (req, res) => {
     }
 
     // Fetch full email details from Zoho
-    const fullEmail = await fetchEmailDetails(shopId, messageId);
+    const fullEmail = await fetchEmailDetails(shopId, messageId, accountEmail);
 
     // Find or create conversation thread
     const emailData = {

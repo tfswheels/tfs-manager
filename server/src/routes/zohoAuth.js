@@ -22,6 +22,7 @@ router.get('/authorize', (req, res) => {
     `client_id=${ZOHO_CLIENT_ID}&` +
     `response_type=code&` +
     `access_type=offline&` +
+    `prompt=consent&` +
     `redirect_uri=${encodeURIComponent(ZOHO_REDIRECT_URI)}&` +
     `state=${shop}`;
 
