@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ShoppingCart, Package, Mail, Settings, Menu, X } from 'lucide-react';
+import { ShoppingCart, Package, Mail, Inbox, Settings, Menu, X } from 'lucide-react';
 
 function Layout({ children }) {
   const location = useLocation();
@@ -9,6 +9,7 @@ function Layout({ children }) {
   const navigation = [
     { name: 'Orders', href: '/', icon: ShoppingCart },
     { name: 'Products & Inventory', href: '/products', icon: Package },
+    { name: 'Customer Emails', href: '/emails', icon: Inbox },
     { name: 'Email Templates', href: '/email', icon: Mail },
     { name: 'Settings', href: '/settings', icon: Settings },
   ];

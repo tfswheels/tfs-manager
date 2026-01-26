@@ -8,6 +8,7 @@ import Layout from './components/Layout';
 import Orders from './pages/Orders';
 import OrderDetails from './pages/OrderDetails';
 import Products from './pages/Products';
+import CustomerEmails from './pages/CustomerEmails';
 import EmailTemplates from './pages/EmailTemplates';
 import Settings from './pages/Settings';
 
@@ -35,6 +36,7 @@ function App() {
               <Route path="/" element={<Orders />} />
               <Route path="/orders/:orderId" element={<OrderDetails />} />
               <Route path="/products" element={<Products />} />
+              <Route path="/emails" element={<CustomerEmails />} />
               <Route path="/email" element={<EmailTemplates />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
