@@ -105,6 +105,16 @@ async function syncInbox(shopId, accountEmail) {
         const conversationId = await findOrCreateConversation(shopId, emailData);
 
         // Save email to database (convert undefined to null for MySQL)
+        // Validate receivedAt - must be a valid date or null
+        let receivedAt = null;
+        if (fullEmail.receivedTime) {
+          const parsedDate = new Date(fullEmail.receivedTime);
+          // Check if date is valid (not NaN and not invalid date)
+          if (!isNaN(parsedDate.getTime()) && parsedDate.getFullYear() > 1970) {
+            receivedAt = parsedDate;
+          }
+        }
+
         await saveEmail(shopId, conversationId, {
           zohoMessageId: fullEmail.messageId,
           messageId: fullEmail.messageId,
@@ -119,7 +129,7 @@ async function syncInbox(shopId, accountEmail) {
           subject: fullEmail.subject || '(No Subject)',
           bodyText: fullEmail.content?.plainContent || fullEmail.content || fullEmail.summary || '',
           bodyHtml: fullEmail.content?.htmlContent || null,
-          receivedAt: new Date(fullEmail.receivedTime)
+          receivedAt: receivedAt
         });
 
         newCount++;
