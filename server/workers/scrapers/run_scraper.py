@@ -66,47 +66,6 @@ try:
 except Exception as e:
     logger.error(f"Failed to update job status: {e}")
 
-# Pre-sync: Populate all_shopify_wheels or shopify_tires table BEFORE scraping
-logger.info("=" * 80)
-logger.info(f"PRE-SYNC: POPULATING SHOPIFY DATA FOR {scraper_type.upper()}")
-logger.info("=" * 80)
-
-try:
-    sync_script_dir = os.path.join(os.path.dirname(__file__), '..', 'product-creator', 'sync_scripts')
-
-    if scraper_type == 'wheels':
-        sync_script = os.path.join(sync_script_dir, 'get_non_sdw_wheels.py')
-        logger.info("Running pre-sync script: get_non_sdw_wheels.py")
-    elif scraper_type == 'tires':
-        sync_script = os.path.join(sync_script_dir, 'get_shopify_tires.py')
-        logger.info("Running pre-sync script: get_shopify_tires.py")
-    else:
-        logger.warning(f"Unknown scraper_type '{scraper_type}', skipping pre-sync")
-        sync_script = None
-
-    if sync_script and os.path.exists(sync_script):
-        import subprocess
-        # Stream output in real-time instead of capturing
-        result = subprocess.run(
-            [sys.executable, sync_script],
-            cwd=sync_script_dir,
-            timeout=600  # 10 minute timeout
-        )
-
-        if result.returncode == 0:
-            logger.info("✅ Pre-sync completed successfully")
-        else:
-            logger.error(f"❌ Pre-sync failed with exit code {result.returncode}")
-            # Continue anyway - scraper can still work
-    elif sync_script:
-        logger.error(f"Sync script not found: {sync_script}")
-
-except Exception as sync_error:
-    logger.error(f"Failed to run pre-sync: {sync_error}")
-    import traceback
-    logger.error(traceback.format_exc())
-    # Don't fail - scraper can still work without pre-sync
-
 # Now run the actual scraper
 try:
     logger.info("=" * 80)
