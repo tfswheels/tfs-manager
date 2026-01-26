@@ -24,6 +24,13 @@ const EMAIL_ACCOUNTS = {
 // Cache for Zoho account IDs (to avoid repeated API calls)
 const accountIdCache = {};
 
+// Hardcoded account IDs for TFS Wheels mailboxes
+// These are specific to the TFS Wheels Zoho Mail organization
+const ACCOUNT_ID_MAP = {
+  'sales@tfswheels.com': '4132877000000008002',
+  'support@tfswheels.com': '4145628000000008002'
+};
+
 /**
  * Get Zoho settings from database
  */
@@ -126,8 +133,15 @@ async function getZohoAccountId(accessToken, accountEmail) {
     return accountIdCache[accountEmail];
   }
 
+  // Check hardcoded mapping first (more reliable than API lookup)
+  if (ACCOUNT_ID_MAP[accountEmail]) {
+    console.log(`✅ Using hardcoded account ID for ${accountEmail}: ${ACCOUNT_ID_MAP[accountEmail]}`);
+    accountIdCache[accountEmail] = ACCOUNT_ID_MAP[accountEmail];
+    return ACCOUNT_ID_MAP[accountEmail];
+  }
+
   try {
-    // Get all accounts
+    // Fallback: Try to get account from API
     const response = await axios.get(
       `${ZOHO_API_BASE}/accounts`,
       {
@@ -139,11 +153,7 @@ async function getZohoAccountId(accessToken, accountEmail) {
 
     const accounts = response.data.data || [];
 
-    // Log the accounts structure for debugging
-    console.log(`📋 Found ${accounts.length} Zoho accounts`);
-    if (accounts.length > 0) {
-      console.log(`📋 First account structure:`, JSON.stringify(accounts[0], null, 2));
-    }
+    console.log(`📋 Found ${accounts.length} Zoho accounts via API`);
 
     // Find account matching the email
     // Try multiple possible field names as Zoho API varies
@@ -157,21 +167,14 @@ async function getZohoAccountId(accessToken, accountEmail) {
     );
 
     if (!account) {
-      console.error(`❌ No account found matching ${accountEmail}`);
-      console.error(`Available accounts:`, accounts.map(a => ({
-        accountId: a.accountId,
-        accountAddress: a.accountAddress,
-        emailAddress: a.emailAddress,
-        primaryEmailAddress: a.primaryEmailAddress,
-        accountName: a.accountName
-      })));
+      console.error(`❌ No account found via API for ${accountEmail}`);
       throw new Error(`Zoho account not found for ${accountEmail}`);
     }
 
     // Cache the account ID
     accountIdCache[accountEmail] = account.accountId;
 
-    console.log(`✅ Found Zoho account ID for ${accountEmail}: ${account.accountId}`);
+    console.log(`✅ Found Zoho account ID via API for ${accountEmail}: ${account.accountId}`);
 
     return account.accountId;
 
@@ -289,26 +292,27 @@ export async function fetchInbox(shopId, options = {}) {
     // Get Zoho account ID for this email address
     const accountId = await getZohoAccountId(accessToken, accountEmail);
 
+    // Build params - Zoho API is picky about which params are allowed
     const params = {
       limit: limit,
-      start: start,
-      sortBy: sortBy,
-      sortOrder: sortOrder,
-      folderId: folderId  // Pass folder ID as param instead of in URL
+      start: start
     };
 
     if (searchKey) {
       params.searchKey = searchKey;
     }
 
-    // Fetch messages from Zoho using the actual account ID
+    // Fetch messages from Zoho using folder-based endpoint
     const response = await axios.get(
-      `${ZOHO_API_BASE}/accounts/${accountId}/messages/view`,
+      `${ZOHO_API_BASE}/accounts/${accountId}/messages`,
       {
         headers: {
           'Authorization': `Zoho-oauthtoken ${accessToken}`
         },
-        params: params
+        params: {
+          ...params,
+          folderId: folderId  // Folder ID as query param
+        }
       }
     );
 
