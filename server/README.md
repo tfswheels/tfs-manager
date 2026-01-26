@@ -2,6 +2,23 @@
 
 Backend server for TFS Wheels Manager application.
 
+## Recent Fixes (Jan 2026)
+
+### MySQL 8.0 Compatibility ✅
+- **Fixed**: LIMIT/OFFSET parameter binding issue (errno 1210)
+- **Fixed**: Reserved keyword `read` escaping in stats queries
+- **Fixed**: Missing `vehicle_full` column references
+- **Impact**: All email conversation queries now work correctly with MySQL 8.0.31
+- **Testing**: All queries validated against production database before deployment
+
+### Customer Emails UI ✅
+- **Fixed**: Order column now shows order number (#62423844) instead of database ID
+- **Fixed**: Order navigation - clicking order number navigates to order detail page
+- **Fixed**: Navigation highlighting - only active page highlighted (not multiple)
+- **Impact**: Fully functional email inbox with proper order linking
+
+---
+
 ## Email Communications System
 
 ### Overview
