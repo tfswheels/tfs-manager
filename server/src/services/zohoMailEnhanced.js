@@ -292,27 +292,23 @@ export async function fetchInbox(shopId, options = {}) {
     // Get Zoho account ID for this email address
     const accountId = await getZohoAccountId(accessToken, accountEmail);
 
-    // Build params - Zoho API is picky about which params are allowed
+    // Build search query - Zoho Mail API requires using search endpoint
+    const searchQuery = searchKey || 'in:inbox';  // Default to inbox folder
+
     const params = {
       limit: limit,
-      start: start
+      start: start,
+      searchKey: `fid:${folderId}`  // Search by folder ID
     };
 
-    if (searchKey) {
-      params.searchKey = searchKey;
-    }
-
-    // Fetch messages from Zoho using folder-based endpoint
+    // Fetch messages using Zoho Mail search API
     const response = await axios.get(
-      `${ZOHO_API_BASE}/accounts/${accountId}/messages`,
+      `${ZOHO_API_BASE}/accounts/${accountId}/messages/search`,
       {
         headers: {
           'Authorization': `Zoho-oauthtoken ${accessToken}`
         },
-        params: {
-          ...params,
-          folderId: folderId  // Folder ID as query param
-        }
+        params: params
       }
     );
 
