@@ -21,7 +21,6 @@ class DatabaseClient:
     def __init__(self, no_db: bool = False):
         self.no_db = no_db
         self.mode = None  # 'wheels' or 'tires'
-        print("Initializing DatabaseClient..." + (" (no-db mode)" if no_db else ""))
         
         # Optimized database configuration
         self.db_config = {
@@ -70,8 +69,6 @@ class DatabaseClient:
 
     async def init(self, mode: str) -> None:
         self.mode = mode
-        print(f"Initializing database for mode: {mode}" + (" (no-db mode)" if self.no_db else ""))
-        print("Database initialized successfully")
 
     async def _get_connection(self):
         if self.no_db:
@@ -2166,6 +2163,5 @@ class DatabaseClient:
             if connection:
                 connection.close()
 
-print("Creating optimized database client instance...")
+# Create singleton database client instance
 db_client = DatabaseClient()
-print("Database client instance created")
