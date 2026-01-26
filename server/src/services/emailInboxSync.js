@@ -142,7 +142,17 @@ export async function syncAllInboxes(shopId) {
       const salesResult = await syncInbox(shopId, 'sales@tfswheels.com');
       results.push(salesResult);
     } catch (error) {
-      console.error('❌ Failed to sync sales@:', error);
+      // Check if error is due to missing OAuth credentials
+      if (error.message.includes('OAuth') || error.message.includes('URL_RULE_NOT_CONFIGURED')) {
+        // Only log once, not every minute
+        if (!global._zohoOAuthWarningLogged) {
+          console.warn('⚠️  Zoho OAuth not configured yet. Email sync will be skipped until OAuth is set up.');
+          console.warn('   Visit /auth/zoho/authorize to complete OAuth setup.');
+          global._zohoOAuthWarningLogged = true;
+        }
+      } else {
+        console.error('❌ Failed to sync sales@:', error.message);
+      }
       results.push({
         account: 'sales@tfswheels.com',
         error: error.message
@@ -154,7 +164,10 @@ export async function syncAllInboxes(shopId) {
       const supportResult = await syncInbox(shopId, 'support@tfswheels.com');
       results.push(supportResult);
     } catch (error) {
-      console.error('❌ Failed to sync support@:', error);
+      // Don't log OAuth errors repeatedly for support@ if we already logged for sales@
+      if (!error.message.includes('OAuth') && !error.message.includes('URL_RULE_NOT_CONFIGURED')) {
+        console.error('❌ Failed to sync support@:', error.message);
+      }
       results.push({
         account: 'support@tfswheels.com',
         error: error.message
@@ -163,7 +176,11 @@ export async function syncAllInboxes(shopId) {
 
     const totalNew = results.reduce((sum, r) => sum + (r.new || 0), 0);
 
-    console.log(`✅ Inbox sync complete: ${totalNew} new emails`);
+    // Only log success if we actually synced emails
+    const hasErrors = results.some(r => r.error);
+    if (!hasErrors || totalNew > 0) {
+      console.log(`✅ Inbox sync complete: ${totalNew} new emails`);
+    }
 
     return {
       success: true,

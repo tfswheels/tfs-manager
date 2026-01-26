@@ -143,7 +143,7 @@ app.use((err, req, res, next) => {
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 TFS Manager API running on port ${PORT}`);
+  console.log(`🚀 TFS Manager API v1.1.0 running on port ${PORT}`);
   console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🏪 Shopify Store: 2f3d7a-2.myshopify.com`);
   console.log(`🌐 CORS enabled for:`, ['http://localhost:5173', 'https://tfs-manager.vercel.app']);
