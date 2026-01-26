@@ -51,20 +51,23 @@ async function syncInbox(shopId, accountEmail) {
           continue;
         }
 
-        // If support@ email, check if it's related to an order
+        // Filtering logic:
+        // - sales@: ALL emails (no filtering)
+        // - support@: ONLY emails from customers with orders
         if (accountEmail === 'support@tfswheels.com') {
           const [orders] = await db.execute(
             'SELECT id FROM orders WHERE customer_email = ?',
-            [email.fromAddress]
+            [email.fromAddress || email.sender]
           );
 
           if (orders.length === 0) {
-            // Not related to any order, skip
-            console.log(`⏭️  Skipping support email from ${email.fromAddress} - no order found`);
+            // Not related to any order, skip support@ email
+            console.log(`⏭️  Skipping support@ email from ${email.fromAddress || email.sender} - no order found`);
             skippedCount++;
             continue;
           }
         }
+        // sales@ emails: No filtering, all emails are processed
 
         // Try to fetch full email details including body, but use basic info if it fails
         let fullEmail = null;
@@ -101,20 +104,20 @@ async function syncInbox(shopId, accountEmail) {
 
         const conversationId = await findOrCreateConversation(shopId, emailData);
 
-        // Save email to database
+        // Save email to database (convert undefined to null for MySQL)
         await saveEmail(shopId, conversationId, {
           zohoMessageId: fullEmail.messageId,
           messageId: fullEmail.messageId,
-          inReplyTo: fullEmail.inReplyTo,
-          references: fullEmail.references,
+          inReplyTo: fullEmail.inReplyTo || null,
+          references: fullEmail.references || null,
           direction: 'inbound',
           fromEmail: fullEmail.fromAddress,
           fromName: fullEmail.sender?.name || fullEmail.fromAddress,
           toEmail: accountEmail,
           toName: 'TFS Wheels',
-          cc: fullEmail.cc,
-          subject: fullEmail.subject,
-          bodyText: fullEmail.content?.plainContent || fullEmail.content || fullEmail.summary,
+          cc: fullEmail.cc || null,
+          subject: fullEmail.subject || '(No Subject)',
+          bodyText: fullEmail.content?.plainContent || fullEmail.content || fullEmail.summary || '',
           bodyHtml: fullEmail.content?.htmlContent || null,
           receivedAt: new Date(fullEmail.receivedTime)
         });

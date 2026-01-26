@@ -112,7 +112,86 @@ Comprehensive email communications system for managing customer interactions, or
 
 ---
 
-## 🚧 Phase 2: Frontend UI (IN PROGRESS)
+## 📋 Email Filtering Rules
+
+### Inbox Filtering Logic:
+- **sales@tfswheels.com**: ALL customer emails are synced and displayed (no filtering)
+  - Purpose: Main customer communication channel
+  - All inquiries, questions, and general communication
+  - Shows all emails regardless of order association
+
+- **support@tfswheels.com**: ONLY emails from customers with existing orders
+  - Purpose: Order-specific support
+  - Automatically linked to customer's order(s)
+  - Emails from non-customers are skipped during sync
+
+**Implementation**: `src/services/emailInboxSync.js` (lines 54-70)
+
+---
+
+## ✅ Phase 2: Frontend UI (COMPLETED)
+
+### 2.1 Email Inbox Page ✅
+**Created**: `admin/src/pages/CustomerEmails.jsx`
+
+**Features Implemented**:
+- ✅ Conversation-based list view (not individual emails)
+- ✅ Message count badges (shows "3 messages, 1 new")
+- ✅ Unread count indicators
+- ✅ Stats cards (Total, Unread, Replied)
+- ✅ "New Email" button for composing
+- ✅ Conversation click opens full thread view
+- ✅ Tab filtering (All, Unread, Read, Replied, Archived)
+- ✅ Pagination
+
+**API Endpoints Used**:
+- `GET /api/emails/conversations` - List conversations
+- `GET /api/emails/stats` - Stats for dashboard cards
+
+---
+
+### 2.2 Email Composer ✅
+**Created**: `admin/src/components/EmailComposer.jsx`
+
+**Features Implemented**:
+- ✅ **AI Email Generation** - One-click Claude-powered writing
+- ✅ **Dynamic Placeholder Picker** - Dropdown to insert {{customer_name}}, {{order_number}}, etc.
+- ✅ **Cost Display** - Shows AI generation cost (~$0.03)
+- ✅ **Reply Threading** - Automatically handles "Re:" subjects and In-Reply-To headers
+- ✅ **Success/Error Feedback** - User-friendly status messages
+- ✅ **Original Message Display** - Shows context when replying
+
+**AI Generation Flow**:
+1. User clicks "Generate with AI"
+2. Enters prompt: "Thank customer and offer discount"
+3. Claude generates professional email with placeholders
+4. User reviews/edits
+5. One-click send
+
+**API Endpoints Used**:
+- `POST /api/emails/ai/generate` - Generate AI response
+- `POST /api/emails/send` - Send email via Zoho
+
+---
+
+### 2.3 Email Thread View ✅
+**Created**: `admin/src/components/EmailThreadView.jsx`
+
+**Features Implemented**:
+- ✅ **AI Thread Summary** - Shows AI-generated summary with "Regenerate" button
+- ✅ **Chronological Message History** - All messages in thread
+- ✅ **Customer/Order Sidebar** - Shows customer details, order info, vehicle
+- ✅ **Direction Badges** - "From Customer" vs "From Us"
+- ✅ **Deliverability Tracking** - Shows "Opened" and "Link Clicked" status
+- ✅ **Inline Reply** - Opens composer with full context
+
+**API Endpoints Used**:
+- `GET /api/emails/conversations/:id` - Get full thread
+- `POST /api/emails/conversations/:id/summary` - Generate/regenerate summary
+
+---
+
+## 🚧 Phase 2 (Continued): Frontend UI (IN PROGRESS)
 
 ### 2.1 Email Inbox Page 🔄
 **Requirements**:
@@ -297,6 +376,310 @@ Comprehensive email communications system for managing customer interactions, or
 - [ ] Shopify order sync (trigger emails on order events)
 - [ ] Calendar integration (schedule calls/follow-ups)
 - [ ] CRM features (notes, tags, customer timeline)
+
+---
+
+## 🎫 Phase 4: Ticketing System (PLANNED)
+
+### Overview
+Transform the email system into a full-fledged ticketing system for customer support. Every email conversation becomes a ticket with status tracking, auto-responses, and workflow automation.
+
+---
+
+### 4.1 Ticket Status Management
+
+**Ticket States**:
+- **Open** - New email received, awaiting response
+- **Pending** - Waiting for customer reply (we responded)
+- **Resolved** - Issue resolved, ticket closed
+- **Closed** - Manually closed (no response needed)
+
+**Status Transitions**:
+```
+New Email → Open
+   ↓
+We Reply → Pending
+   ↓
+Customer Replies → Open
+   ↓
+We Resolve → Resolved
+   ↓
+Time Passes (X days) → Closed
+
+Manual Close → Closed (any state)
+```
+
+**Database Changes Needed**:
+```sql
+ALTER TABLE email_conversations ADD COLUMN ticket_status ENUM('open', 'pending', 'resolved', 'closed') DEFAULT 'open';
+ALTER TABLE email_conversations ADD COLUMN ticket_number VARCHAR(20) UNIQUE; -- e.g., TICK-1234
+ALTER TABLE email_conversations ADD COLUMN priority ENUM('low', 'medium', 'high', 'urgent') DEFAULT 'medium';
+ALTER TABLE email_conversations ADD COLUMN assigned_to INT NULL; -- user_id
+ALTER TABLE email_conversations ADD COLUMN last_reply_at DATETIME;
+ALTER TABLE email_conversations ADD COLUMN last_reply_from ENUM('customer', 'agent');
+ALTER TABLE email_conversations ADD COLUMN resolved_at DATETIME NULL;
+ALTER TABLE email_conversations ADD COLUMN closed_at DATETIME NULL;
+```
+
+**Implementation Files**:
+- `src/services/ticketSystem.js` - Ticket status management
+- `src/routes/tickets.js` - Ticket API endpoints
+
+---
+
+### 4.2 Auto-Response System
+
+**Trigger Conditions**:
+1. **New Ticket Created** (first email from customer)
+   - Send: "We received your message and will respond within 24 hours"
+
+2. **Outside Business Hours**
+   - Business Hours: Mon-Fri 9am-6pm EST
+   - Send: "Thanks for contacting us! We're currently out of office..."
+
+3. **Ticket Resolved**
+   - Send: "Your issue has been resolved. Reply if you need further help."
+
+4. **No Response Auto-Close** (X days after last reply)
+   - If customer doesn't respond in 7 days → auto-close
+   - Send: "We haven't heard from you. Closing this ticket..."
+
+**Auto-Response Configuration**:
+```javascript
+{
+  name: "New Ticket Received",
+  trigger: "ticket_created",
+  enabled: true,
+  delay: 0, // Send immediately
+  template: "auto-response-received",
+  conditions: {
+    firstEmail: true
+  }
+}
+```
+
+**Database Schema**:
+```sql
+CREATE TABLE auto_response_rules (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  shop_id INT NOT NULL,
+  name VARCHAR(255),
+  trigger_type ENUM('ticket_created', 'outside_hours', 'ticket_resolved', 'no_response_autoclose'),
+  enabled BOOLEAN DEFAULT TRUE,
+  template_id INT NULL,
+  delay_minutes INT DEFAULT 0,
+  conditions JSON,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+**Implementation Files**:
+- `src/services/autoResponse.js` - Auto-response logic
+- `src/workers/autoResponseWorker.js` - Background job for checking triggers
+- `src/routes/autoResponses.js` - API for managing rules
+
+---
+
+### 4.3 Ticket Dashboard & Metrics
+
+**Dashboard Widgets**:
+1. **Open Tickets** - Count of unresolved tickets
+2. **Average Response Time** - How long to first reply
+3. **Average Resolution Time** - How long to close ticket
+4. **Tickets by Priority** - Breakdown by low/medium/high/urgent
+5. **Tickets by Status** - Open vs Pending vs Resolved
+6. **Unanswered Tickets** - Tickets with no agent reply yet
+7. **SLA Breaches** - Tickets exceeding response time targets
+
+**Metrics Calculations**:
+```javascript
+// Response Time: Time from ticket creation to first agent reply
+responseTime = first_agent_reply_at - created_at
+
+// Resolution Time: Time from ticket creation to resolution
+resolutionTime = resolved_at - created_at
+
+// SLA Breach: Tickets older than X hours without reply
+slaBreach = (NOW() - created_at) > sla_target_hours
+```
+
+**Database Views**:
+```sql
+CREATE VIEW ticket_metrics AS
+SELECT
+  shop_id,
+  COUNT(*) as total_tickets,
+  SUM(CASE WHEN ticket_status = 'open' THEN 1 ELSE 0 END) as open_tickets,
+  SUM(CASE WHEN ticket_status = 'pending' THEN 1 ELSE 0 END) as pending_tickets,
+  AVG(TIMESTAMPDIFF(MINUTE, created_at, first_reply_at)) as avg_response_minutes,
+  AVG(TIMESTAMPDIFF(MINUTE, created_at, resolved_at)) as avg_resolution_minutes
+FROM email_conversations
+GROUP BY shop_id;
+```
+
+**UI Component**:
+- `admin/src/pages/TicketsDashboard.jsx` - Dashboard with metrics
+- `admin/src/components/TicketMetrics.jsx` - Metric cards
+
+---
+
+### 4.4 Ticket Actions & Workflow
+
+**Manual Actions**:
+- **Assign to Me/Someone** - Assign ticket to agent
+- **Change Priority** - Set to low/medium/high/urgent
+- **Mark as Resolved** - Close ticket
+- **Reopen Ticket** - Change resolved → open
+- **Add Internal Note** - Private note (not sent to customer)
+- **Merge Tickets** - Combine duplicate tickets
+- **Split Thread** - Create new ticket from message
+
+**Automated Actions**:
+- **Auto-Assign by Keywords** - Route to specific agent
+  - "refund" → assign to manager
+  - "tracking" → assign to shipping team
+- **Auto-Priority by Keywords** - Escalate important issues
+  - "urgent", "broken", "asap" → high priority
+- **Auto-Close Stale Tickets** - Close after X days no response
+- **Auto-Escalate Old Tickets** - Escalate if no response in Y hours
+
+**Database Schema**:
+```sql
+CREATE TABLE ticket_actions (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  conversation_id INT NOT NULL,
+  action_type ENUM('assigned', 'priority_changed', 'status_changed', 'note_added', 'merged'),
+  performed_by INT NULL, -- user_id or NULL for system
+  from_value VARCHAR(255),
+  to_value VARCHAR(255),
+  note TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE ticket_notes (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  conversation_id INT NOT NULL,
+  user_id INT NOT NULL,
+  note TEXT,
+  is_internal BOOLEAN DEFAULT TRUE,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Implementation Files**:
+- `src/services/ticketActions.js` - Ticket action handlers
+- `src/routes/ticketActions.js` - API endpoints
+- `admin/src/components/TicketActions.jsx` - Action buttons UI
+
+---
+
+### 4.5 UI Enhancements for Ticket System
+
+**Inbox Changes**:
+- Replace "Status" column with "Ticket Status" (Open/Pending/Resolved/Closed)
+- Add "Ticket #" column (TICK-1234)
+- Add "Priority" badges (color-coded)
+- Add "Assigned To" column
+- Filter by ticket status, priority, assigned agent
+- Sort by "Oldest First" (longest unanswered)
+
+**Thread View Changes**:
+- Add ticket header with:
+  - Ticket number
+  - Priority selector (dropdown)
+  - Status selector (dropdown)
+  - Assign button
+  - "Mark as Resolved" button
+  - "Add Internal Note" button
+- Show ticket timeline:
+  - When created
+  - When first replied
+  - When resolved
+  - All status changes
+- Show SLA timer (e.g., "Respond within: 2 hours 15 mins")
+
+**New Pages**:
+- `/tickets` - Main ticket inbox (replaces `/emails`)
+- `/tickets/dashboard` - Metrics dashboard
+- `/tickets/settings` - Auto-response rules, SLA targets
+
+---
+
+### 4.6 Implementation Roadmap
+
+**Phase 4.1: Core Ticket Status** (1-2 days)
+1. Add ticket fields to database (ticket_status, ticket_number, priority, etc.)
+2. Create ticket status management service
+3. Update inbox UI to show ticket status
+4. Add status change actions (mark resolved, reopen)
+
+**Phase 4.2: Auto-Response System** (2-3 days)
+1. Create auto_response_rules table
+2. Build auto-response trigger system
+3. Implement "New Ticket" auto-response
+4. Implement "Outside Hours" auto-response
+5. Build UI for managing auto-response rules
+
+**Phase 4.3: Ticket Dashboard** (1-2 days)
+1. Build ticket metrics calculations
+2. Create dashboard with stats cards
+3. Add charts (tickets over time, by status, by priority)
+4. Add filters (date range, agent, priority)
+
+**Phase 4.4: Advanced Ticket Actions** (2-3 days)
+1. Build ticket assignment system
+2. Add priority management
+3. Implement internal notes
+4. Build ticket merge/split functionality
+5. Add automated actions (auto-assign, auto-priority, auto-close)
+
+**Phase 4.5: SLA & Escalation** (1-2 days)
+1. Add SLA target configuration
+2. Build SLA breach detection
+3. Add escalation rules
+4. Create SLA timer UI component
+
+**Total Estimated Time: 7-12 days**
+
+---
+
+### 4.7 API Endpoints for Ticket System
+
+**Ticket Management**:
+```
+GET    /api/tickets                - List all tickets
+GET    /api/tickets/:id            - Get ticket details
+PATCH  /api/tickets/:id/status     - Change ticket status
+PATCH  /api/tickets/:id/priority   - Change priority
+PATCH  /api/tickets/:id/assign     - Assign ticket
+POST   /api/tickets/:id/notes      - Add internal note
+POST   /api/tickets/:id/merge      - Merge with another ticket
+```
+
+**Ticket Dashboard**:
+```
+GET    /api/tickets/metrics        - Get dashboard metrics
+GET    /api/tickets/stats          - Get ticket statistics
+GET    /api/tickets/sla-breaches   - List SLA breaches
+```
+
+**Auto-Response Management**:
+```
+GET    /api/auto-responses         - List auto-response rules
+POST   /api/auto-responses         - Create auto-response rule
+PUT    /api/auto-responses/:id     - Update rule
+DELETE /api/auto-responses/:id     - Delete rule
+POST   /api/auto-responses/:id/test - Test rule
+```
+
+**Ticket Actions**:
+```
+GET    /api/tickets/:id/actions    - Get action history
+GET    /api/tickets/:id/notes      - Get internal notes
+POST   /api/tickets/:id/reopen     - Reopen closed ticket
+POST   /api/tickets/:id/resolve    - Mark as resolved
+```
 
 ---
 
