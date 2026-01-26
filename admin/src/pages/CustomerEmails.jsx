@@ -15,6 +15,7 @@ import {
   Box,
   Divider
 } from '@shopify/polaris';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import EmailThreadView from '../components/EmailThreadView';
 import EmailComposer from '../components/EmailComposer';
@@ -22,6 +23,7 @@ import EmailComposer from '../components/EmailComposer';
 const API_URL = import.meta.env.VITE_API_URL || 'https://tfs-manager-server-production.up.railway.app';
 
 export default function CustomerEmails() {
+  const navigate = useNavigate();
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -150,8 +152,8 @@ export default function CustomerEmails() {
       )}
     </InlineStack>,
     conv.order_id ? (
-      <Button plain size="slim">
-        {conv.order_id}
+      <Button plain size="slim" onClick={() => navigate(`/orders/${conv.order_id}`)}>
+        {conv.order_number || `#${conv.order_id}`}
       </Button>
     ) : '-',
     formatDate(conv.last_message_at)
