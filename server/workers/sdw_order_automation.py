@@ -2548,6 +2548,28 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
         print("\n⏱️  Confirmation timeout - order cancelled")
         return None
 
+    # PRE-LOAD tracking page in new tab BEFORE submitting
+    print("\n📋 Pre-loading tracking page in new tab...")
+    tracking_window = None
+    original_window = driver.current_window_handle
+    try:
+        # Open tracking page in new tab
+        tracking_url = f"https://www.sdwheelwholesale.com/track?email={BILLING_INFO['email']}"
+        driver.execute_script(f"window.open('{tracking_url}', '_blank');")
+        time.sleep(2)
+
+        # Get all window handles
+        all_windows = driver.window_handles
+        # The new window should be the last one
+        tracking_window = all_windows[-1]
+
+        # Switch back to original window for submission
+        driver.switch_to.window(original_window)
+        print("   ✅ Tracking page pre-loaded in background tab")
+    except Exception as e:
+        print(f"   ⚠️  Could not pre-load tracking page: {e}")
+        print("   ℹ️  Will use traditional method as fallback")
+
     # Submit the order
     print("\n🚀 Submitting order...")
     try:
@@ -2717,10 +2739,16 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
             if attempt > 1:
                 print(f"\n   🔄 Retry attempt {attempt}/{max_attempts}...")
 
-            # Navigate to tracking page to get the most recent invoice
-            tracking_url = f"https://www.sdwheelwholesale.com/track?email={BILLING_INFO['email']}"
-            print(f"   🌐 Navigating to tracking page: {tracking_url}")
-            driver.get(tracking_url)
+            # Use pre-loaded tracking tab if available, otherwise navigate traditionally
+            if tracking_window:
+                print(f"   🔄 Switching to pre-loaded tracking tab and refreshing...")
+                driver.switch_to.window(tracking_window)
+                driver.refresh()
+            else:
+                # Fallback: Navigate to tracking page the traditional way
+                tracking_url = f"https://www.sdwheelwholesale.com/track?email={BILLING_INFO['email']}"
+                print(f"   🌐 Navigating to tracking page: {tracking_url}")
+                driver.get(tracking_url)
 
             # Wait for page to load (shorter wait, check for elements)
             time.sleep(3)
@@ -2900,6 +2928,18 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
     if invoice_number:
         print(f"SDW Invoice: {invoice_number}")
     print("="*60)
+
+    # Cleanup: Close tracking tab and switch back to original window
+    if tracking_window:
+        try:
+            # Close tracking tab
+            driver.switch_to.window(tracking_window)
+            driver.close()
+            # Switch back to original window
+            driver.switch_to.window(original_window)
+            print("\n   ✅ Closed tracking tab")
+        except Exception as e:
+            print(f"\n   ⚠️  Could not close tracking tab: {e}")
 
     # Output success details as JSON for UI
     import json as json_module
