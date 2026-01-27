@@ -737,6 +737,9 @@ function OrderDetails() {
                 <p><strong>User input needed to continue processing</strong></p>
               </Banner>
 
+              {/* Debug: Show prompt type */}
+              {console.log('🐛 Prompt type:', userInputPrompt.type, 'Full prompt:', userInputPrompt)}
+
               {userInputPrompt.type === 'vehicle_form_needed' && (
                 <div style={{ padding: '16px', background: '#e3f2fd', borderRadius: '8px' }}>
                   <BlockStack gap="300">
@@ -885,6 +888,22 @@ function OrderDetails() {
                     >
                       Cancel
                     </Button>
+                  </BlockStack>
+                </div>
+              )}
+
+              {/* Debug: Catch-all for unmatched prompt types */}
+              {userInputPrompt.type !== 'vehicle_form_needed' &&
+               userInputPrompt.type !== 'spacer_selection' &&
+               !userInputPrompt.type?.includes('vehicle_') && (
+                <div style={{ padding: '16px', background: '#ffe0e0', borderRadius: '8px' }}>
+                  <BlockStack gap="300">
+                    <Text variant="headingSm" fontWeight="semibold">
+                      Unknown Prompt Type: {userInputPrompt.type}
+                    </Text>
+                    <Text variant="bodyMd">
+                      <pre>{JSON.stringify(userInputPrompt, null, 2)}</pre>
+                    </Text>
                   </BlockStack>
                 </div>
               )}
