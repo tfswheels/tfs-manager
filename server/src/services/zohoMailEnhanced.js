@@ -26,9 +26,10 @@ const accountIdCache = {};
 
 // Hardcoded account IDs for TFS Wheels mailboxes
 // These are specific to the TFS Wheels Zoho Mail organization
+// NOTE: These were swapped after OAuth reconnection on 2026-01-26
 const ACCOUNT_ID_MAP = {
-  'sales@tfswheels.com': '4132877000000008002',
-  'support@tfswheels.com': '4145628000000008002'
+  'sales@tfswheels.com': '4145628000000008002',  // SWAPPED: was 4132877000000008002
+  'support@tfswheels.com': '4132877000000008002'  // SWAPPED: was 4145628000000008002
 };
 
 /**
