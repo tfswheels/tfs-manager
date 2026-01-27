@@ -745,6 +745,183 @@ def fill_vehicle_form_interactive(driver, item_info):
         return False
 
 
+def detect_spacer_dropdown(driver):
+    """
+    Detect if a spacer dropdown exists on the current page
+    Returns True if found, False otherwise
+    """
+    try:
+        # Try to find spacer dropdown using multiple methods
+        spacer_check_js = """
+        // Look for select with name="spacer" or class containing "spacer"
+        var spacerSelect = document.querySelector('select[name="spacer"]');
+        if (spacerSelect && spacerSelect.offsetParent !== null) {
+            return {exists: true, id: spacerSelect.id, name: spacerSelect.name};
+        }
+
+        // Look for p.spacerDropDown with visible select
+        var spacerContainer = document.querySelector('p.spacerDropDown');
+        if (spacerContainer && spacerContainer.style.display !== 'none') {
+            var select = spacerContainer.querySelector('select');
+            if (select) {
+                return {exists: true, id: select.id, name: select.name};
+            }
+        }
+
+        return {exists: false, id: null, name: null};
+        """
+
+        result = driver.execute_script(spacer_check_js)
+        return result.get('exists', False)
+    except Exception as e:
+        print(f"   ⚠️  Error detecting spacer dropdown: {e}")
+        return False
+
+
+def parse_spacer_options(driver):
+    """
+    Parse spacer options from the dropdown
+    Returns list of options with text, value, price, and quantity
+    """
+    try:
+        # Get spacer options using JavaScript
+        spacer_options_js = """
+        var spacerSelect = document.querySelector('select[name="spacer"]');
+        if (!spacerSelect) {
+            var spacerContainer = document.querySelector('p.spacerDropDown');
+            if (spacerContainer) {
+                spacerSelect = spacerContainer.querySelector('select');
+            }
+        }
+
+        if (!spacerSelect) {
+            return [];
+        }
+
+        var options = [];
+        for (var i = 0; i < spacerSelect.options.length; i++) {
+            var opt = spacerSelect.options[i];
+            var optText = opt.text.trim();
+            var optValue = opt.value;
+
+            // Skip placeholder/empty options
+            if (!optText || optText.toLowerCase().includes('recommended spacers') || !optValue) {
+                continue;
+            }
+
+            // Extract price and quantity from data attributes
+            var price = opt.getAttribute('data-price') || null;
+            var quantity = opt.getAttribute('data-quantity') || null;
+
+            options.push({
+                text: optText,
+                value: optValue,
+                price: price,
+                quantity: quantity
+            });
+        }
+
+        return options;
+        """
+
+        options = driver.execute_script(spacer_options_js)
+        return options if options else []
+    except Exception as e:
+        print(f"   ⚠️  Error parsing spacer options: {e}")
+        return []
+
+
+def handle_spacer_selection_interactive(driver, item_info):
+    """
+    Handle spacer selection interactively by prompting user
+    Returns True if successful, False otherwise
+    """
+    interactive_prompt = get_interactive_prompt()
+    if not interactive_prompt:
+        print("   ⚠️  Interactive mode not available for spacer selection")
+        return False
+
+    try:
+        # Get spacer options
+        spacer_options = parse_spacer_options(driver)
+
+        if not spacer_options:
+            print("   ⚠️  No spacer options found")
+            return False
+
+        print(f"   🔧 Found {len(spacer_options)} spacer option(s)")
+
+        # Prompt user for selection
+        prompt_data = {
+            "item": item_info,
+            "available_options": spacer_options
+        }
+
+        response = interactive_prompt.request_user_input("spacer_selection", prompt_data)
+
+        if not response or response.get('action') == 'cancel':
+            print("   ❌ Spacer selection cancelled")
+            return False
+
+        selected_value = response.get('selected_value')
+        selected_text = response.get('selected_text')
+
+        if not selected_value:
+            print("   ⚠️  No spacer value selected")
+            return False
+
+        print(f"   🔧 Filling spacer selection: {selected_text}")
+
+        # Fill spacer selection using JavaScript
+        fill_spacer_js = f"""
+        var spacerSelect = document.querySelector('select[name="spacer"]');
+        if (!spacerSelect) {{
+            var spacerContainer = document.querySelector('p.spacerDropDown');
+            if (spacerContainer) {{
+                spacerSelect = spacerContainer.querySelector('select');
+            }}
+        }}
+
+        if (spacerSelect) {{
+            spacerSelect.scrollIntoView({{block: 'center', behavior: 'smooth'}});
+            spacerSelect.focus();
+            spacerSelect.value = '{selected_value}';
+
+            // Trigger all possible events
+            var events = ['change', 'input', 'select', 'blur'];
+            events.forEach(function(eventType) {{
+                var event = new Event(eventType, {{bubbles: true, cancelable: true}});
+                spacerSelect.dispatchEvent(event);
+            }});
+
+            // Also try jQuery trigger if available
+            if (typeof jQuery !== 'undefined') {{
+                jQuery(spacerSelect).trigger('change').trigger('blur');
+            }}
+
+            return true;
+        }}
+        return false;
+        """
+
+        success = driver.execute_script(fill_spacer_js)
+
+        if success:
+            # Give page time to update
+            time.sleep(2)
+            print("   ✅ Spacer selection filled successfully")
+            return True
+        else:
+            print("   ⚠️  Could not fill spacer selection")
+            return False
+
+    except Exception as e:
+        print(f"   ❌ Error handling spacer selection: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def fill_vehicle_form(driver, vehicle_info):
     """
     Fill the vehicle form on SDW product page using human-like interactions
@@ -3103,6 +3280,25 @@ def process_manual_search(driver, order, card_info, selected_line_items=None):
             else:
                 # Form still not filled, item was handled manually or skipped
                 continue
+
+        # Check for spacer recommendations after vehicle form is filled
+        print(f"   🔍 Checking for spacer recommendations...")
+        has_spacers = detect_spacer_dropdown(driver)
+
+        if has_spacers:
+            print(f"   🔧 Spacer dropdown detected!")
+            # Handle spacer selection interactively
+            item_info = {
+                "name": item['name'],
+                "sku": item.get('sku', ''),
+                "quantity": item['quantity']
+            }
+            spacer_selected = handle_spacer_selection_interactive(driver, item_info)
+            if not spacer_selected:
+                print(f"   ⚠️  Spacer selection failed or was skipped")
+                # Continue anyway - spacer is optional
+        else:
+            print(f"   ℹ️  No spacer recommendations found")
 
         # Automated filling succeeded - proceed with automatic add to cart
         # Set quantity (target the visible input with class itemQuantity, not the hidden one)

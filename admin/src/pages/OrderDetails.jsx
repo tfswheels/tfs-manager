@@ -767,6 +767,67 @@ function OrderDetails() {
                 </div>
               )}
 
+              {userInputPrompt.type === 'spacer_selection' && (
+                <div style={{ padding: '16px', background: '#fff3e0', borderRadius: '8px' }}>
+                  <BlockStack gap="300">
+                    <Text variant="headingSm" fontWeight="semibold">
+                      🔧 Spacer Recommendation
+                    </Text>
+
+                    {userInputPrompt.data.item && (
+                      <Text variant="bodyMd">
+                        For: <strong>{userInputPrompt.data.item.name}</strong>
+                      </Text>
+                    )}
+
+                    <Text variant="bodyMd" tone="subdued">
+                      This wheel may require spacers. Please select an option:
+                    </Text>
+
+                    {userInputPrompt.data.available_options && (
+                      <Select
+                        label="Choose spacer option"
+                        options={[
+                          { label: 'Select spacer option...', value: '' },
+                          ...userInputPrompt.data.available_options.map(option => {
+                            let label = option.text;
+                            // Add price info to label if available
+                            if (option.price && option.quantity) {
+                              const totalPrice = (parseFloat(option.price) * parseInt(option.quantity)).toFixed(2);
+                              label = `${option.text} - $${totalPrice}`;
+                            }
+                            return {
+                              label: label,
+                              value: option.value
+                            };
+                          })
+                        ]}
+                        value={selectedVehicleValue}
+                        onChange={(value) => {
+                          if (!value) return; // Don't submit empty selection
+                          setSelectedVehicleValue(value);
+                          const selectedOption = userInputPrompt.data.available_options.find(
+                            opt => opt.value === value
+                          );
+                          handleSubmitUserInput({
+                            selected_value: value,
+                            selected_text: selectedOption ? selectedOption.text : value
+                          });
+                          setSelectedVehicleValue('');
+                        }}
+                      />
+                    )}
+
+                    <Button
+                      tone="critical"
+                      onClick={() => handleSubmitUserInput({ action: 'cancel' })}
+                    >
+                      Cancel Order Processing
+                    </Button>
+                  </BlockStack>
+                </div>
+              )}
+
               {userInputPrompt.type && userInputPrompt.type.includes('vehicle_') && userInputPrompt.type.includes('_selection') && (
                 <div style={{ padding: '16px', background: '#e3f2fd', borderRadius: '8px' }}>
                   <BlockStack gap="300">
