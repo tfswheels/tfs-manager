@@ -2800,9 +2800,10 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
             print(f"   ⏳ Waiting {wait_time} seconds before retry...")
             time.sleep(wait_time)
 
-        # Fallback: Manual input (only in interactive mode)
+    # After all retry attempts, check for manual input fallback
+    try:
         if not invoice_number and is_interactive_mode():
-            print("   ⚠️  Could not automatically detect invoice number")
+            print("   ⚠️  Could not automatically detect invoice number after {max_attempts} attempts")
             print("   Please check the tracking page and enter the invoice number manually")
 
             while True:
@@ -2820,10 +2821,10 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
                     print("\n\nSkipping invoice capture...")
                     break
         elif not invoice_number:
-            print("   ⚠️  Could not automatically detect invoice number (non-interactive mode)")
+            print(f"   ⚠️  Could not automatically detect invoice number after {max_attempts} attempts (non-interactive mode)")
 
     except Exception as e:
-        print(f"   ⚠️  Error getting invoice number: {e}")
+        print(f"   ⚠️  Error in manual input fallback: {e}")
 
     # Get order details for processing log
     order_number = order['name'].replace('#', '')
