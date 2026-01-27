@@ -160,22 +160,37 @@ async function getZohoAccountId(accessToken, accountEmail) {
 
     console.log(`📋 Found ${accounts.length} Zoho accounts via API`);
 
-    // Log all accounts for debugging
+    // Log all accounts for debugging (with full details)
     accounts.forEach(acc => {
-      const email = acc.accountAddress || acc.emailAddress || acc.primaryEmailAddress || acc.mailBoxAddress || 'unknown';
-      console.log(`  📫 Account: ${email} → ID: ${acc.accountId}`);
+      console.log(`  📫 Account ID: ${acc.accountId}`);
+      console.log(`     Raw data:`, JSON.stringify(acc, null, 2));
     });
 
     // Find account matching the email
-    // Try multiple possible field names as Zoho API varies
-    const account = accounts.find(acc =>
-      acc.accountAddress === accountEmail ||
-      acc.emailAddress === accountEmail ||
-      acc.primaryEmailAddress === accountEmail ||
-      acc.mailBoxAddress === accountEmail ||
-      acc.fromAddress === accountEmail ||
-      (acc.accountName && acc.accountName.includes(accountEmail))
-    );
+    // Zoho can return emails as strings or arrays, and may have aliases
+    const account = accounts.find(acc => {
+      // Helper function to check if an email matches (handles arrays)
+      const emailMatches = (field) => {
+        if (!field) return false;
+        if (typeof field === 'string') return field === accountEmail;
+        if (Array.isArray(field)) return field.some(e =>
+          typeof e === 'string' ? e === accountEmail :
+          typeof e === 'object' ? e.emailAddress === accountEmail || e.address === accountEmail : false
+        );
+        if (typeof field === 'object') return field.emailAddress === accountEmail || field.address === accountEmail;
+        return false;
+      };
+
+      return (
+        emailMatches(acc.accountAddress) ||
+        emailMatches(acc.emailAddress) ||
+        emailMatches(acc.primaryEmailAddress) ||
+        emailMatches(acc.mailBoxAddress) ||
+        emailMatches(acc.fromAddress) ||
+        emailMatches(acc.sendMailDetails?.fromAddress) ||
+        (acc.accountName && acc.accountName.includes(accountEmail))
+      );
+    });
 
     if (!account) {
       console.error(`❌ No account found via API for ${accountEmail}`);
