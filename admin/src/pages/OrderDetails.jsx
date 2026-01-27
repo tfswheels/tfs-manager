@@ -770,6 +770,73 @@ function OrderDetails() {
                 </div>
               )}
 
+              {userInputPrompt.type === 'already_processed_warning' && (
+                <div style={{ padding: '16px', background: '#fff3cd', borderRadius: '8px', border: '3px solid #ff9800' }}>
+                  <BlockStack gap="400">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '32px' }}>⚠️</span>
+                      <Text variant="headingLg" fontWeight="bold" tone="warning">
+                        CAUTION: ORDER ALREADY PROCESSED
+                      </Text>
+                      <span style={{ fontSize: '32px' }}>⚠️</span>
+                    </div>
+
+                    <Banner tone="critical">
+                      <p><strong>This order has the 'sdw_processed' tag, which means it was already submitted to SDW.</strong></p>
+                      <p style={{ marginTop: '8px' }}>Processing this order again may create duplicate orders!</p>
+                    </Banner>
+
+                    {userInputPrompt.data.order_number && (
+                      <Text variant="bodyLg" fontWeight="semibold">
+                        Order: <strong>#{userInputPrompt.data.order_number}</strong>
+                      </Text>
+                    )}
+
+                    {userInputPrompt.data.tags && userInputPrompt.data.tags.length > 0 && (
+                      <div style={{ padding: '12px', background: '#f6f6f7', borderRadius: '4px' }}>
+                        <Text variant="bodySm" fontWeight="semibold">Current tags:</Text>
+                        <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                          {userInputPrompt.data.tags.map((tag, idx) => (
+                            <span
+                              key={idx}
+                              style={{
+                                padding: '4px 8px',
+                                background: tag === 'sdw_processed' ? '#ff9800' : '#e0e0e0',
+                                color: tag === 'sdw_processed' ? 'white' : 'black',
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                fontWeight: tag === 'sdw_processed' ? 'bold' : 'normal'
+                              }}
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <Text variant="bodyMd" tone="subdued">
+                      {userInputPrompt.data.message}
+                    </Text>
+
+                    <BlockStack gap="200">
+                      <Button
+                        tone="critical"
+                        onClick={() => handleSubmitUserInput({ action: 'cancel' })}
+                      >
+                        ❌ Cancel Processing (Recommended)
+                      </Button>
+
+                      <Button
+                        onClick={() => handleSubmitUserInput({ action: 'proceed' })}
+                      >
+                        ⚠️ Proceed Anyway (Risk of Duplicate)
+                      </Button>
+                    </BlockStack>
+                  </BlockStack>
+                </div>
+              )}
+
               {userInputPrompt.type === 'spacer_selection' && (
                 <div style={{ padding: '16px', background: '#fff3e0', borderRadius: '8px' }}>
                   <BlockStack gap="300">

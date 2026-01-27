@@ -2624,6 +2624,34 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
 
     if "thank you" in page_source or "thank-you" in current_url:
         print("   ✅ Order placed successfully - found 'thank you' confirmation")
+
+        # IMMEDIATELY tag the order as processed (to prevent duplicate processing)
+        print(f"\n🏷️  Adding 'sdw_processed' tag immediately...")
+        try:
+            order_number = order['name'].replace('#', '')
+
+            # Get current tags
+            current_tags = order.get('tags', [])
+            if isinstance(current_tags, str):
+                current_tags = [tag.strip() for tag in current_tags.split(',') if tag.strip()]
+
+            # Add sdw_processed tag if not already present
+            new_tags = current_tags.copy()
+            if 'sdw_processed' not in new_tags:
+                new_tags.append('sdw_processed')
+
+                # Update tags immediately
+                if add_order_tags(order['id'], new_tags):
+                    print(f"   ✅ 'sdw_processed' tag added to order #{order_number}")
+                else:
+                    print(f"   ⚠️  Could not add 'sdw_processed' tag (continuing anyway)")
+            else:
+                print(f"   ℹ️  Order already has 'sdw_processed' tag")
+
+        except Exception as e:
+            print(f"   ⚠️  Error adding immediate tag: {e}")
+            print(f"   ℹ️  Continuing with invoice extraction...")
+
     else:
         print("\n" + "="*60)
         print("❌ ORDER SUBMISSION FAILED")
@@ -2745,34 +2773,33 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
     order_number = order['name'].replace('#', '')
     processed_skus = [item['sku'] for item in cart_items]
 
-    # Tag Shopify order
+    # Add invoice number tag (sdw_processed was already added immediately after confirmation)
     if invoice_number:
-        print(f"\n🏷️  Tagging Shopify order...")
+        print(f"\n🏷️  Adding invoice number tag...")
         try:
             # Get current tags
             current_tags = order.get('tags', [])
             if isinstance(current_tags, str):
                 current_tags = [tag.strip() for tag in current_tags.split(',') if tag.strip()]
 
-            # Add new tags (just sdw_processed and invoice number)
+            # Add invoice number as a tag (sdw_processed should already be present)
             new_tags = current_tags.copy()
-            if 'sdw_processed' not in new_tags:
-                new_tags.append('sdw_processed')
-
-            # Add invoice number as a tag (without prefix)
             if invoice_number not in new_tags:
                 new_tags.append(invoice_number)
 
-            # Update tags
-            if add_order_tags(order['id'], new_tags):
-                print(f"   ✅ Tags added: sdw_processed, {invoice_number}")
+                # Update tags
+                if add_order_tags(order['id'], new_tags):
+                    print(f"   ✅ Invoice tag added: {invoice_number}")
+                else:
+                    print(f"   ⚠️  Could not add invoice tag")
             else:
-                print(f"   ⚠️  Could not add tags to Shopify order")
+                print(f"   ℹ️  Invoice number already in tags")
 
         except Exception as e:
             print(f"   ⚠️  Error tagging order: {e}")
 
-        # Add timeline comment
+    # Add timeline comment (only if we have invoice number)
+    if invoice_number:
         print(f"\n💬 Adding timeline comment to Shopify order...")
         try:
             # Build comment with line items
@@ -2803,9 +2830,10 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
 
         except Exception as e:
             print(f"   ⚠️  Error adding timeline comment: {e}")
-
     else:
-        print("\n⚠️  Skipping Shopify updates (no invoice number)")
+        print("\n⚠️  Could not retrieve invoice number from tracking page")
+        print("   ℹ️  Order was successfully placed and tagged with 'sdw_processed'")
+        print("   ℹ️  You may need to manually find the invoice number in SDW")
 
     # Final summary
     print("\n" + "="*60)
@@ -3030,6 +3058,48 @@ def process_manual_search(driver, order, card_info, selected_line_items=None):
         card_info: Payment card information
         selected_line_items: Optional list of line item IDs to process (filters which items to process)
     """
+
+    # Check if order already has sdw_processed tag
+    current_tags = order.get('tags', [])
+    if isinstance(current_tags, str):
+        current_tags = [tag.strip() for tag in current_tags.split(',') if tag.strip()]
+
+    if 'sdw_processed' in current_tags:
+        print("\n" + "⚠️ " * 30)
+        print("⚠️  CAUTION: THIS ORDER HAS ALREADY BEEN PROCESSED")
+        print("⚠️ " * 30)
+        print(f"\n   Order #{order.get('name', '').replace('#', '')} has the 'sdw_processed' tag")
+        print("   This means the order was already submitted to SDW.")
+        print("\n   📋 Current tags:", ', '.join(current_tags))
+        print("\n   ⚠️  Processing this order again may result in duplicate orders!")
+        print("\n" + "⚠️ " * 30)
+
+        # In non-interactive mode, stop immediately
+        interactive_prompt = get_interactive_prompt()
+        if interactive_prompt:
+            # Interactive mode - ask user to confirm
+            prompt_data = {
+                "order_number": order.get('name', '').replace('#', ''),
+                "tags": current_tags,
+                "message": "This order has already been processed (has sdw_processed tag). Processing again may create duplicate orders.",
+                "options": [
+                    {"value": "proceed", "label": "⚠️ Proceed Anyway (Risk of Duplicate)"},
+                    {"value": "cancel", "label": "❌ Cancel Processing"}
+                ]
+            }
+
+            response = interactive_prompt.request_user_input("already_processed_warning", prompt_data)
+
+            if not response or response.get('action') != 'proceed':
+                print("\n   ❌ Processing cancelled by user")
+                return None
+            else:
+                print("\n   ⚠️  User chose to proceed despite warning")
+        else:
+            # Non-interactive: stop immediately
+            print("\n   ❌ Cannot proceed - order already processed")
+            print("   Remove the 'sdw_processed' tag if you want to reprocess this order")
+            return None
 
     # Login first and get cookies
     cookies = login_to_sdw(driver)
