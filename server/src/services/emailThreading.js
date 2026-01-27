@@ -305,12 +305,13 @@ export async function getConversationWithEmails(conversationId) {
       `SELECT
         c.*,
         o.order_number,
+        o.shopify_order_id,
         o.customer_name as order_customer_name,
         o.vehicle_year,
         o.vehicle_make,
         o.vehicle_model,
         o.vehicle_trim,
-        o.vehicle_full
+        CONCAT_WS(' ', o.vehicle_year, o.vehicle_make, o.vehicle_model, o.vehicle_trim) as vehicle_full
       FROM email_conversations c
       LEFT JOIN orders o ON c.order_id = o.id
       WHERE c.id = ?`,

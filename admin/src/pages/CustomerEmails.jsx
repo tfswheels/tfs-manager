@@ -142,15 +142,15 @@ export default function CustomerEmails() {
         </InlineStack>
       </div>,
       <div onClick={(e) => {
-        if (conv.order_id) {
+        if (conv.order_id && conv.shopify_order_id) {
           e.stopPropagation();
-          navigate(`/orders/${conv.order_id}`);
+          navigate(`/orders/${conv.shopify_order_id}`);
         }
       }} style={rowStyle}>
-        {conv.order_id ? (
+        {conv.order_id && conv.shopify_order_id ? (
           <Button plain size="slim" onClick={(e) => {
             e.stopPropagation();
-            navigate(`/orders/${conv.order_id}`);
+            navigate(`/orders/${conv.shopify_order_id}`);
           }}>
             #{conv.order_number || conv.order_id}
           </Button>

@@ -307,7 +307,7 @@ export default function EmailThread() {
                       </Text>
                       <Button
                         plain
-                        onClick={() => navigate(`/orders/${conversation.order.id}`)}
+                        onClick={() => navigate(`/orders/${conversation.order.shopify_order_id}`)}
                       >
                         #{conversation.order.order_number}
                       </Button>

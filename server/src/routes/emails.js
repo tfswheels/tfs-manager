@@ -403,6 +403,7 @@ router.get('/inbox', async (req, res) => {
       SELECT
         c.*,
         o.order_number,
+        o.shopify_order_id,
         o.customer_name as order_customer_name,
         o.vehicle_year,
         o.vehicle_make,
@@ -504,6 +505,7 @@ router.get('/conversations', async (req, res) => {
       SELECT
         c.*,
         o.order_number,
+        o.shopify_order_id,
         o.customer_name as order_customer_name,
         o.vehicle_year,
         o.vehicle_make,
@@ -610,6 +612,7 @@ router.get('/conversations/:id', async (req, res) => {
         } : null,
         order: conversation.order_id ? {
           id: conversation.order_id,
+          shopify_order_id: conversation.shopify_order_id,
           order_number: conversation.order_number,
           vehicle: {
             year: conversation.vehicle_year,
