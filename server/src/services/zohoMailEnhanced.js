@@ -403,8 +403,8 @@ export async function fetchEmailDetails(shopId, messageId, accountEmail = EMAIL_
     // Get Zoho account ID
     const accountId = await getZohoAccountId(accessToken, accountEmail);
 
-    // Use Zoho Mail API with accountId, folderId, and messageId in URL path
-    const response = await axios.get(
+    // Fetch email metadata (from, to, subject, etc.)
+    const detailsResponse = await axios.get(
       `${ZOHO_API_BASE}/accounts/${accountId}/folders/${folderId}/messages/${messageId}/details`,
       {
         headers: {
@@ -413,7 +413,26 @@ export async function fetchEmailDetails(shopId, messageId, accountEmail = EMAIL_
       }
     );
 
-    const email = response.data.data;
+    const email = detailsResponse.data.data;
+
+    // Fetch email content (body)
+    try {
+      const contentResponse = await axios.get(
+        `${ZOHO_API_BASE}/accounts/${accountId}/folders/${folderId}/messages/${messageId}/content`,
+        {
+          headers: {
+            'Authorization': `Zoho-oauthtoken ${accessToken}`
+          }
+        }
+      );
+
+      // Add content to email object
+      email.content = contentResponse.data.data;
+    } catch (contentError) {
+      console.warn(`⚠️  Could not fetch content for ${messageId}: ${contentError.response?.data?.errorCode || contentError.message}`);
+      // Continue without content - better to have metadata than nothing
+      email.content = null;
+    }
 
     console.log(`✅ Fetched email details for ${email.fromAddress}`);
 

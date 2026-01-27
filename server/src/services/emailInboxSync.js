@@ -143,24 +143,25 @@ async function syncInbox(shopId, accountEmail, options = {}) {
           }
         }
 
-        // Extract full email content - handle different Zoho API response formats
+        // Extract full email content from Zoho API response
+        // Zoho returns content as: { messageId, content: "HTML string" }
         let bodyText = '';
         let bodyHtml = null;
 
-        if (fullEmail.content) {
-          // Format: { plainContent: "...", htmlContent: "..." }
-          bodyText = fullEmail.content.plainContent || fullEmail.content;
-          bodyHtml = fullEmail.content.htmlContent || null;
-        } else if (fullEmail.body) {
-          // Alternative format: { body: "..." }
-          bodyText = fullEmail.body;
-        } else if (fullEmail.textContent) {
-          bodyText = fullEmail.textContent;
-          bodyHtml = fullEmail.htmlContent || null;
+        if (fullEmail.content?.content) {
+          // Zoho Mail API format: content.content contains HTML
+          bodyHtml = fullEmail.content.content;
+          // Extract plain text from HTML (basic conversion - strip tags)
+          bodyText = bodyHtml.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').trim();
+        } else if (fullEmail.summary) {
+          // Fallback to summary if content isn't available
+          bodyText = fullEmail.summary;
+          bodyHtml = null;
         } else {
-          // Last resort - log warning and use summary (but this shouldn't happen with full details)
-          console.warn(`⚠️  No content found in email ${fullEmail.messageId}, content structure:`, Object.keys(fullEmail));
-          bodyText = fullEmail.summary || '(No content available)';
+          // Last resort
+          console.warn(`⚠️  No content found for email ${fullEmail.messageId}`);
+          bodyText = '(No content available)';
+          bodyHtml = null;
         }
 
         await saveEmail(shopId, conversationId, {
