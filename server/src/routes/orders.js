@@ -71,18 +71,19 @@ router.get('/', verifyShopInstalled, async (req, res) => {
 
     // Add search filter with line items
     if (search.trim()) {
-      // Left join to search line items (product names)
+      // Left join to search line items (product names and SKUs)
       query += `
         LEFT JOIN order_items oi ON o.shopify_order_id = oi.shopify_order_id
         WHERE o.shop_id = ? AND (
           o.order_number LIKE ? OR
           o.customer_name LIKE ? OR
           o.customer_email LIKE ? OR
-          oi.title LIKE ?
+          oi.title LIKE ? OR
+          oi.sku LIKE ?
         )
       `;
       const searchPattern = `%${search.trim()}%`;
-      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
     } else {
       query += ` WHERE o.shop_id = ?`;
     }
@@ -109,11 +110,12 @@ router.get('/', verifyShopInstalled, async (req, res) => {
           o.order_number LIKE ? OR
           o.customer_name LIKE ? OR
           o.customer_email LIKE ? OR
-          oi.title LIKE ?
+          oi.title LIKE ? OR
+          oi.sku LIKE ?
         )
       `;
       const searchPattern = `%${search.trim()}%`;
-      countParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
+      countParams.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
     } else {
       countQuery = 'SELECT COUNT(*) as total FROM orders WHERE shop_id = ?';
     }

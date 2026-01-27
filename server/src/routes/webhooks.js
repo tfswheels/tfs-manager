@@ -203,17 +203,20 @@ router.post('/create', verifyWebhook, async (req, res) => {
           shopify_order_id,
           product_id,
           variant_id,
+          sku,
           title,
           quantity,
           price
-        ) VALUES (?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
+          sku = VALUES(sku),
           quantity = VALUES(quantity),
           price = VALUES(price)`,
         [
           order.id,
           item.product_id,
           item.variant_id,
+          item.sku || null,
           item.title,
           item.quantity,
           parseFloat(item.price)
@@ -289,14 +292,16 @@ router.post('/updated', verifyWebhook, async (req, res) => {
             shopify_order_id,
             product_id,
             variant_id,
+            sku,
             title,
             quantity,
             price
-          ) VALUES (?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
             order.id,
             item.product_id,
             item.variant_id,
+            item.sku || null,
             item.title,
             item.quantity,
             parseFloat(item.price)

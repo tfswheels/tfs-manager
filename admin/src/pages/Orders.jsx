@@ -251,13 +251,11 @@ export default function Orders() {
       const response = await axios.get(`${API_URL}/api/orders/sdw-job/${jobId}`);
       const status = response.data;
 
-      console.log(`[Poll] Status: ${status.status}, Progress count: ${status.progress?.length || 0}`);
       setSdwJobStatus(status.status);
       setSdwProgress(status.progress || []);
 
       // Check for interactive prompt
       if (status.status === 'awaiting_user_input' && status.userInputPrompt) {
-        console.log('🔔 User input required:', status.userInputPrompt.type);
         setUserInputPrompt(status.userInputPrompt);
         setUserInputModalOpen(true);
         // Don't continue polling while waiting for input
@@ -274,7 +272,6 @@ export default function Orders() {
 
       // If awaiting confirmation, update pricing (UI shows inline confirmation)
       if (status.status === 'awaiting_confirmation') {
-        console.log(`[Poll] Awaiting confirmation! Total: $${status.totalPrice}, Shipping: $${status.shippingCost}`);
         setCalculatedTotal(status.totalPrice);
         setCalculatedShipping(status.shippingCost);
         setProcessingSDW(false); // Stop spinner, show confirmation UI
@@ -393,16 +390,12 @@ export default function Orders() {
     if (!sdwJobId) return;
 
     try {
-      console.log('📤 Submitting user input:', response);
-
       const apiResponse = await axios.post(
         `${API_URL}/api/orders/sdw-job/${sdwJobId}/user-input`,
         { response }
       );
 
       if (apiResponse.data.success) {
-        console.log('✅ User input submitted successfully');
-
         // Close the modal
         setUserInputModalOpen(false);
         setUserInputPrompt(null);
@@ -622,13 +615,12 @@ export default function Orders() {
             <InlineStack gap="400" align="space-between" blockAlign="center">
               <div style={{ flex: 1, maxWidth: '500px' }}>
                 <TextField
-                  placeholder="Search by order #, customer name, email, or product..."
+                  placeholder="Search by order #, customer name, email, product name, or part #..."
                   value={searchQuery}
                   onChange={setSearchQuery}
                   clearButton
                   onClearButtonClick={handleSearchClear}
                   autoComplete="off"
-                  helpText={searchQuery ? `Searching... (${loading ? 'loading' : 'ready'})` : 'Start typing to search'}
                 />
               </div>
               <InlineStack gap="200" align="end">
