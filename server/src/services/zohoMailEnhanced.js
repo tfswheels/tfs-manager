@@ -26,10 +26,11 @@ const accountIdCache = {};
 
 // Hardcoded account IDs for TFS Wheels mailboxes
 // These are specific to the TFS Wheels Zoho Mail organization
-// NOTE: These were swapped after OAuth reconnection on 2026-01-26
+// NOTE: After OAuth reconnection on 2026-01-27, only sales@ account exists in OAuth access
+// Using same account ID for both since support@ is not a separate mailbox
 const ACCOUNT_ID_MAP = {
-  'sales@tfswheels.com': '4145628000000008002',  // SWAPPED: was 4132877000000008002
-  'support@tfswheels.com': '4132877000000008002'  // SWAPPED: was 4145628000000008002
+  'sales@tfswheels.com': '4132877000000008002',
+  'support@tfswheels.com': '4132877000000008002'  // Using sales@ account ID
 };
 
 /**
@@ -134,16 +135,12 @@ async function getZohoAccountId(accessToken, accountEmail) {
     return accountIdCache[accountEmail];
   }
 
-  // Temporarily disabled hardcoded mapping - using API discovery instead
-  // The hardcoded IDs may be outdated after OAuth reconnection
-  // TODO: Re-enable after confirming correct IDs from API discovery logs
-  /*
+  // Check hardcoded mapping first (more reliable than API lookup)
   if (ACCOUNT_ID_MAP[accountEmail]) {
     console.log(`✅ Using hardcoded account ID for ${accountEmail}: ${ACCOUNT_ID_MAP[accountEmail]}`);
     accountIdCache[accountEmail] = ACCOUNT_ID_MAP[accountEmail];
     return ACCOUNT_ID_MAP[accountEmail];
   }
-  */
 
   try {
     // Fallback: Try to get account from API
