@@ -1809,9 +1809,9 @@ def handle_initial_captcha(driver):
     try:
         print("   🔍 Checking for CAPTCHA...")
 
-        # Wait for the "Begin" button
+        # Wait for the "Begin" button (only 2 seconds)
         try:
-            begin_button = WebDriverWait(driver, 20).until(
+            begin_button = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.ID, "amzn-captcha-verify-button"))
             )
             print("   ✅ Found CAPTCHA button - Clicking...")
@@ -1860,8 +1860,24 @@ def handle_initial_captcha(driver):
                 return True
 
         except TimeoutException:
-            print("   ℹ️  No CAPTCHA button found (not needed)")
-            return True
+            print("   ℹ️  No CAPTCHA button found after 2 seconds")
+
+            # Check if login form is present (means no captcha needed)
+            try:
+                login_form = driver.find_element(By.ID, "username")
+                print("   ✅ Login form present - no CAPTCHA needed")
+                return True
+            except NoSuchElementException:
+                # Check if we're already past captcha (look for other expected elements)
+                try:
+                    # Check for quote page elements
+                    driver.find_element(By.CLASS_NAME, "cart-product")
+                    print("   ✅ Already on quote page - no CAPTCHA needed")
+                    return True
+                except NoSuchElementException:
+                    # Not sure where we are, but no captcha button found
+                    print("   ℹ️  No CAPTCHA or login form found - proceeding")
+                    return True
 
     except Exception as e:
         print(f"   ❌ Error handling CAPTCHA: {e}")
@@ -1884,10 +1900,10 @@ def login_to_sdw(driver):
         print(f"   📍 Navigating to: {login_url}")
         driver.get(login_url)
 
-        # Wait for and click CAPTCHA button
-        print("   ⏳ Waiting for CAPTCHA button...")
+        # Wait for and click CAPTCHA button (only 2 seconds)
+        print("   ⏳ Checking for CAPTCHA button...")
         try:
-            begin_button = WebDriverWait(driver, 20).until(
+            begin_button = WebDriverWait(driver, 2).until(
                 EC.element_to_be_clickable((By.ID, "amzn-captcha-verify-button"))
             )
             print("   ✅ Found CAPTCHA button - Clicking...")
@@ -1907,7 +1923,15 @@ def login_to_sdw(driver):
                 return False
 
         except TimeoutException:
-            print("   ℹ️  No CAPTCHA button found")
+            print("   ℹ️  No CAPTCHA button found after 2 seconds")
+
+            # Check if login form is already present (no captcha needed)
+            try:
+                driver.find_element(By.ID, "login-email")
+                print("   ✅ Login form already present - no CAPTCHA needed")
+            except NoSuchElementException:
+                print("   ⚠️  Neither CAPTCHA nor login form found")
+                # Continue anyway - might load later
 
         # Login form should be loaded now (either directly or after WAF solve)
         print("   ⏳ Waiting for login form...")
@@ -2677,72 +2701,104 @@ def complete_checkout_and_submit(driver, order, cart_items, card_info):
 
         return None
 
-    # Try to get invoice number and order details from tracking page
+    # Try to get invoice number and order details from tracking page (with retries)
     print("\n📄 Looking for invoice number...")
     invoice_number = None
     invoice_total = None
     invoice_items = []
 
-    try:
-        # Navigate to tracking page to get the most recent invoice
-        tracking_url = f"https://www.sdwheelwholesale.com/track?email={BILLING_INFO['email']}"
-        print(f"   🌐 Navigating to tracking page: {tracking_url}")
-        driver.get(tracking_url)
-        time.sleep(5)
+    # Retry logic: Try up to 5 times to fetch invoice
+    max_attempts = 5
+    attempt = 0
 
-        # Look for the most recent invoice (first one on page)
+    while attempt < max_attempts and not invoice_number:
+        attempt += 1
         try:
-            # Find all order cards
-            order_cards = driver.find_elements(By.CSS_SELECTOR, "li.mo-item")
+            if attempt > 1:
+                print(f"\n   🔄 Retry attempt {attempt}/{max_attempts}...")
 
-            if order_cards:
-                # Get the first card (most recent)
-                first_card = order_cards[0]
+            # Navigate to tracking page to get the most recent invoice
+            tracking_url = f"https://www.sdwheelwholesale.com/track?email={BILLING_INFO['email']}"
+            print(f"   🌐 Navigating to tracking page: {tracking_url}")
+            driver.get(tracking_url)
 
-                # Extract invoice number
-                try:
-                    invoice_elem = first_card.find_element(By.CSS_SELECTOR, "div.mo-num")
-                    invoice_text = invoice_elem.text
-                    invoice_match = re.search(r'#?(\d{7,})', invoice_text)
-                    if invoice_match:
-                        invoice_number = invoice_match.group(1)
-                        print(f"   ✅ Invoice number found: {invoice_number}")
-                except:
-                    pass
+            # Wait for page to load (shorter wait, check for elements)
+            time.sleep(3)
 
-                # Extract total price
-                try:
-                    total_elem = first_card.find_element(By.CSS_SELECTOR, "div.mo-total")
-                    total_text = total_elem.text.strip().replace('$', '').replace(',', '')
-                    invoice_total = total_text
-                    print(f"   ✅ Invoice total found: ${invoice_total}")
-                except:
-                    pass
+            # Look for the most recent invoice (first one on page)
+            try:
+                # Wait for order cards to appear
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "li.mo-item"))
+                )
 
-                # Extract item names from "mo-includes" div
-                try:
-                    includes_div = first_card.find_element(By.CSS_SELECTOR, "div.mo-includes")
-                    # Get all text content and clean it up
-                    items_text = includes_div.text.strip()
-                    # The text usually says "This order includes: " followed by items
-                    if items_text:
-                        # Remove the header text
-                        items_text = items_text.replace('This order includes:', '').strip()
-                        invoice_items.append(items_text)
-                        print(f"   ✅ Invoice items found")
-                except:
-                    pass
+                # Find all order cards
+                order_cards = driver.find_elements(By.CSS_SELECTOR, "li.mo-item")
 
-            # Alternative: look for invoice numbers in page source
-            if not invoice_number:
-                all_text = driver.page_source
-                invoice_matches = re.findall(r'Invoice\s*#(\d{7,})', all_text)
-                if invoice_matches:
-                    invoice_number = invoice_matches[0]
-                    print(f"   ✅ Invoice number found: {invoice_number}")
+                if order_cards:
+                    print(f"   ✅ Found {len(order_cards)} order(s) on tracking page")
+                    # Get the first card (most recent)
+                    first_card = order_cards[0]
+
+                    # Extract invoice number
+                    try:
+                        invoice_elem = first_card.find_element(By.CSS_SELECTOR, "div.mo-num")
+                        invoice_text = invoice_elem.text
+                        invoice_match = re.search(r'#?(\d{7,})', invoice_text)
+                        if invoice_match:
+                            invoice_number = invoice_match.group(1)
+                            print(f"   ✅ Invoice number found: {invoice_number}")
+                    except Exception as e:
+                        print(f"   ⚠️  Could not extract invoice number from card: {e}")
+
+                    # Extract total price
+                    try:
+                        total_elem = first_card.find_element(By.CSS_SELECTOR, "div.mo-total")
+                        total_text = total_elem.text.strip().replace('$', '').replace(',', '')
+                        invoice_total = total_text
+                        print(f"   ✅ Invoice total found: ${invoice_total}")
+                    except Exception as e:
+                        print(f"   ⚠️  Could not extract total: {e}")
+
+                    # Extract item names from "mo-includes" div
+                    try:
+                        includes_div = first_card.find_element(By.CSS_SELECTOR, "div.mo-includes")
+                        # Get all text content and clean it up
+                        items_text = includes_div.text.strip()
+                        # The text usually says "This order includes: " followed by items
+                        if items_text:
+                            # Remove the header text
+                            items_text = items_text.replace('This order includes:', '').strip()
+                            invoice_items.append(items_text)
+                            print(f"   ✅ Invoice items found")
+                    except Exception as e:
+                        print(f"   ⚠️  Could not extract items: {e}")
+
+                else:
+                    print(f"   ⚠️  No order cards found on tracking page")
+
+                # Alternative: look for invoice numbers in page source
+                if not invoice_number:
+                    print(f"   🔍 Searching page source for invoice number...")
+                    all_text = driver.page_source
+                    invoice_matches = re.findall(r'Invoice\s*#(\d{7,})', all_text)
+                    if invoice_matches:
+                        invoice_number = invoice_matches[0]
+                        print(f"   ✅ Invoice number found in page source: {invoice_number}")
+
+            except TimeoutException:
+                print(f"   ⏱️  Timeout waiting for order cards (attempt {attempt}/{max_attempts})")
+            except Exception as e:
+                print(f"   ⚠️  Error extracting invoice from tracking page: {e}")
 
         except Exception as e:
-            print(f"   ⚠️  Error extracting invoice from tracking page: {e}")
+            print(f"   ⚠️  Error navigating to tracking page: {e}")
+
+        # If we didn't find invoice, wait before retrying
+        if not invoice_number and attempt < max_attempts:
+            wait_time = 3
+            print(f"   ⏳ Waiting {wait_time} seconds before retry...")
+            time.sleep(wait_time)
 
         # Fallback: Manual input (only in interactive mode)
         if not invoice_number and is_interactive_mode():
