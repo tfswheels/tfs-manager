@@ -19,7 +19,6 @@ import emailsRoutes from './routes/emails.js';  // New comprehensive email route
 import brandVoiceRoutes from './routes/brandVoice.js';  // Brand voice management
 import brandsRoutes from './routes/brands.js';
 import migrationsRoutes from './routes/migrations.js';
-import zohoDiagnosticsRoutes from './routes/zoho-diagnostics.js';
 import { applyAllSecurityHeaders } from './middleware/securityHeaders.js';
 import './config/database.js';
 import { jobScheduler } from './services/jobScheduler.js';
@@ -75,7 +74,6 @@ app.use('/api/customer-emails', customerEmailsRoutes);
 app.use('/api/brand-voice', brandVoiceRoutes);  // Brand voice management
 app.use('/api/brands', brandsRoutes);
 app.use('/api/migrations', migrationsRoutes);
-app.use('/api/zoho-diagnostics', zohoDiagnosticsRoutes);  // Zoho diagnostics
 
 // Health check endpoint
 app.get('/health', (req, res) => {
