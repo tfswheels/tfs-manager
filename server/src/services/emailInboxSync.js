@@ -65,7 +65,7 @@ async function syncInbox(shopId, accountEmail, options = {}) {
 
           if (orders.length === 0) {
             // Not related to any order, skip support@ email
-            console.log(`⏭️  Skipping support@ email from ${email.fromAddress || email.sender} - no order found`);
+            // Silent skip - no spammy logs
             skippedCount++;
             continue;
           }

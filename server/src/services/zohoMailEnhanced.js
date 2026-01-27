@@ -291,7 +291,10 @@ export async function fetchInbox(shopId, options = {}) {
     try {
       const accessToken = await getAccessToken(shopId);
 
-      console.log(`📥 Fetching emails from ${accountEmail}... (attempt ${attempt}/${maxRetries})`);
+      // Only log on first attempt to reduce noise
+      if (attempt === 1) {
+        console.log(`📥 Fetching emails from ${accountEmail}...`);
+      }
 
       // Get Zoho account ID for this email address
       const accountId = await getZohoAccountId(accessToken, accountEmail);
@@ -326,13 +329,15 @@ export async function fetchInbox(shopId, options = {}) {
       const status = error.response?.status;
       const errorData = error.response?.data || {};
 
-      // Log detailed error information
-      console.error(`❌ Failed to fetch inbox (attempt ${attempt}/${maxRetries}):`, {
-        status: status,
-        statusText: error.response?.statusText,
-        data: errorData,
-        message: error.message
-      });
+      // Only log errors on last attempt to reduce noise
+      if (isLastAttempt) {
+        console.error(`❌ Failed to fetch inbox (all ${maxRetries} attempts failed):`, {
+          status: status,
+          statusText: error.response?.statusText,
+          data: errorData,
+          message: error.message
+        });
+      }
 
       // Don't retry on 4xx errors (client errors) except 429 (rate limit)
       if (status && status >= 400 && status < 500 && status !== 429) {
@@ -347,7 +352,7 @@ export async function fetchInbox(shopId, options = {}) {
 
       // Wait before retrying (exponential backoff)
       const delay = retryDelay * attempt;
-      console.log(`⏳ Waiting ${delay}ms before retry...`);
+      // Silent retry - no spammy logs
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
