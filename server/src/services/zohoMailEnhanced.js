@@ -134,12 +134,16 @@ async function getZohoAccountId(accessToken, accountEmail) {
     return accountIdCache[accountEmail];
   }
 
-  // Check hardcoded mapping first (more reliable than API lookup)
+  // Temporarily disabled hardcoded mapping - using API discovery instead
+  // The hardcoded IDs may be outdated after OAuth reconnection
+  // TODO: Re-enable after confirming correct IDs from API discovery logs
+  /*
   if (ACCOUNT_ID_MAP[accountEmail]) {
     console.log(`✅ Using hardcoded account ID for ${accountEmail}: ${ACCOUNT_ID_MAP[accountEmail]}`);
     accountIdCache[accountEmail] = ACCOUNT_ID_MAP[accountEmail];
     return ACCOUNT_ID_MAP[accountEmail];
   }
+  */
 
   try {
     // Fallback: Try to get account from API
@@ -156,6 +160,12 @@ async function getZohoAccountId(accessToken, accountEmail) {
 
     console.log(`📋 Found ${accounts.length} Zoho accounts via API`);
 
+    // Log all accounts for debugging
+    accounts.forEach(acc => {
+      const email = acc.accountAddress || acc.emailAddress || acc.primaryEmailAddress || acc.mailBoxAddress || 'unknown';
+      console.log(`  📫 Account: ${email} → ID: ${acc.accountId}`);
+    });
+
     // Find account matching the email
     // Try multiple possible field names as Zoho API varies
     const account = accounts.find(acc =>
@@ -169,6 +179,10 @@ async function getZohoAccountId(accessToken, accountEmail) {
 
     if (!account) {
       console.error(`❌ No account found via API for ${accountEmail}`);
+      console.error(`   Available accounts:`, accounts.map(a => ({
+        email: a.accountAddress || a.emailAddress || a.primaryEmailAddress,
+        id: a.accountId
+      })));
       throw new Error(`Zoho account not found for ${accountEmail}`);
     }
 
