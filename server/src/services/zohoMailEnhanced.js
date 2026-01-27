@@ -391,9 +391,10 @@ export async function fetchInbox(shopId, options = {}) {
  * @param {number} shopId - Shop ID
  * @param {string} messageId - Zoho message ID
  * @param {string} accountEmail - Email account (e.g., sales@tfswheels.com)
+ * @param {string} folderId - Folder ID (1=Inbox, 2=Sent, etc.)
  * @returns {Promise<object>} Full email details
  */
-export async function fetchEmailDetails(shopId, messageId, accountEmail = EMAIL_ACCOUNTS.sales) {
+export async function fetchEmailDetails(shopId, messageId, accountEmail = EMAIL_ACCOUNTS.sales, folderId = '1') {
   try {
     const accessToken = await getAccessToken(shopId);
 
@@ -402,15 +403,12 @@ export async function fetchEmailDetails(shopId, messageId, accountEmail = EMAIL_
     // Get Zoho account ID
     const accountId = await getZohoAccountId(accessToken, accountEmail);
 
-    // Use view endpoint with messageId parameter (Zoho Mail API v1)
+    // Use Zoho Mail API with accountId, folderId, and messageId in URL path
     const response = await axios.get(
-      `${ZOHO_API_BASE}/accounts/${accountId}/messages/view`,
+      `${ZOHO_API_BASE}/accounts/${accountId}/folders/${folderId}/messages/${messageId}/details`,
       {
         headers: {
           'Authorization': `Zoho-oauthtoken ${accessToken}`
-        },
-        params: {
-          messageId: messageId
         }
       }
     );

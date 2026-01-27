@@ -108,7 +108,7 @@ async function syncInbox(shopId, accountEmail, options = {}) {
         // Try to fetch full email details including body
         let fullEmail = null;
         try {
-          fullEmail = await fetchEmailDetails(shopId, email.messageId, accountEmail);
+          fullEmail = await fetchEmailDetails(shopId, email.messageId, accountEmail, folderId);
         } catch (detailsError) {
           console.error(`⚠️  Could not fetch full details for ${email.messageId}, skipping email`);
           // Skip emails where we can't get full content - don't save truncated emails
