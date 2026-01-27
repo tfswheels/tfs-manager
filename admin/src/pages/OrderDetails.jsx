@@ -97,7 +97,11 @@ function OrderDetails() {
   // Poll for SDW job status
   const pollSDWJobStatus = async (jobId) => {
     try {
-      const response = await axios.get(`${API_URL}/api/orders/sdw-job/${jobId}`);
+      const response = await axios.get(`${API_URL}/api/orders/sdw-job/${jobId}`, {
+        params: {
+          shop: '2f3d7a-2.myshopify.com'
+        }
+      });
       const status = response.data;
 
       console.log(`[Poll] Status: ${status.status}, Progress count: ${status.progress?.length || 0}`);
@@ -245,7 +249,11 @@ function OrderDetails() {
       setIsConfirming(true);
       setSdwProgress(prev => [...prev, { message: 'User confirmed. Completing purchase...', timestamp: new Date() }]);
 
-      const response = await axios.post(`${API_URL}/api/orders/sdw-job/${sdwJobId}/confirm`);
+      const response = await axios.post(`${API_URL}/api/orders/sdw-job/${sdwJobId}/confirm`, {}, {
+        params: {
+          shop: '2f3d7a-2.myshopify.com'
+        }
+      });
 
       if (response.data.success) {
         // Resume polling to track completion
@@ -268,7 +276,12 @@ function OrderDetails() {
 
       const apiResponse = await axios.post(
         `${API_URL}/api/orders/sdw-job/${sdwJobId}/user-input`,
-        { response }
+        { response },
+        {
+          params: {
+            shop: '2f3d7a-2.myshopify.com'
+          }
+        }
       );
 
       if (apiResponse.data.success) {
