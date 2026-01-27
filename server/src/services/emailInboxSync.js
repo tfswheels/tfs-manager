@@ -19,58 +19,91 @@ const lastSyncTimes = {
 };
 
 /**
- * Sync emails from a specific inbox
+ * Sync emails from a specific inbox or folder
+ * Supports batch fetching with uniqueness checking
+ *
+ * @param {number} shopId - Shop ID
+ * @param {string} accountEmail - Email account
+ * @param {object} options - Sync options
+ * @param {number} options.maxEmails - Maximum emails to fetch (default: 500)
+ * @param {number} options.batchSize - Emails per batch (default: 50)
+ * @param {string} options.folderId - Folder ID (1=Inbox, 2=Sent)
+ * @param {string} options.direction - Email direction ('inbound' or 'outbound')
  */
 async function syncInbox(shopId, accountEmail, options = {}) {
   try {
-    console.log(`🔄 Syncing inbox: ${accountEmail}`);
+    const {
+      maxEmails = 500,
+      batchSize = 50,
+      folderId = '1',
+      direction = 'inbound'
+    } = options;
 
-    const lastSync = lastSyncTimes[accountEmail === 'sales@tfswheels.com' ? 'sales' : 'support'];
-
-    // Fetch recent emails - use configurable limit (default: 20 for performance)
-    // User requested to limit emails to avoid API issues
-    const limit = options.limit || 20;
-
-    const emails = await fetchInbox(shopId, {
-      accountEmail: accountEmail,
-      limit: limit,
-      sortBy: 'receivedTime',
-      sortOrder: 'desc'
-    });
+    const folderName = folderId === '1' ? 'Inbox' : folderId === '2' ? 'Sent' : `Folder ${folderId}`;
+    console.log(`🔄 Syncing ${folderName} for ${accountEmail} (max ${maxEmails}, batches of ${batchSize})`);
 
     let newCount = 0;
     let skippedCount = 0;
+    let totalFetched = 0;
+    let batch = 0;
 
-    for (const email of emails) {
-      try {
-        // Check if we already have this email
-        const [existing] = await db.execute(
-          'SELECT id FROM customer_emails WHERE zoho_message_id = ?',
-          [email.messageId]
-        );
+    // Fetch emails in batches until we hit maxEmails or run out of emails
+    while (totalFetched < maxEmails) {
+      batch++;
+      const start = totalFetched;
+      const limit = Math.min(batchSize, maxEmails - totalFetched);
 
-        if (existing.length > 0) {
-          skippedCount++;
-          continue;
-        }
+      console.log(`  📦 Batch ${batch}: Fetching ${limit} emails (offset ${start})...`);
 
-        // Filtering logic:
-        // - sales@: ALL emails (no filtering)
-        // - support@: ONLY emails from customers with orders
-        if (accountEmail === 'support@tfswheels.com') {
-          const [orders] = await db.execute(
-            'SELECT id FROM orders WHERE customer_email = ?',
-            [email.fromAddress || email.sender]
+      const emails = await fetchInbox(shopId, {
+        accountEmail: accountEmail,
+        folderId: folderId,
+        limit: limit,
+        start: start,
+        sortBy: 'receivedTime',
+        sortOrder: 'desc'
+      });
+
+      // If we got no emails, we've reached the end
+      if (emails.length === 0) {
+        console.log(`  ✅ Reached end of ${folderName} at batch ${batch}`);
+        break;
+      }
+
+      totalFetched += emails.length;
+      let batchNewCount = 0;
+      let batchSkippedCount = 0;
+
+      for (const email of emails) {
+        try {
+          // Check if we already have this email (uniqueness check)
+          const [existing] = await db.execute(
+            'SELECT id FROM customer_emails WHERE zoho_message_id = ?',
+            [email.messageId]
           );
 
-          if (orders.length === 0) {
-            // Not related to any order, skip support@ email
-            // Silent skip - no spammy logs
-            skippedCount++;
+          if (existing.length > 0) {
+            batchSkippedCount++;
             continue;
           }
-        }
-        // sales@ emails: No filtering, all emails are processed
+
+          // Filtering logic for inbound emails:
+          // - sales@: ALL emails (no filtering)
+          // - support@: ONLY emails from customers with orders
+          if (direction === 'inbound' && accountEmail === 'support@tfswheels.com') {
+            const [orders] = await db.execute(
+              'SELECT id FROM orders WHERE customer_email = ?',
+              [email.fromAddress || email.sender]
+            );
+
+            if (orders.length === 0) {
+              // Not related to any order, skip support@ email
+              batchSkippedCount++;
+              continue;
+            }
+          }
+          // sales@ emails: No filtering, all emails are processed
+          // Outbound emails: No filtering
 
         // Try to fetch full email details including body, but use basic info if it fails
         let fullEmail = null;
@@ -93,16 +126,17 @@ async function syncInbox(shopId, accountEmail, options = {}) {
         }
 
         // Find or create conversation thread
+        // Handle both inbound and outbound emails
         const emailData = {
           subject: fullEmail.subject,
-          fromEmail: fullEmail.fromAddress,
-          fromName: fullEmail.sender?.name || fullEmail.fromAddress,
-          toEmail: accountEmail,
-          toName: 'TFS Wheels',
+          fromEmail: direction === 'inbound' ? fullEmail.fromAddress : accountEmail,
+          fromName: direction === 'inbound' ? (fullEmail.sender?.name || fullEmail.fromAddress) : 'TFS Wheels',
+          toEmail: direction === 'inbound' ? accountEmail : (fullEmail.toAddress || fullEmail.recipient),
+          toName: direction === 'inbound' ? 'TFS Wheels' : (fullEmail.recipientName || fullEmail.toAddress),
           messageId: fullEmail.messageId,
           inReplyTo: fullEmail.inReplyTo,
           references: fullEmail.references,
-          direction: 'inbound'
+          direction: direction
         };
 
         const conversationId = await findOrCreateConversation(shopId, emailData);
@@ -123,36 +157,51 @@ async function syncInbox(shopId, accountEmail, options = {}) {
           messageId: fullEmail.messageId,
           inReplyTo: fullEmail.inReplyTo || null,
           references: fullEmail.references || null,
-          direction: 'inbound',
-          fromEmail: fullEmail.fromAddress,
-          fromName: fullEmail.sender?.name || fullEmail.fromAddress,
-          toEmail: accountEmail,
-          toName: 'TFS Wheels',
+          direction: direction,
+          fromEmail: direction === 'inbound' ? fullEmail.fromAddress : accountEmail,
+          fromName: direction === 'inbound' ? (fullEmail.sender?.name || fullEmail.fromAddress) : 'TFS Wheels',
+          toEmail: direction === 'inbound' ? accountEmail : (fullEmail.toAddress || fullEmail.recipient),
+          toName: direction === 'inbound' ? 'TFS Wheels' : (fullEmail.recipientName || fullEmail.toAddress),
           cc: fullEmail.cc || null,
           subject: fullEmail.subject || '(No Subject)',
           bodyText: fullEmail.content?.plainContent || fullEmail.content || fullEmail.summary || '',
           bodyHtml: fullEmail.content?.htmlContent || null,
-          receivedAt: receivedAt
+          receivedAt: receivedAt,
+          sentAt: direction === 'outbound' ? receivedAt : null
         });
 
-        newCount++;
+        batchNewCount++;
 
-      } catch (emailError) {
-        console.error(`❌ Failed to process email ${email.messageId}:`, emailError);
-        continue;
+        } catch (emailError) {
+          console.error(`❌ Failed to process email ${email.messageId}:`, emailError.message);
+          continue;
+        }
+      }
+
+      // Update counts
+      newCount += batchNewCount;
+      skippedCount += batchSkippedCount;
+
+      console.log(`  ✅ Batch ${batch}: ${batchNewCount} new, ${batchSkippedCount} skipped`);
+
+      // If we got fewer emails than requested, we've reached the end
+      if (emails.length < limit) {
+        console.log(`  ✅ Reached end of ${folderName} (last batch had ${emails.length}/${limit} emails)`);
+        break;
       }
     }
 
     // Update last sync time
     lastSyncTimes[accountEmail === 'sales@tfswheels.com' ? 'sales' : 'support'] = new Date();
 
-    console.log(`✅ Synced ${accountEmail}: ${newCount} new, ${skippedCount} skipped`);
+    console.log(`✅ Synced ${folderName} for ${accountEmail}: ${newCount} new, ${skippedCount} skipped (${totalFetched} total fetched)`);
 
     return {
       account: accountEmail,
+      folder: folderName,
       new: newCount,
       skipped: skippedCount,
-      total: emails.length
+      totalFetched: totalFetched
     };
 
   } catch (error) {
@@ -162,18 +211,32 @@ async function syncInbox(shopId, accountEmail, options = {}) {
 }
 
 /**
- * Sync all inboxes - prioritizing sales@ over support@
+ * Sync all inboxes and sent folders - prioritizing sales@ over support@
+ * Fetches up to 500 emails per folder in batches of 50
  */
 export async function syncAllInboxes(shopId, options = {}) {
   try {
-    console.log('📬 Starting inbox sync...');
+    const {
+      maxEmails = 500,
+      batchSize = 50,
+      syncSentFolder = true
+    } = options;
+
+    console.log('📬 Starting email sync...');
+    console.log(`   Max emails per folder: ${maxEmails}, Batch size: ${batchSize}, Sent folder: ${syncSentFolder ? 'Yes' : 'No'}`);
 
     const results = [];
 
-    // IMPORTANT: Sync sales@ FIRST (higher priority, limit to 20 emails per sync)
+    // SYNC SALES@ (highest priority)
+    // 1. Sync sales@ Inbox (inbound emails)
     try {
-      const salesResult = await syncInbox(shopId, 'sales@tfswheels.com', { limit: 20 });
-      results.push(salesResult);
+      const salesInboxResult = await syncInbox(shopId, 'sales@tfswheels.com', {
+        maxEmails,
+        batchSize,
+        folderId: '1',
+        direction: 'inbound'
+      });
+      results.push(salesInboxResult);
     } catch (error) {
       // Check if error is due to missing OAuth credentials
       if (error.message.includes('OAuth') || error.message.includes('URL_RULE_NOT_CONFIGURED')) {
@@ -184,51 +247,106 @@ export async function syncAllInboxes(shopId, options = {}) {
           global._zohoOAuthWarningLogged = true;
         }
       } else {
-        console.error('❌ Failed to sync sales@:', error.message);
+        console.error('❌ Failed to sync sales@ inbox:', error.message);
       }
       results.push({
         account: 'sales@tfswheels.com',
+        folder: 'Inbox',
         error: error.message
       });
     }
 
-    // Sync support@ SECOND (only emails linked to orders, limit to 20 emails per sync)
+    // 2. Sync sales@ Sent folder (outbound emails)
+    if (syncSentFolder) {
+      try {
+        const salesSentResult = await syncInbox(shopId, 'sales@tfswheels.com', {
+          maxEmails,
+          batchSize,
+          folderId: '2',
+          direction: 'outbound'
+        });
+        results.push(salesSentResult);
+      } catch (error) {
+        if (!error.message.includes('OAuth') && !error.message.includes('URL_RULE_NOT_CONFIGURED')) {
+          console.error('❌ Failed to sync sales@ sent folder:', error.message);
+        }
+        results.push({
+          account: 'sales@tfswheels.com',
+          folder: 'Sent',
+          error: error.message
+        });
+      }
+    }
+
+    // SYNC SUPPORT@ (secondary priority, only emails from customers with orders)
+    // 3. Sync support@ Inbox (inbound emails)
     try {
-      const supportResult = await syncInbox(shopId, 'support@tfswheels.com', { limit: 20 });
-      results.push(supportResult);
+      const supportInboxResult = await syncInbox(shopId, 'support@tfswheels.com', {
+        maxEmails,
+        batchSize,
+        folderId: '1',
+        direction: 'inbound'
+      });
+      results.push(supportInboxResult);
     } catch (error) {
       // Don't log OAuth errors repeatedly for support@ if we already logged for sales@
       if (!error.message.includes('OAuth') && !error.message.includes('URL_RULE_NOT_CONFIGURED')) {
-        console.error('❌ Failed to sync support@:', error.message);
+        console.error('❌ Failed to sync support@ inbox:', error.message);
       }
       results.push({
         account: 'support@tfswheels.com',
+        folder: 'Inbox',
         error: error.message
       });
     }
 
+    // 4. Sync support@ Sent folder (outbound emails)
+    if (syncSentFolder) {
+      try {
+        const supportSentResult = await syncInbox(shopId, 'support@tfswheels.com', {
+          maxEmails,
+          batchSize,
+          folderId: '2',
+          direction: 'outbound'
+        });
+        results.push(supportSentResult);
+      } catch (error) {
+        if (!error.message.includes('OAuth') && !error.message.includes('URL_RULE_NOT_CONFIGURED')) {
+          console.error('❌ Failed to sync support@ sent folder:', error.message);
+        }
+        results.push({
+          account: 'support@tfswheels.com',
+          folder: 'Sent',
+          error: error.message
+        });
+      }
+    }
+
     const totalNew = results.reduce((sum, r) => sum + (r.new || 0), 0);
+    const totalFetched = results.reduce((sum, r) => sum + (r.totalFetched || 0), 0);
 
     // Only log success if we actually synced emails
     const hasErrors = results.some(r => r.error);
     if (!hasErrors || totalNew > 0) {
-      console.log(`✅ Inbox sync complete: ${totalNew} new emails`);
+      console.log(`✅ Email sync complete: ${totalNew} new emails (${totalFetched} total fetched)`);
     }
 
     return {
       success: true,
       results: results,
-      totalNew: totalNew
+      totalNew: totalNew,
+      totalFetched: totalFetched
     };
 
   } catch (error) {
-    console.error('❌ Inbox sync failed:', error);
+    console.error('❌ Email sync failed:', error);
     throw error;
   }
 }
 
 /**
  * Start automatic inbox polling (every minute)
+ * Uses smaller limits for recurring sync (50 emails per folder)
  */
 let syncInterval = null;
 
@@ -240,19 +358,27 @@ export function startInboxPolling(shopId) {
 
   console.log('🔄 Starting inbox polling (every 1 minute)...');
 
-  // Initial sync
-  syncAllInboxes(shopId).catch(error => {
+  // Initial sync with smaller limits for recurring sync
+  syncAllInboxes(shopId, {
+    maxEmails: 50,  // Smaller limit for recurring sync
+    batchSize: 50,
+    syncSentFolder: true
+  }).catch(error => {
     console.error('❌ Initial sync failed:', error);
   });
 
-  // Poll every minute
+  // Poll every minute with small limits
   syncInterval = setInterval(() => {
-    syncAllInboxes(shopId).catch(error => {
+    syncAllInboxes(shopId, {
+      maxEmails: 50,  // Only check recent 50 emails per folder
+      batchSize: 50,
+      syncSentFolder: true
+    }).catch(error => {
       console.error('❌ Scheduled sync failed:', error);
     });
   }, 60 * 1000); // 60 seconds
 
-  console.log('✅ Inbox polling started');
+  console.log('✅ Inbox polling started (50 emails per folder, every minute)');
 }
 
 /**

@@ -1143,12 +1143,27 @@ router.get('/sync/status', async (req, res) => {
 /**
  * POST /api/emails/sync/now
  * Trigger manual sync
+ * Body params:
+ * - maxEmails: Max emails per folder (default: 500)
+ * - batchSize: Batch size (default: 50)
+ * - syncSentFolder: Include sent folder (default: true)
  */
 router.post('/sync/now', async (req, res) => {
   try {
     const shopId = req.user?.shopId || 1;
+    const {
+      maxEmails = 500,
+      batchSize = 50,
+      syncSentFolder = true
+    } = req.body;
 
-    const result = await syncAllInboxes(shopId);
+    console.log(`📬 Manual sync triggered: maxEmails=${maxEmails}, batchSize=${batchSize}, syncSentFolder=${syncSentFolder}`);
+
+    const result = await syncAllInboxes(shopId, {
+      maxEmails,
+      batchSize,
+      syncSentFolder
+    });
 
     res.json({
       success: true,
