@@ -188,7 +188,13 @@ export default function EmailThread() {
   };
 
   const formatDate = (date) => {
-    return new Date(date).toLocaleString('en-US', {
+    if (!date) return 'Unknown date';
+    const dateObj = new Date(date);
+    // Check if date is valid (not epoch 0 or invalid)
+    if (isNaN(dateObj.getTime()) || dateObj.getTime() === 0) {
+      return 'Unknown date';
+    }
+    return dateObj.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -243,16 +249,9 @@ export default function EmailThread() {
       title={conversation.subject || '(No Subject)'}
       backAction={{ content: 'Emails', onAction: () => navigate('/emails') }}
       primaryAction={{
-        content: 'Reply with AI',
-        onAction: handleGenerateAIReply,
-        loading: generatingReply
+        content: 'Reply',
+        onAction: () => setShowReplyBox(!showReplyBox)
       }}
-      secondaryActions={[
-        {
-          content: 'Manual Reply',
-          onAction: () => setShowReplyBox(!showReplyBox)
-        }
-      ]}
     >
       <Layout>
         {/* Main Content - Email Thread */}
@@ -337,7 +336,8 @@ export default function EmailThread() {
             )}
 
             {/* Customer Details */}
-            {conversation.customer && (
+            {conversation.customer &&
+             !['sales@tfswheels.com', 'support@tfswheels.com'].includes(conversation.customer.email?.toLowerCase()) && (
               <Card>
                 <Box padding="400">
                   <BlockStack gap="300">
@@ -355,6 +355,42 @@ export default function EmailThread() {
                         </Text>
                       )}
                     </div>
+
+                    {/* Past Orders */}
+                    {conversation.customer.pastOrders && conversation.customer.pastOrders.length > 0 && (
+                      <>
+                        <Divider />
+                        <div>
+                          <Text variant="bodyMd" as="p" fontWeight="semibold">
+                            Past Orders
+                          </Text>
+                          <BlockStack gap="200">
+                            {conversation.customer.pastOrders.map((order) => (
+                              <div key={order.id}>
+                                <Button
+                                  plain
+                                  onClick={() => navigate(`/orders/${order.shopify_order_id}`)}
+                                >
+                                  #{order.order_number}
+                                </Button>
+                                <Text variant="bodySm" as="p" tone="subdued">
+                                  {new Date(order.created_at).toLocaleDateString()} - ${parseFloat(order.total_price || 0).toFixed(2)}
+                                </Text>
+                              </div>
+                            ))}
+                          </BlockStack>
+                        </div>
+                      </>
+                    )}
+
+                    {conversation.customer.pastOrders && conversation.customer.pastOrders.length === 0 && (
+                      <>
+                        <Divider />
+                        <Text variant="bodySm" as="p" tone="subdued">
+                          No previous orders
+                        </Text>
+                      </>
+                    )}
                   </BlockStack>
                 </Box>
               </Card>
@@ -370,7 +406,15 @@ export default function EmailThread() {
               <Card>
                 <Box padding="400">
                   <BlockStack gap="400">
-                    <Text variant="headingMd" as="h3">Reply</Text>
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text variant="headingMd" as="h3">Reply</Text>
+                      <Button
+                        onClick={handleGenerateAIReply}
+                        loading={generatingReply}
+                      >
+                        Generate with AI
+                      </Button>
+                    </InlineStack>
 
                     {/* Placeholders */}
                     {availablePlaceholders.length > 0 && (

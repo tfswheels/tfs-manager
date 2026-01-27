@@ -99,9 +99,32 @@ export async function findOrCreateConversation(shopId, email) {
       }
     }
 
-    // Get customer info
-    const customerEmail = email.direction === 'inbound' ? email.fromEmail : email.toEmail;
-    const customerName = email.direction === 'inbound' ? email.fromName : email.toName;
+    // Get customer info - ensure we never use our own email addresses as customer
+    const ourEmails = ['sales@tfswheels.com', 'support@tfswheels.com'];
+    let customerEmail, customerName;
+
+    if (email.direction === 'inbound') {
+      // Inbound: customer is the sender
+      customerEmail = email.fromEmail;
+      customerName = email.fromName;
+    } else {
+      // Outbound: customer is the recipient
+      customerEmail = email.toEmail;
+      customerName = email.toName;
+    }
+
+    // Safety check: if customer email is one of our addresses, swap it
+    if (ourEmails.includes(customerEmail?.toLowerCase())) {
+      console.warn(`⚠️  Customer email was ${customerEmail}, swapping to find actual customer`);
+      // Try to find the actual customer from the other party
+      if (email.direction === 'inbound') {
+        customerEmail = email.toEmail;
+        customerName = email.toName;
+      } else {
+        customerEmail = email.fromEmail;
+        customerName = email.fromName;
+      }
+    }
 
     // Create participants array
     const participants = [email.fromEmail, email.toEmail].filter(Boolean);

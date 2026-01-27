@@ -105,24 +105,15 @@ async function syncInbox(shopId, accountEmail, options = {}) {
           // sales@ emails: No filtering, all emails are processed
           // Outbound emails: No filtering
 
-        // Try to fetch full email details including body, but use basic info if it fails
+        // Try to fetch full email details including body
         let fullEmail = null;
         try {
           fullEmail = await fetchEmailDetails(shopId, email.messageId, accountEmail);
         } catch (detailsError) {
-          console.log(`⚠️  Could not fetch full details for ${email.messageId}, using basic info from list`);
-          // Use basic email info from the list response
-          fullEmail = {
-            messageId: email.messageId,
-            subject: email.subject,
-            fromAddress: email.fromAddress || email.sender,
-            sender: { name: email.senderName || email.fromAddress },
-            inReplyTo: email.inReplyTo,
-            references: email.references,
-            cc: email.cc,
-            receivedTime: email.receivedTime || email.time,
-            content: email.summary || '',  // Use summary as fallback for body
-          };
+          console.error(`⚠️  Could not fetch full details for ${email.messageId}, skipping email`);
+          // Skip emails where we can't get full content - don't save truncated emails
+          batchSkippedCount++;
+          continue;
         }
 
         // Find or create conversation thread
@@ -152,6 +143,26 @@ async function syncInbox(shopId, accountEmail, options = {}) {
           }
         }
 
+        // Extract full email content - handle different Zoho API response formats
+        let bodyText = '';
+        let bodyHtml = null;
+
+        if (fullEmail.content) {
+          // Format: { plainContent: "...", htmlContent: "..." }
+          bodyText = fullEmail.content.plainContent || fullEmail.content;
+          bodyHtml = fullEmail.content.htmlContent || null;
+        } else if (fullEmail.body) {
+          // Alternative format: { body: "..." }
+          bodyText = fullEmail.body;
+        } else if (fullEmail.textContent) {
+          bodyText = fullEmail.textContent;
+          bodyHtml = fullEmail.htmlContent || null;
+        } else {
+          // Last resort - log warning and use summary (but this shouldn't happen with full details)
+          console.warn(`⚠️  No content found in email ${fullEmail.messageId}, content structure:`, Object.keys(fullEmail));
+          bodyText = fullEmail.summary || '(No content available)';
+        }
+
         await saveEmail(shopId, conversationId, {
           zohoMessageId: fullEmail.messageId,
           messageId: fullEmail.messageId,
@@ -164,8 +175,8 @@ async function syncInbox(shopId, accountEmail, options = {}) {
           toName: direction === 'inbound' ? 'TFS Wheels' : (fullEmail.recipientName || fullEmail.toAddress),
           cc: fullEmail.cc || null,
           subject: fullEmail.subject || '(No Subject)',
-          bodyText: fullEmail.content?.plainContent || fullEmail.content || fullEmail.summary || '',
-          bodyHtml: fullEmail.content?.htmlContent || null,
+          bodyText: bodyText,
+          bodyHtml: bodyHtml,
           receivedAt: receivedAt,
           sentAt: direction === 'outbound' ? receivedAt : null
         });

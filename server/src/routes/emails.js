@@ -600,6 +600,31 @@ router.get('/conversations/:id', async (req, res) => {
     // Mark as read
     await markConversationAsRead(conversationId);
 
+    // Fetch past orders for this customer
+    let pastOrders = [];
+    if (conversation.customer_email) {
+      const [orders] = await db.execute(
+        `SELECT
+          id,
+          order_number,
+          shopify_order_id,
+          total_price,
+          fulfillment_status,
+          created_at,
+          vehicle_year,
+          vehicle_make,
+          vehicle_model,
+          vehicle_trim
+        FROM orders
+        WHERE customer_email = ?
+        AND shop_id = ?
+        ORDER BY created_at DESC
+        LIMIT 10`,
+        [conversation.customer_email, shops[0].id]
+      );
+      pastOrders = orders;
+    }
+
     // Transform to frontend-compatible format
     res.json({
       success: true,
@@ -608,7 +633,8 @@ router.get('/conversations/:id', async (req, res) => {
         messages: conversation.emails || [],
         customer: conversation.customer_email ? {
           name: conversation.customer_name,
-          email: conversation.customer_email
+          email: conversation.customer_email,
+          pastOrders: pastOrders
         } : null,
         order: conversation.order_id ? {
           id: conversation.order_id,
@@ -1069,9 +1095,18 @@ router.get('/placeholders', async (req, res) => {
 
     const placeholders = await getAvailablePlaceholders(category);
 
+    // Transform to frontend-compatible format
+    const formattedPlaceholders = placeholders.map(p => ({
+      key: p.placeholder_key,
+      label: p.display_name,
+      description: p.description,
+      category: p.category,
+      sample: p.sample_value
+    }));
+
     res.json({
       success: true,
-      placeholders: placeholders
+      placeholders: formattedPlaceholders
     });
 
   } catch (error) {
