@@ -54,7 +54,7 @@ export default function EmailThread() {
       setError(null);
 
       const response = await axios.get(
-        `${API_URL}/api/emails/conversations/${conversationId}`,
+        `${API_URL}/api/tickets/${conversationId}`,
         {
           params: {
             shop: '2f3d7a-2.myshopify.com'
@@ -62,7 +62,16 @@ export default function EmailThread() {
         }
       );
 
-      const conv = response.data.conversation;
+      // New tickets API returns data in different structure
+      const ticketData = response.data.ticket;
+      const messages = response.data.messages || [];
+
+      // Transform to expected format
+      const conv = {
+        ...ticketData,
+        emails: messages
+      };
+
       setConversation(conv);
 
       // Set reply subject
@@ -187,7 +196,17 @@ export default function EmailThread() {
     setReplyBody(replyBody + `{{${placeholder}}}`);
   };
 
-  const formatDate = (date) => {
+  const formatDate = (dateOrEmail) => {
+    let date;
+
+    // If it's an object (email message), try multiple date fields
+    if (typeof dateOrEmail === 'object' && dateOrEmail !== null) {
+      date = dateOrEmail.received_at || dateOrEmail.sent_at || dateOrEmail.created_at;
+    } else {
+      // Otherwise it's a direct date string
+      date = dateOrEmail;
+    }
+
     if (!date) return 'Unknown date';
     const dateObj = new Date(date);
     // Check if date is valid (not epoch 0 or invalid)
@@ -490,7 +509,7 @@ export default function EmailThread() {
                           {getDirectionBadge(message.direction)}
                         </InlineStack>
                         <Text variant="bodySm" as="p" tone="subdued">
-                          {formatDate(message.sent_at || message.received_at)}
+                          {formatDate(message)}
                         </Text>
                       </div>
 
