@@ -19,6 +19,7 @@ import {
 import { ArrowLeftIcon } from '@shopify/polaris-icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import './EmailThread.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://tfs-manager-server-production.up.railway.app';
 
@@ -524,18 +525,16 @@ export default function EmailThread() {
                       </Text>
                     )}
 
-                    <div style={{
-                      padding: '16px',
-                      background: message.direction === 'inbound' ? '#f6f6f7' : '#e3f5ff',
-                      borderRadius: '8px',
-                      whiteSpace: 'pre-wrap',
-                      fontSize: '14px',
-                      lineHeight: '1.5'
-                    }}>
+                    <div className={`email-content ${message.direction === 'inbound' ? 'inbound' : 'outbound'}`}>
                       {message.body_html ? (
-                        <div dangerouslySetInnerHTML={{ __html: message.body_html }} />
+                        <div
+                          className="email-html-content"
+                          dangerouslySetInnerHTML={{ __html: message.body_html }}
+                        />
                       ) : (
-                        message.body_text || '(No content)'
+                        <div className="email-text-content">
+                          {message.body_text || '(No content)'}
+                        </div>
                       )}
                     </div>
 
