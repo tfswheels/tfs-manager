@@ -1,4 +1,4 @@
-# Zoho OAuth Reconnection Guide
+# Zoho OAuth Reconnection Guide - now fixed.
 
 ## Step 1: Clear Old Token from Database
 
