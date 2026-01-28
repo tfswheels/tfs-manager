@@ -205,7 +205,7 @@ async function updateEmailConversation(shopId, orderId, emailData) {
       );
     } else {
       // Create new conversation
-      await db.execute(
+      const [result] = await db.execute(
         `INSERT INTO email_conversations (
           shop_id,
           order_id,
@@ -217,7 +217,7 @@ async function updateEmailConversation(shopId, orderId, emailData) {
           status,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, 1, NOW(), 'active', NOW(), NOW())`,
+        ) VALUES (?, ?, ?, ?, ?, 1, NOW(), 'open', NOW(), NOW())`,
         [
           shopId,
           orderId,
@@ -226,6 +226,16 @@ async function updateEmailConversation(shopId, orderId, emailData) {
           JSON.stringify([emailData.from_email, emailData.to_email])
         ]
       );
+
+      // Generate and set ticket number
+      const conversationId = result.insertId;
+      const ticketNumber = `TFS-${shopId}-${String(conversationId).padStart(5, '0')}`;
+      await db.execute(
+        'UPDATE email_conversations SET ticket_number = ? WHERE id = ?',
+        [ticketNumber, conversationId]
+      );
+
+      console.log(`✅ Created new conversation #${conversationId} with ticket ${ticketNumber}`);
     }
   } catch (error) {
     console.error('Error updating email conversation:', error);

@@ -145,7 +145,7 @@ export async function findOrCreateConversation(shopId, email) {
         message_count,
         unread_count,
         status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 1, ?, 'active')`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 1, ?, 'open')`,
       [
         shopId,
         orderId,
@@ -160,7 +160,14 @@ export async function findOrCreateConversation(shopId, email) {
 
     const conversationId = result.insertId;
 
-    console.log(`✅ Created conversation #${conversationId}`);
+    // Generate and set ticket number
+    const ticketNumber = `TFS-${shopId}-${String(conversationId).padStart(5, '0')}`;
+    await db.execute(
+      'UPDATE email_conversations SET ticket_number = ? WHERE id = ?',
+      [ticketNumber, conversationId]
+    );
+
+    console.log(`✅ Created conversation #${conversationId} with ticket number ${ticketNumber}`);
 
     return conversationId;
 
