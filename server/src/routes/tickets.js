@@ -136,11 +136,13 @@ router.get('/', async (req, res) => {
 
     const [countResult] = await db.execute(countQuery, countParams);
 
-    // Parse JSON fields
+    // Parse JSON fields (mysql2 auto-parses JSON columns, but handle strings too)
     const parsedTickets = tickets.map(ticket => ({
       ...ticket,
-      participants: ticket.participants ? JSON.parse(ticket.participants) : [],
-      tags: ticket.tags ? JSON.parse(ticket.tags) : []
+      participants: Array.isArray(ticket.participants) ? ticket.participants :
+                    (ticket.participants ? (typeof ticket.participants === 'string' ? JSON.parse(ticket.participants) : []) : []),
+      tags: Array.isArray(ticket.tags) ? ticket.tags :
+            (ticket.tags ? (typeof ticket.tags === 'string' ? JSON.parse(ticket.tags) : []) : [])
     }));
 
     res.json({
@@ -188,9 +190,11 @@ router.get('/:id', async (req, res) => {
 
     const ticket = tickets[0];
 
-    // Parse JSON fields
-    ticket.participants = ticket.participants ? JSON.parse(ticket.participants) : [];
-    ticket.tags = ticket.tags ? JSON.parse(ticket.tags) : [];
+    // Parse JSON fields (mysql2 auto-parses JSON columns)
+    ticket.participants = Array.isArray(ticket.participants) ? ticket.participants :
+                          (ticket.participants ? (typeof ticket.participants === 'string' ? JSON.parse(ticket.participants) : []) : []);
+    ticket.tags = Array.isArray(ticket.tags) ? ticket.tags :
+                  (ticket.tags ? (typeof ticket.tags === 'string' ? JSON.parse(ticket.tags) : []) : []);
 
     // Get activity timeline
     const activities = await getActivityTimeline(ticketId);
@@ -988,7 +992,9 @@ router.post('/bulk/tags', async (req, res) => {
           continue;
         }
 
-        let tags = tickets[0].tags ? JSON.parse(tickets[0].tags) : [];
+        // mysql2 auto-parses JSON columns
+        let tags = Array.isArray(tickets[0].tags) ? tickets[0].tags :
+                   (tickets[0].tags ? (typeof tickets[0].tags === 'string' ? JSON.parse(tickets[0].tags) : []) : []);
 
         if (action === 'add') {
           if (!tags.includes(tagValue)) {
