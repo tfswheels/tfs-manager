@@ -335,9 +335,9 @@ export default function SupportTickets() {
         }
       ]}
     >
-      <BlockStack gap="400">
+      <BlockStack gap="500">
         {/* Stats Cards */}
-        <InlineStack gap="400" wrap={false}>
+        <div className="stats-grid">
           <Card>
             <Box padding="400">
               <BlockStack gap="200">
@@ -378,7 +378,7 @@ export default function SupportTickets() {
               </BlockStack>
             </Box>
           </Card>
-        </InlineStack>
+        </div>
 
         {/* Bulk Actions Bar */}
         {hasSelection && (
