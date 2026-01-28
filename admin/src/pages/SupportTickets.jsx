@@ -439,7 +439,7 @@ export default function SupportTickets() {
             tabs={tabs.map((tab) => {
               const count = tab.badge ? (stats.byStatus?.[tab.badge]?.count || 0) : stats.total;
               return {
-                ...tab,
+                id: tab.id,
                 content: `${tab.label}${count > 0 ? ` (${count})` : ''}`
               };
             })}
