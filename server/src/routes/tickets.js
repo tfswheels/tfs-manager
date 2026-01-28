@@ -97,8 +97,8 @@ router.get('/', async (req, res) => {
       query += ' AND ec.unread_count > 0';
     }
 
-    query += ' ORDER BY ec.last_message_at DESC LIMIT ? OFFSET ?';
-    params.push(limit, offset);
+    // Note: LIMIT and OFFSET cannot be parameterized in MySQL prepared statements
+    query += ` ORDER BY ec.last_message_at DESC LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}`;
 
     const [tickets] = await db.execute(query, params);
 

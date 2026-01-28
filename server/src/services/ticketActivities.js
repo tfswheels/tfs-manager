@@ -251,6 +251,7 @@ export async function logOrderLink(conversationId, staffId, orderId, orderNumber
  */
 export async function getActivityTimeline(conversationId, limit = 100) {
   try {
+    // Note: LIMIT cannot be parameterized in MySQL prepared statements
     const [activities] = await db.execute(
       `SELECT
         ta.*,
@@ -262,8 +263,8 @@ export async function getActivityTimeline(conversationId, limit = 100) {
        LEFT JOIN staff_users s ON ta.staff_id = s.id
        WHERE ta.conversation_id = ?
        ORDER BY ta.created_at DESC
-       LIMIT ?`,
-      [conversationId, limit]
+       LIMIT ${parseInt(limit)}`,
+      [conversationId]
     );
 
     // Parse metadata JSON
@@ -304,6 +305,7 @@ export async function getActivityCount(conversationId) {
  */
 export async function getRecentActivities(shopId, limit = 50) {
   try {
+    // Note: LIMIT cannot be parameterized in MySQL prepared statements
     const [activities] = await db.execute(
       `SELECT
         ta.*,
@@ -318,8 +320,8 @@ export async function getRecentActivities(shopId, limit = 50) {
        INNER JOIN email_conversations ec ON ta.conversation_id = ec.id
        WHERE ec.shop_id = ?
        ORDER BY ta.created_at DESC
-       LIMIT ?`,
-      [shopId, limit]
+       LIMIT ${parseInt(limit)}`,
+      [shopId]
     );
 
     return activities.map(activity => ({
