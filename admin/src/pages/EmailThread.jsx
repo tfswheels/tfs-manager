@@ -39,6 +39,7 @@ export default function EmailThread() {
   const [replySubject, setReplySubject] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
   const [showReplyBox, setShowReplyBox] = useState(false);
+  const [attachments, setAttachments] = useState([]);
 
   // Placeholder state
   const [availablePlaceholders, setAvailablePlaceholders] = useState([]);
@@ -165,6 +166,25 @@ export default function EmailThread() {
       tempDiv.innerHTML = replyBody;
       const plainTextBody = tempDiv.textContent || tempDiv.innerText || '';
 
+      // Convert attachments to base64
+      const attachmentPromises = attachments.map(async (attachment) => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64 = reader.result.split(',')[1]; // Remove data URL prefix
+            resolve({
+              filename: attachment.name,
+              content: base64,
+              contentType: attachment.type
+            });
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(attachment.file);
+        });
+      });
+
+      const attachmentData = await Promise.all(attachmentPromises);
+
       await axios.post(
         `${API_URL}/api/emails/send`,
         {
@@ -178,7 +198,8 @@ export default function EmailThread() {
           conversationId: conversationId,
           orderId: conversation?.order?.id,
           inReplyTo: latestMessage?.message_id,
-          references: latestMessage?.references || latestMessage?.message_id
+          references: latestMessage?.references || latestMessage?.message_id,
+          attachments: attachmentData
         },
         {
           params: {
@@ -189,6 +210,7 @@ export default function EmailThread() {
 
       // Refresh conversation
       setReplyBody('');
+      setAttachments([]);
       setShowReplyBox(false);
       fetchConversation();
     } catch (err) {
@@ -204,6 +226,30 @@ export default function EmailThread() {
     // TipTap will parse and render it properly
     const placeholderText = `{{${placeholder}}}`;
     setReplyBody(replyBody + ` ${placeholderText} `);
+  };
+
+  const handleFileSelect = (event) => {
+    const files = Array.from(event.target.files);
+    const newAttachments = files.map(file => ({
+      id: Math.random().toString(36).substr(2, 9),
+      file,
+      name: file.name,
+      size: file.size,
+      type: file.type
+    }));
+    setAttachments([...attachments, ...newAttachments]);
+  };
+
+  const removeAttachment = (id) => {
+    setAttachments(attachments.filter(att => att.id !== id));
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   };
 
   const formatDate = (dateOrEmail) => {
@@ -487,11 +533,64 @@ export default function EmailThread() {
                       </div>
                     </div>
 
+                    {/* Attachments */}
+                    <div>
+                      <input
+                        type="file"
+                        multiple
+                        onChange={handleFileSelect}
+                        style={{ display: 'none' }}
+                        id="attachment-input"
+                      />
+                      <Button
+                        onClick={() => document.getElementById('attachment-input').click()}
+                        size="slim"
+                      >
+                        Attach Files
+                      </Button>
+
+                      {attachments.length > 0 && (
+                        <div style={{ marginTop: '12px' }}>
+                          <BlockStack gap="200">
+                            {attachments.map((attachment) => (
+                              <div
+                                key={attachment.id}
+                                style={{
+                                  padding: '8px 12px',
+                                  background: '#f6f6f7',
+                                  borderRadius: '6px',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center'
+                                }}
+                              >
+                                <div>
+                                  <Text variant="bodyMd" as="p" fontWeight="semibold">
+                                    {attachment.name}
+                                  </Text>
+                                  <Text variant="bodySm" as="p" tone="subdued">
+                                    {formatFileSize(attachment.size)}
+                                  </Text>
+                                </div>
+                                <Button
+                                  size="slim"
+                                  onClick={() => removeAttachment(attachment.id)}
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+                            ))}
+                          </BlockStack>
+                        </div>
+                      )}
+                    </div>
+
                     <InlineStack gap="200">
                       <Button
                         primary
                         onClick={handleSendReply}
                         loading={sendingReply}
+                        disabled={sendingReply}
                       >
                         Send Reply
                       </Button>
