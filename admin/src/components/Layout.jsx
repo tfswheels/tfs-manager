@@ -9,7 +9,7 @@ function Layout({ children }) {
   const navigation = [
     { name: 'Orders', href: '/', icon: ShoppingCart },
     { name: 'Products & Inventory', href: '/products', icon: Package },
-    { name: 'Customer Emails', href: '/emails', icon: Inbox },
+    { name: 'Support Tickets', href: '/tickets', icon: Inbox },
     { name: 'Email Templates', href: '/email', icon: Mail },
     { name: 'Settings', href: '/settings', icon: Settings },
   ];

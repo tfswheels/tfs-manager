@@ -77,32 +77,47 @@ router.get('/config', async (req, res) => {
 
     const config = jobs[0];
 
-    // Find the last COMPLETED job to calculate next run time
-    const [lastCompletedJobs] = await db.execute(
-      `SELECT completed_at, id FROM product_creation_jobs
+    // Find the last job that has ended (completed/terminated/failed) which has next_run_at set
+    const [lastEndedJobs] = await db.execute(
+      `SELECT next_run_at, completed_at, status FROM product_creation_jobs
        WHERE shop_id = ?
-       AND status = 'completed'
+       AND status IN ('completed', 'terminated', 'failed', 'cancelled')
+       AND next_run_at IS NOT NULL
        ORDER BY completed_at DESC
        LIMIT 1`,
       [shopId]
     );
 
-    // Calculate next_run_at based on last completed job + interval
-    let calculatedNextRunAt;
-    if (lastCompletedJobs.length > 0) {
-      const lastCompletedAt = new Date(lastCompletedJobs[0].completed_at);
-      const intervalMs = (config.schedule_interval || 24) * 60 * 60 * 1000;
-      calculatedNextRunAt = new Date(lastCompletedAt.getTime() + intervalMs);
+    // Use next_run_at from last ended job, or calculate if none exists
+    let nextRunAt;
+    if (lastEndedJobs.length > 0 && lastEndedJobs[0].next_run_at) {
+      nextRunAt = lastEndedJobs[0].next_run_at;
     } else {
-      // No completed jobs yet - next run is "now" (scheduler will run immediately)
-      calculatedNextRunAt = new Date();
+      // No ended jobs with next_run_at yet - calculate based on last completed time
+      const [lastCompletedJobs] = await db.execute(
+        `SELECT completed_at FROM product_creation_jobs
+         WHERE shop_id = ?
+         AND status IN ('completed', 'terminated', 'failed', 'cancelled')
+         ORDER BY completed_at DESC
+         LIMIT 1`,
+        [shopId]
+      );
+
+      if (lastCompletedJobs.length > 0) {
+        const lastCompletedAt = new Date(lastCompletedJobs[0].completed_at);
+        const intervalMs = (config.schedule_interval || 24) * 60 * 60 * 1000;
+        nextRunAt = new Date(lastCompletedAt.getTime() + intervalMs);
+      } else {
+        // No completed jobs yet - next run is "now" (scheduler will run immediately)
+        nextRunAt = new Date();
+      }
     }
 
-    // Return config with calculated next_run_at (not from database)
+    // Return config with next_run_at
     res.json({
       job: {
         ...config,
-        next_run_at: calculatedNextRunAt
+        next_run_at: nextRunAt
       }
     });
   } catch (error) {
@@ -285,9 +300,7 @@ router.post('/run-now', async (req, res) => {
     const config = jobs[0];
 
     // Create a new job entry for this manual run
-    const nextScheduledRun = new Date();
-    nextScheduledRun.setHours(nextScheduledRun.getHours() + config.schedule_interval);
-
+    // Note: next_run_at will be set by Python worker when job completes/terminates/fails
     const [result] = await db.execute(
       `INSERT INTO product_creation_jobs (
         shop_id,
@@ -297,17 +310,15 @@ router.post('/run-now', async (req, res) => {
         max_tires_per_run,
         enabled,
         status,
-        started_at,
-        next_run_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'running', NOW(), ?)`,
+        started_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'running', NOW())`,
       [
         shopId,
         config.max_products_per_run,
         config.schedule_interval,
         config.max_wheels_per_run,
         config.max_tires_per_run,
-        config.enabled,
-        nextScheduledRun
+        config.enabled
       ]
     );
 

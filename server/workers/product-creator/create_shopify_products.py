@@ -364,10 +364,21 @@ async def update_job_status(db_pool, job_id, status, products_created=None, whee
             """
             params = (products_created, wheels_created, tires_created, products_skipped, products_failed, job_id)
         elif status == 'completed':
+            # Get schedule_interval to calculate next_run_at
+            async with db_pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cur:
+                    await cur.execute(
+                        "SELECT schedule_interval FROM product_creation_jobs WHERE id = %s",
+                        (job_id,)
+                    )
+                    job_info = await cur.fetchone()
+                    schedule_interval = job_info['schedule_interval'] if job_info else 24
+
             query = """
             UPDATE product_creation_jobs
             SET status = %s,
                 completed_at = NOW(),
+                next_run_at = DATE_ADD(NOW(), INTERVAL %s HOUR),
                 process_pid = NULL,
                 products_created = %s,
                 wheels_created = %s,
@@ -377,28 +388,50 @@ async def update_job_status(db_pool, job_id, status, products_created=None, whee
                 updated_at = NOW()
             WHERE id = %s
             """
-            params = (status, products_created, wheels_created, tires_created, products_skipped, products_failed, job_id)
+            params = (status, schedule_interval, products_created, wheels_created, tires_created, products_skipped, products_failed, job_id)
         elif status == 'failed':
+            # Get schedule_interval to calculate next_run_at
+            async with db_pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cur:
+                    await cur.execute(
+                        "SELECT schedule_interval FROM product_creation_jobs WHERE id = %s",
+                        (job_id,)
+                    )
+                    job_info = await cur.fetchone()
+                    schedule_interval = job_info['schedule_interval'] if job_info else 24
+
             query = """
             UPDATE product_creation_jobs
             SET status = %s,
                 completed_at = NOW(),
+                next_run_at = DATE_ADD(NOW(), INTERVAL %s HOUR),
                 process_pid = NULL,
                 error_message = %s,
                 updated_at = NOW()
             WHERE id = %s
             """
-            params = (status, error_message, job_id)
+            params = (status, schedule_interval, error_message, job_id)
         elif status == 'terminated':
+            # Get schedule_interval to calculate next_run_at
+            async with db_pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cur:
+                    await cur.execute(
+                        "SELECT schedule_interval FROM product_creation_jobs WHERE id = %s",
+                        (job_id,)
+                    )
+                    job_info = await cur.fetchone()
+                    schedule_interval = job_info['schedule_interval'] if job_info else 24
+
             query = """
             UPDATE product_creation_jobs
             SET status = %s,
                 completed_at = NOW(),
+                next_run_at = DATE_ADD(NOW(), INTERVAL %s HOUR),
                 process_pid = NULL,
                 updated_at = NOW()
             WHERE id = %s
             """
-            params = (status, job_id)
+            params = (status, schedule_interval, job_id)
         else:
             return
 

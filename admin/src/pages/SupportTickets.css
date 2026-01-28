@@ -1,0 +1,255 @@
+/* Support Tickets - Modern Ticketing System Styles */
+
+.ticket-list {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ticket-row {
+  display: grid;
+  grid-template-columns: 40px 150px 200px 1fr 120px 100px 150px 120px;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  transition: background-color 0.15s ease;
+  cursor: pointer;
+  min-height: 60px;
+}
+
+.ticket-row:hover:not(.ticket-header) {
+  background-color: #f9fafb;
+}
+
+.ticket-row.selected {
+  background-color: #eff6ff;
+  border-left: 3px solid #3b82f6;
+  padding-left: 13px;
+}
+
+.ticket-row.unread {
+  background-color: #fefce8;
+}
+
+.ticket-row.unread:hover {
+  background-color: #fef3c7;
+}
+
+.ticket-header {
+  font-weight: 600;
+  background-color: #f9fafb;
+  cursor: default;
+  border-bottom: 2px solid #d1d5db;
+}
+
+.ticket-header:hover {
+  background-color: #f9fafb;
+}
+
+.ticket-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ticket-number {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ticket-from,
+.ticket-subject,
+.ticket-assigned {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ticket-subject {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ticket-status,
+.ticket-priority {
+  display: flex;
+  align-items: center;
+}
+
+.ticket-date {
+  text-align: right;
+}
+
+/* Responsive Design */
+
+/* Tablet: Hide priority column */
+@media (max-width: 1200px) {
+  .ticket-row {
+    grid-template-columns: 40px 140px 180px 1fr 110px 140px 110px;
+  }
+
+  .ticket-priority {
+    display: none;
+  }
+}
+
+/* Mobile: Vertical card layout */
+@media (max-width: 768px) {
+  .ticket-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+
+  .ticket-row:not(.ticket-header) {
+    border: 1px solid #e5e7eb;
+    border-left: 4px solid #cbd5e1;
+  }
+
+  .ticket-row.selected:not(.ticket-header) {
+    border-left-color: #3b82f6;
+  }
+
+  .ticket-row.unread:not(.ticket-header) {
+    border-left-color: #f59e0b;
+  }
+
+  .ticket-header {
+    display: none;
+  }
+
+  .ticket-checkbox {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+  }
+
+  .ticket-number,
+  .ticket-from,
+  .ticket-subject,
+  .ticket-status,
+  .ticket-priority,
+  .ticket-assigned,
+  .ticket-date {
+    display: block;
+    width: 100%;
+    text-align: left;
+  }
+
+  .ticket-number {
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .ticket-subject {
+    margin: 8px 0;
+  }
+
+  .ticket-status,
+  .ticket-assigned {
+    margin-top: 8px;
+  }
+
+  .ticket-date {
+    margin-top: 4px;
+    text-align: left;
+  }
+}
+
+/* Status Badge Colors (enhanced) */
+.Polaris-Badge--toneInfo {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.Polaris-Badge--toneAttention {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.Polaris-Badge--toneWarning {
+  background-color: #fed7aa;
+  color: #9a3412;
+}
+
+.Polaris-Badge--toneCritical {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.Polaris-Badge--toneSuccess {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+/* Bulk Actions Bar */
+.Polaris-Card .Polaris-Box[data-bulk-actions="true"] {
+  border-left: 4px solid #3b82f6;
+}
+
+/* Empty State */
+.Polaris-EmptyState {
+  padding: 60px 20px;
+}
+
+/* Loading State */
+.ticket-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 100px 20px;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Hover Effects */
+.ticket-row:not(.ticket-header):hover .ticket-number {
+  color: #3b82f6;
+}
+
+/* Unread indicator */
+.ticket-row.unread .ticket-number::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #f59e0b;
+  margin-right: 8px;
+}
+
+/* Assignment Avatar */
+.ticket-assigned .Polaris-Avatar {
+  margin-right: 8px;
+}
+
+/* Priority Badges - Smaller */
+.ticket-priority .Polaris-Badge {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+}
+
+/* Stats Cards - Responsive */
+@media (max-width: 768px) {
+  .Polaris-InlineStack:has(.Polaris-Card:first-child) {
+    flex-wrap: wrap;
+  }
+
+  .Polaris-InlineStack:has(.Polaris-Card:first-child) > .Polaris-Card {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 140px;
+  }
+}
+
+/* Modal Improvements */
+.Polaris-Modal-Section {
+  padding: 20px 24px;
+}
+
+/* Better spacing for bulk action modals */
+.Polaris-Modal-Section .Polaris-BlockStack {
+  gap: 20px;
+}

@@ -22,7 +22,8 @@ const scopes = [
   'write_order_edits',
   'read_product_listings',
   'write_product_listings',
-  'read_locations'
+  'read_locations',
+  'read_users' // For staff member sync in ticketing system
 ];
 
 // Initialize Shopify API with OAuth support

@@ -19,6 +19,8 @@ import emailsRoutes from './routes/emails.js';  // New comprehensive email route
 import brandVoiceRoutes from './routes/brandVoice.js';  // Brand voice management
 import brandsRoutes from './routes/brands.js';
 import migrationsRoutes from './routes/migrations.js';
+import staffRoutes from './routes/staff.js';  // Staff management for ticketing
+import ticketsRoutes from './routes/tickets.js';  // Ticket management
 import { applyAllSecurityHeaders } from './middleware/securityHeaders.js';
 import './config/database.js';
 import { jobScheduler } from './services/jobScheduler.js';
@@ -74,6 +76,8 @@ app.use('/api/customer-emails', customerEmailsRoutes);
 app.use('/api/brand-voice', brandVoiceRoutes);  // Brand voice management
 app.use('/api/brands', brandsRoutes);
 app.use('/api/migrations', migrationsRoutes);
+app.use('/api/staff', staffRoutes);  // Staff management for ticketing system
+app.use('/api/tickets', ticketsRoutes);  // Ticket management (status, assignment, notes)
 
 // Health check endpoint
 app.get('/health', (req, res) => {

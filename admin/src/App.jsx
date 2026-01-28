@@ -12,6 +12,7 @@ import CustomerEmails from './pages/CustomerEmails';
 import EmailThread from './pages/EmailThread';
 import EmailTemplates from './pages/EmailTemplates';
 import Settings from './pages/Settings';
+import SupportTickets from './pages/SupportTickets';
 
 function App() {
   return (
@@ -37,6 +38,8 @@ function App() {
               <Route path="/" element={<Orders />} />
               <Route path="/orders/:orderId" element={<OrderDetails />} />
               <Route path="/products" element={<Products />} />
+              <Route path="/tickets" element={<SupportTickets />} />
+              <Route path="/tickets/:id" element={<EmailThread />} />
               <Route path="/emails" element={<CustomerEmails />} />
               <Route path="/emails/:conversationId" element={<EmailThread />} />
               <Route path="/email" element={<EmailTemplates />} />

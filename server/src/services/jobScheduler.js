@@ -250,11 +250,12 @@ class JobScheduler {
 
         const config = configs[0];
 
-        // Find the last COMPLETED job for this shop
-        const [lastCompletedJobs] = await db.execute(
-          `SELECT completed_at, id FROM product_creation_jobs
+        // Find the last job that ended (completed/terminated/failed/cancelled) with next_run_at set
+        const [lastEndedJobs] = await db.execute(
+          `SELECT next_run_at, completed_at, status FROM product_creation_jobs
            WHERE shop_id = ?
-           AND status = 'completed'
+           AND status IN ('completed', 'terminated', 'failed', 'cancelled')
+           AND next_run_at IS NOT NULL
            ORDER BY completed_at DESC
            LIMIT 1`,
           [shopId]
@@ -264,17 +265,16 @@ class JobScheduler {
         const now = new Date();
         let shouldRun = false;
 
-        if (lastCompletedJobs.length === 0) {
-          // No completed jobs yet - run now if enabled
+        if (lastEndedJobs.length === 0) {
+          // No ended jobs yet - run now if enabled
           shouldRun = true;
           console.log(`  📦 No completed jobs yet - will start first run`);
         } else {
-          const lastCompletedAt = new Date(lastCompletedJobs[0].completed_at);
-          const scheduleIntervalMs = (config.schedule_interval || 24) * 60 * 60 * 1000; // hours to ms
-          const nextRunTime = new Date(lastCompletedAt.getTime() + scheduleIntervalMs);
+          const nextRunTime = new Date(lastEndedJobs[0].next_run_at);
 
           if (now >= nextRunTime) {
             shouldRun = true;
+            const lastCompletedAt = new Date(lastEndedJobs[0].completed_at);
             const hoursSinceLastRun = Math.floor((now - lastCompletedAt) / (1000 * 60 * 60));
             console.log(`  📦 Last run completed ${hoursSinceLastRun} hours ago - time for next run`);
           }
@@ -315,11 +315,8 @@ class JobScheduler {
    */
   async executeProductCreationJob(config, shopId) {
     try {
-      // Calculate next run time (for display purposes only)
-      const nextRunAt = new Date();
-      nextRunAt.setHours(nextRunAt.getHours() + (config.schedule_interval || 24));
-
       // Create a new job entry for this execution (for history tracking)
+      // Note: next_run_at will be set by Python worker when job completes/terminates/fails
       const [result] = await db.execute(
         `INSERT INTO product_creation_jobs (
           shop_id,
@@ -329,24 +326,21 @@ class JobScheduler {
           max_tires_per_run,
           enabled,
           status,
-          started_at,
-          next_run_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'running', NOW(), ?)`,
+          started_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'running', NOW())`,
         [
           shopId,
           config.max_products_per_run,
           config.schedule_interval,
           config.max_wheels_per_run,
           config.max_tires_per_run,
-          config.enabled,
-          nextRunAt
+          config.enabled
         ]
       );
 
       const newJobId = result.insertId;
 
       console.log(`  ✅ Created product creation job #${newJobId}`);
-      console.log(`  ⏰ Next scheduled run: ${nextRunAt.toISOString()}`);
 
       // Spawn Python product creation worker
       const workerPath = path.join(__dirname, '../../workers/product-creator');
