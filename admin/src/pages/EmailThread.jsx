@@ -19,6 +19,7 @@ import {
 import { ArrowLeftIcon } from '@shopify/polaris-icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import RichTextEditor from '../components/RichTextEditor';
 import './EmailThread.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://tfs-manager-server-production.up.railway.app';
@@ -159,14 +160,19 @@ export default function EmailThread() {
 
       const latestMessage = conversation.messages?.[conversation.messages.length - 1];
 
+      // Convert HTML to plain text for body field
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = replyBody;
+      const plainTextBody = tempDiv.textContent || tempDiv.innerText || '';
+
       await axios.post(
         `${API_URL}/api/emails/send`,
         {
           to: conversation.customer.email,
           toName: conversation.customer.name,
           subject: replySubject,
-          body: replyBody,
-          bodyHtml: replyBody.replace(/\n/g, '<br>'),
+          body: plainTextBody,
+          bodyHtml: replyBody,
           fromAddress: 'sales@tfswheels.com',
           fromName: 'TFS Wheels',
           conversationId: conversationId,
@@ -194,7 +200,10 @@ export default function EmailThread() {
   };
 
   const insertPlaceholder = (placeholder) => {
-    setReplyBody(replyBody + `{{${placeholder}}}`);
+    // Append placeholder to HTML content
+    // TipTap will parse and render it properly
+    const placeholderText = `{{${placeholder}}}`;
+    setReplyBody(replyBody + ` ${placeholderText} `);
   };
 
   const formatDate = (dateOrEmail) => {
@@ -465,13 +474,18 @@ export default function EmailThread() {
                       autoComplete="off"
                     />
 
-                    <TextField
-                      label="Message"
-                      value={replyBody}
-                      onChange={setReplyBody}
-                      multiline={10}
-                      autoComplete="off"
-                    />
+                    <div>
+                      <Text variant="bodyMd" as="p" fontWeight="semibold">
+                        Message
+                      </Text>
+                      <div style={{ marginTop: '8px' }}>
+                        <RichTextEditor
+                          content={replyBody}
+                          onChange={setReplyBody}
+                          placeholder="Write your message..."
+                        />
+                      </div>
+                    </div>
 
                     <InlineStack gap="200">
                       <Button
