@@ -1,6 +1,7 @@
 {
-  "buildCommand": "cd admin && npm run build",
+  "buildCommand": "npm run build:admin",
   "outputDirectory": "admin/dist",
-  "installCommand": "npm install",
-  "framework": null
+  "installCommand": "npm install --legacy-peer-deps",
+  "framework": null,
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD ./"
 }
