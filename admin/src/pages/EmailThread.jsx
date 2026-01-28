@@ -69,7 +69,7 @@ export default function EmailThread() {
       // Transform to expected format
       const conv = {
         ...ticketData,
-        emails: messages
+        messages: messages
       };
 
       setConversation(conv);
