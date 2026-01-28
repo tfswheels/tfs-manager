@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AppProvider } from '@shopify/polaris';
 import AppBridgeProvider from './components/AppBridgeProvider';
 import Layout from './components/Layout';
@@ -8,11 +8,16 @@ import Layout from './components/Layout';
 import Orders from './pages/Orders';
 import OrderDetails from './pages/OrderDetails';
 import Products from './pages/Products';
-import CustomerEmails from './pages/CustomerEmails';
 import EmailThread from './pages/EmailThread';
 import EmailTemplates from './pages/EmailTemplates';
 import Settings from './pages/Settings';
 import SupportTickets from './pages/SupportTickets';
+
+// Redirect component for old email routes
+function EmailRedirect() {
+  const { conversationId } = useParams();
+  return <Navigate to={`/tickets/${conversationId}`} replace />;
+}
 
 function App() {
   return (
@@ -40,8 +45,9 @@ function App() {
               <Route path="/products" element={<Products />} />
               <Route path="/tickets" element={<SupportTickets />} />
               <Route path="/tickets/:conversationId" element={<EmailThread />} />
-              <Route path="/emails" element={<CustomerEmails />} />
-              <Route path="/emails/:conversationId" element={<EmailThread />} />
+              {/* Redirect old /emails routes to /tickets */}
+              <Route path="/emails" element={<Navigate to="/tickets" replace />} />
+              <Route path="/emails/:conversationId" element={<EmailRedirect />} />
               <Route path="/email" element={<EmailTemplates />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>

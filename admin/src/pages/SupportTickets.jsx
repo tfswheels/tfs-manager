@@ -33,6 +33,7 @@ const SHOP = '2f3d7a-2.myshopify.com';
 export default function SupportTickets() {
   const navigate = useNavigate();
   const [tickets, setTickets] = useState([]);
+  const [allTickets, setAllTickets] = useState([]); // Store unfiltered tickets
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -40,6 +41,7 @@ export default function SupportTickets() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [stats, setStats] = useState({});
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Bulk actions state
   const [selectedTickets, setSelectedTickets] = useState(new Set());
@@ -68,6 +70,31 @@ export default function SupportTickets() {
     fetchStats();
     fetchStaff();
   }, [selectedTab, page]);
+
+  // Filter tickets based on search query
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      // No search - show all tickets
+      return;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const filtered = allTickets.filter(ticket => {
+      // Search in ticket number
+      if (ticket.ticket_number?.toLowerCase().includes(query)) return true;
+      // Search in customer email
+      if (ticket.customer_email?.toLowerCase().includes(query)) return true;
+      // Search in customer name
+      if (ticket.customer_name?.toLowerCase().includes(query)) return true;
+      // Search in subject
+      if (ticket.subject?.toLowerCase().includes(query)) return true;
+      // Search in category
+      if (ticket.category?.toLowerCase().includes(query)) return true;
+      return false;
+    });
+
+    setTickets(filtered);
+  }, [searchQuery, allTickets]);
 
   const fetchStats = async () => {
     try {
@@ -113,7 +140,9 @@ export default function SupportTickets() {
 
       const response = await axios.get(`${API_URL}/api/tickets`, { params });
 
-      setTickets(response.data.tickets || []);
+      const fetchedTickets = response.data.tickets || [];
+      setAllTickets(fetchedTickets);
+      setTickets(fetchedTickets);
       setTotal(response.data.total || 0);
       setSelectedTickets(new Set()); // Clear selection on new load
     } catch (err) {
@@ -336,6 +365,20 @@ export default function SupportTickets() {
       ]}
     >
       <BlockStack gap="500">
+        {/* Search Bar */}
+        <Card>
+          <Box padding="400">
+            <TextField
+              placeholder="Search by ticket #, email, name, or subject..."
+              value={searchQuery}
+              onChange={setSearchQuery}
+              autoComplete="off"
+              clearButton
+              onClearButtonClick={() => setSearchQuery('')}
+            />
+          </Box>
+        </Card>
+
         {/* Stats Cards */}
         <div className="stats-grid">
           <Card>
@@ -493,9 +536,16 @@ export default function SupportTickets() {
                           <Text variant="bodyMd" as="span" fontWeight="medium">
                             {ticket.ticket_number}
                           </Text>
-                          {ticket.unread_count > 0 && (
-                            <Badge tone="attention" size="small">{ticket.unread_count} new</Badge>
-                          )}
+                          <InlineStack gap="100" wrap={false}>
+                            {ticket.message_count > 0 && (
+                              <Badge tone="info" size="small">
+                                {ticket.message_count} {ticket.message_count === 1 ? 'message' : 'messages'}
+                              </Badge>
+                            )}
+                            {ticket.unread_count > 0 && (
+                              <Badge tone="attention" size="small">{ticket.unread_count} new</Badge>
+                            )}
+                          </InlineStack>
                         </div>
                         <div className="ticket-from">
                           <Text variant="bodyMd" as="span" fontWeight={ticket.unread_count > 0 ? 'semibold' : 'regular'}>
