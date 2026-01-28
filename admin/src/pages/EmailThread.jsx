@@ -651,6 +651,52 @@ export default function EmailThread() {
                       )}
                     </div>
 
+                    {/* Attachments */}
+                    {message.attachments && message.attachments.length > 0 && (
+                      <div style={{ marginTop: '12px' }}>
+                        <Text variant="bodyMd" as="p" fontWeight="semibold">
+                          Attachments ({message.attachments.length})
+                        </Text>
+                        <div style={{ marginTop: '8px' }}>
+                          <BlockStack gap="200">
+                            {message.attachments.map((attachment, attIndex) => (
+                              <div
+                                key={attIndex}
+                                style={{
+                                  padding: '8px 12px',
+                                  background: '#f6f6f7',
+                                  borderRadius: '6px',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center'
+                                }}
+                              >
+                                <div>
+                                  <Text variant="bodyMd" as="p">
+                                    📎 {attachment.filename || attachment.name || 'Untitled'}
+                                  </Text>
+                                  {attachment.size && (
+                                    <Text variant="bodySm" as="p" tone="subdued">
+                                      {formatFileSize(attachment.size)}
+                                    </Text>
+                                  )}
+                                </div>
+                                {attachment.url && (
+                                  <Button
+                                    size="slim"
+                                    url={attachment.url}
+                                    external
+                                  >
+                                    Download
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </BlockStack>
+                        </div>
+                      </div>
+                    )}
+
                     {message.clicked_at && (
                       <Text variant="bodySm" as="p" tone="subdued">
                         ✓ Link clicked at {formatDate(message.clicked_at)}
