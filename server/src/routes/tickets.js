@@ -1134,6 +1134,95 @@ router.post('/bulk/close', async (req, res) => {
 });
 
 /**
+ * POST /api/tickets/maintenance/fix-message-counts
+ * Recalculate message_count for all conversations
+ * MAINTENANCE ENDPOINT - Use with caution
+ */
+router.post('/maintenance/fix-message-counts', async (req, res) => {
+  try {
+    const shop = req.body.shop || req.query.shop || '2f3d7a-2.myshopify.com';
+
+    // Get shop ID
+    const [shopRows] = await db.execute(
+      'SELECT id FROM shops WHERE shop_name = ?',
+      [shop]
+    );
+
+    if (shopRows.length === 0) {
+      return res.status(404).json({ error: 'Shop not found' });
+    }
+
+    const shopId = shopRows[0].id;
+
+    console.log('🔧 Starting message count fix for all conversations...');
+
+    // Get all conversations
+    const [conversations] = await db.execute(
+      `SELECT id, ticket_number, message_count
+       FROM email_conversations
+       WHERE shop_id = ? AND is_merged = FALSE
+       ORDER BY id`,
+      [shopId]
+    );
+
+    let fixed = 0;
+    let checked = 0;
+    const fixes = [];
+
+    for (const conv of conversations) {
+      // Count actual messages
+      const [emails] = await db.execute(
+        `SELECT COUNT(*) as count
+         FROM customer_emails
+         WHERE conversation_id = ?`,
+        [conv.id]
+      );
+
+      const actualCount = emails[0].count;
+      checked++;
+
+      if (conv.message_count !== actualCount) {
+        console.log(`🔧 Fixing ${conv.ticket_number}: ${conv.message_count} -> ${actualCount} messages`);
+
+        // Update message count
+        await db.execute(
+          `UPDATE email_conversations
+           SET message_count = ?
+           WHERE id = ?`,
+          [actualCount, conv.id]
+        );
+
+        fixes.push({
+          ticket_number: conv.ticket_number,
+          old_count: conv.message_count,
+          new_count: actualCount
+        });
+
+        fixed++;
+      }
+
+      // Progress indicator
+      if (checked % 50 === 0) {
+        console.log(`   Progress: ${checked}/${conversations.length} checked, ${fixed} fixed`);
+      }
+    }
+
+    console.log(`✅ Message count fix complete: ${checked} checked, ${fixed} fixed`);
+
+    res.json({
+      success: true,
+      message: `Checked ${checked} conversations, fixed ${fixed} incorrect message counts`,
+      checked,
+      fixed,
+      fixes: fixes.slice(0, 100) // Return first 100 fixes
+    });
+  } catch (error) {
+    console.error('❌ Fix message counts error:', error);
+    res.status(500).json({ error: 'Failed to fix message counts' });
+  }
+});
+
+/**
  * POST /api/tickets/merge
  * Merge multiple tickets into one
  */
