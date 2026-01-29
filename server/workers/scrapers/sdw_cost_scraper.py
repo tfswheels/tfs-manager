@@ -23,6 +23,7 @@ from seleniumbase import Driver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 import logging
 from collections import defaultdict
 import aiomysql
@@ -148,7 +149,10 @@ class BrandState:
 
 def get_driver():
     """Create a new Selenium driver instance"""
-    return Driver(uc=True, headless=HEADLESS)
+    driver = Driver(uc=True, headless=HEADLESS)
+    # Set page load timeout to prevent infinite hangs
+    driver.set_page_load_timeout(30)
+    return driver
 
 # =============================================================================
 # LOGIN
@@ -275,10 +279,15 @@ def fetch_page_direct(driver, url: str, cookies: List[Dict]) -> Optional[str]:
             WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.CLASS_NAME, "product-card"))
             )
-        except:
-            logger.debug(f"No products found on {url}")
+        except TimeoutException:
+            logger.debug(f"Timeout waiting for products on {url}")
+        except Exception as e:
+            logger.debug(f"Error waiting for products: {e}")
 
         return driver.page_source
+    except TimeoutException as e:
+        logger.warning(f"Page load timeout for {url}: {e}")
+        return None
     except Exception as e:
         logger.error(f"Direct fetch failed for {url}: {e}")
         return None
