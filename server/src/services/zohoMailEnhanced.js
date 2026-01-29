@@ -359,7 +359,8 @@ export async function fetchInbox(shopId, options = {}) {
 
       const messages = response.data.data || [];
 
-      console.log(`✅ Fetched ${messages.length} emails from ${accountEmail}`);
+      // Reduced logging - only log on errors or when debugging
+      // console.log(`✅ Fetched ${messages.length} emails from ${accountEmail}`);
 
       return messages;
 
