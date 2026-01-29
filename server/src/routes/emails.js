@@ -114,6 +114,7 @@ router.post('/send', async (req, res) => {
     const shopId = req.user?.shopId || 1;
 
     // Create email log entry first (for tracking)
+    // Convert undefined to null for MySQL compatibility
     const [logResult] = await db.execute(
       `INSERT INTO email_logs (
         shop_id, order_id, customer_id, conversation_id,
@@ -122,10 +123,19 @@ router.post('/send', async (req, res) => {
         status, is_ai_generated, ai_prompt
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sending', ?, ?)`,
       [
-        shopId, orderId, customerId, conversationId,
-        to, toName, fromAddress || 'sales@tfswheels.com', fromName || 'TFS Wheels',
-        subject, body, bodyHtml,
-        isAiGenerated, aiPrompt
+        shopId,
+        orderId || null,
+        customerId || null,
+        conversationId || null,
+        to,
+        toName || null,
+        fromAddress || 'sales@tfswheels.com',
+        fromName || 'TFS Wheels',
+        subject || '(No Subject)',
+        body || null,
+        bodyHtml || null,
+        isAiGenerated || false,
+        aiPrompt || null
       ]
     );
 

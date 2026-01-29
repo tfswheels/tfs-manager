@@ -118,7 +118,8 @@ async function syncInbox(shopId, accountEmail, options = {}) {
     } = options;
 
     const folderName = folderId === '1' ? 'Inbox' : folderId === '2' ? 'Sent' : `Folder ${folderId}`;
-    console.log(`🔄 Syncing ${folderName} for ${accountEmail} (max ${maxEmails}, batches of ${batchSize})`);
+    // Reduced logging - only log start if verbose mode enabled
+    // console.log(`🔄 Syncing ${folderName} for ${accountEmail} (max ${maxEmails}, batches of ${batchSize})`);
 
     let newCount = 0;
     let skippedCount = 0;
@@ -131,7 +132,8 @@ async function syncInbox(shopId, accountEmail, options = {}) {
       const start = totalFetched;
       const limit = Math.min(batchSize, maxEmails - totalFetched);
 
-      console.log(`  📦 Batch ${batch}: Fetching ${limit} emails (offset ${start})...`);
+      // Reduced logging - don't log every batch fetch
+      // console.log(`  📦 Batch ${batch}: Fetching ${limit} emails (offset ${start})...`);
 
       const emails = await fetchInbox(shopId, {
         accountEmail: accountEmail,
@@ -275,7 +277,10 @@ async function syncInbox(shopId, accountEmail, options = {}) {
       newCount += batchNewCount;
       skippedCount += batchSkippedCount;
 
-      console.log(`  ✅ Batch ${batch}: ${batchNewCount} new, ${batchSkippedCount} skipped`);
+      // Only log batch results if there were new emails
+      if (batchNewCount > 0) {
+        console.log(`  ✅ Batch ${batch}: ${batchNewCount} new, ${batchSkippedCount} skipped`);
+      }
 
       // If we got fewer emails than requested, we've reached the end
       if (emails.length < limit) {
@@ -287,7 +292,10 @@ async function syncInbox(shopId, accountEmail, options = {}) {
     // Update last sync time
     lastSyncTimes[accountEmail === 'sales@tfswheels.com' ? 'sales' : 'support'] = new Date();
 
-    console.log(`✅ Synced ${folderName} for ${accountEmail}: ${newCount} new, ${skippedCount} skipped (${totalFetched} total fetched)`);
+    // Only log summary if there were new emails or it's the first sync
+    if (newCount > 0) {
+      console.log(`✅ Synced ${folderName} for ${accountEmail}: ${newCount} new, ${skippedCount} skipped (${totalFetched} total fetched)`);
+    }
 
     return {
       account: accountEmail,
@@ -421,7 +429,10 @@ export async function syncAllInboxes(shopId, options = {}) {
     // Only log success if we actually synced emails
     const hasErrors = results.some(r => r.error);
     if (!hasErrors || totalNew > 0) {
-      console.log(`✅ Email sync complete: ${totalNew} new emails (${totalFetched} total fetched)`);
+      // Only log if new emails were found
+      if (totalNew > 0) {
+        console.log(`✅ Email sync complete: ${totalNew} new emails (${totalFetched} total fetched)`);
+      }
     }
 
     return {
