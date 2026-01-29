@@ -1,6 +1,40 @@
 # Claude Code Session Instructions
 
-## =4 CRITICAL: Database Connection
+## ⚠️ CRITICAL: localStorage Routing (DO NOT REMOVE)
+
+**THIS HAS BEEN BROKEN AND FIXED 3 TIMES - DO NOT BREAK IT AGAIN!**
+
+### The Problem
+
+The TFS Manager frontend is embedded in a Shopify admin iframe. When users refresh the page, Shopify strips URL parameters and resets the iframe to `/`, causing users to lose their place and get sent back to the Orders page.
+
+### The Solution (admin/src/App.jsx)
+
+The `RouteManager` component uses **localStorage** to persist the last visited path:
+
+1. **When route changes**: Store path in `localStorage.setItem('tfs_last_path', pathname)`
+2. **On app mount**: If at `/` but localStorage has a saved path, navigate to it
+3. **localStorage survives**: Shopify iframe refresh, URL param stripping, etc.
+
+### ⛔ NEVER DO THIS:
+- ❌ Remove the `RouteManager` component
+- ❌ Remove the localStorage logic from `App.jsx`
+- ❌ Try to use URL parameters instead (Shopify strips them)
+- ❌ Try to use `window.history.replaceState` on parent window (doesn't work in iframe)
+- ❌ Assume default React Router behavior works in Shopify embedded apps
+
+### ✅ ALWAYS DO THIS:
+- ✅ Keep the `RouteManager` wrapper around `<Layout>` in `App.jsx`
+- ✅ Keep the localStorage get/set logic intact
+- ✅ Test that refreshing on `/products` keeps you on `/products`, not Orders
+- ✅ Read the inline comments in `App.jsx` before modifying routing
+
+**Location:** `admin/src/App.jsx` - Look for `RouteManager` component
+**Console logs:** Look for 🔵 emoji logs when testing
+
+---
+
+## ⚠️ CRITICAL: Database Connection
 
 **READ THIS FIRST BEFORE ANY DATABASE OPERATIONS:**
 
@@ -8,14 +42,14 @@
 
 The TFS Manager database is **EXTERNAL** and hosted on **Google Cloud SQL**.
 
-**� ALWAYS read credentials from `server/.env` and connect to the remote database.**
+**� ALWAYS read credentials from `server/.env` and connect to the remote database.**
 
 **Connection Command:**
 ```bash
 mysql -h 34.67.162.140 -u tfs -p'[XtlAUU5;"1Ti*Ry' tfs-manager -e "YOUR_QUERY"
 ```
 
-**=� Full details:** See `DATABASE_CONNECTION.md` for complete instructions.
+**=� Full details:** See `DATABASE_CONNECTION.md` for complete instructions.
 
 ### Key Rules for Database Access
 
@@ -133,4 +167,4 @@ L Skipping database connection testing
 
 ---
 
-**Last Updated:** 2026-01-28
+**Last Updated:** 2026-01-29

@@ -19,7 +19,37 @@ function EmailRedirect() {
   return <Navigate to={`/tickets/${conversationId}`} replace />;
 }
 
-// Component to handle localStorage routing persistence
+// ============================================================================
+// ⚠️ CRITICAL: DO NOT REMOVE THIS COMPONENT
+// ============================================================================
+// This component has been broken and fixed 3 times. Read CLAUDE.md before
+// modifying any routing logic!
+//
+// PROBLEM:
+// This app runs in a Shopify admin iframe. When users refresh the page,
+// Shopify strips URL parameters and resets the iframe to "/", causing users
+// to lose their place and get sent back to Orders page.
+//
+// SOLUTION:
+// Use localStorage to persist the last visited path. localStorage survives:
+// - Shopify iframe refresh
+// - URL parameter stripping
+// - Parent window navigation
+//
+// WHY NOT USE URL PARAMS?
+// Shopify strips them during iframe refresh - doesn't work.
+//
+// WHY NOT USE window.history.replaceState ON PARENT?
+// Doesn't work in iframe - security restrictions.
+//
+// TESTING:
+// 1. Navigate to /products
+// 2. Refresh the page (Cmd+R or F5)
+// 3. Should stay on /products, NOT go to Orders
+// 4. Check console for 🔵 logs to verify it's working
+//
+// See CLAUDE.md section "⚠️ CRITICAL: localStorage Routing" for full details.
+// ============================================================================
 function RouteManager({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -45,6 +75,9 @@ function RouteManager({ children }) {
 
   return children;
 }
+// ============================================================================
+// END OF CRITICAL ROUTING COMPONENT
+// ============================================================================
 
 function App() {
   return (
@@ -65,6 +98,7 @@ function App() {
     >
       <Router>
         <AppBridgeProvider>
+          {/* ⚠️ CRITICAL: RouteManager must wrap Layout - see comments above and CLAUDE.md */}
           <RouteManager>
             <Layout>
               <Routes>
