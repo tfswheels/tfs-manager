@@ -331,7 +331,8 @@ export async function fetchInbox(shopId, options = {}) {
 
       // Only log on first attempt to reduce noise
       if (attempt === 1) {
-        console.log(`📥 Fetching emails from ${accountEmail}...`);
+        // Reduced logging
+    // console.log(`📥 Fetching emails from ${accountEmail}...`);
       }
 
       // Get Zoho account ID for this email address

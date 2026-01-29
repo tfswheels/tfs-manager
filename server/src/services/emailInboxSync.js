@@ -323,8 +323,9 @@ export async function syncAllInboxes(shopId, options = {}) {
       syncSentFolder = true
     } = options;
 
-    console.log('📬 Starting email sync...');
-    console.log(`   Max emails per folder: ${maxEmails}, Batch size: ${batchSize}, Sent folder: ${syncSentFolder ? 'Yes' : 'No'}`);
+    // Reduced logging - only log when needed
+    // console.log('📬 Starting email sync...');
+    // console.log(`   Max emails per folder: ${maxEmails}, Batch size: ${batchSize}, Sent folder: ${syncSentFolder ? 'Yes' : 'No'}`);
 
     const results = [];
 
