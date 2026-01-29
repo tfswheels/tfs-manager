@@ -238,6 +238,10 @@ export async function sendEmail(shopId, emailData) {
       attachments
     } = emailData;
 
+    // Get account ID for the sending account
+    const accountEmail = fromAddress || EMAIL_ACCOUNTS.sales;
+    const accountId = await getZohoAccountId(accessToken, accountEmail);
+
     // Add signature if not already present
     let finalBodyHtml = bodyHtml;
     let finalBodyText = bodyText;
@@ -276,11 +280,11 @@ export async function sendEmail(shopId, emailData) {
       console.log(`📎 Including ${attachments.length} attachment(s)`);
     }
 
-    console.log(`📤 Sending email to ${to} via Zoho...`);
+    console.log(`📤 Sending email to ${to} via Zoho (from ${accountEmail})...`);
 
     // Send email via Zoho Mail API
     const response = await axios.post(
-      `${ZOHO_API_BASE}/accounts/self/messages`,
+      `${ZOHO_API_BASE}/accounts/${accountId}/messages`,
       payload,
       {
         headers: {

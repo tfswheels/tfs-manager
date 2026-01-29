@@ -357,7 +357,7 @@ export default function EmailThread() {
     return (
       <Page
         title="Error"
-        backAction={{ content: 'Emails', onAction: () => navigate('/emails') }}
+        backAction={{ content: 'Back', onAction: () => navigate(-1) }}
       >
         <Banner tone="critical">
           <p>{error}</p>
@@ -376,7 +376,7 @@ export default function EmailThread() {
   return (
     <Page
       title={conversation.subject || '(No Subject)'}
-      backAction={{ content: 'Emails', onAction: () => navigate('/emails') }}
+      backAction={{ content: 'Back', onAction: () => navigate(-1) }}
       primaryAction={{
         content: 'Reply',
         onAction: () => setShowReplyBox(!showReplyBox)

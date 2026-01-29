@@ -350,7 +350,7 @@ function OrderDetails() {
     return (
       <Page
         title="Order Details"
-        backAction={{ content: 'Orders', onAction: () => navigate('/') }}
+        backAction={{ content: 'Back', onAction: () => navigate(-1) }}
       >
         <Card>
           <div style={{ padding: '40px', textAlign: 'center' }}>
@@ -365,7 +365,7 @@ function OrderDetails() {
     return (
       <Page
         title="Order Not Found"
-        backAction={{ content: 'Orders', onAction: () => navigate('/') }}
+        backAction={{ content: 'Back', onAction: () => navigate(-1) }}
       >
         <Banner tone="critical">
           <p>Order not found</p>
@@ -377,7 +377,7 @@ function OrderDetails() {
   return (
     <Page
       title={`Order ${order.name}`}
-      backAction={{ content: 'Orders', onAction: () => navigate('/') }}
+      backAction={{ content: 'Back', onAction: () => navigate(-1) }}
       subtitle={`${order.customer?.first_name || ''} ${order.customer?.last_name || ''}`}
     >
       <BlockStack gap="500">
