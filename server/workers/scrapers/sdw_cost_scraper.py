@@ -246,10 +246,15 @@ def scrape_page_costs(html: str, brand: str) -> List[Dict]:
                 if cost_match:
                     cost = cost_match.group(1).replace(',', '')
 
+            # Detect backorder status (same as inventory scraper)
+            backorder_elem = card.select_one('.product-backorder')
+            is_backorder = backorder_elem is not None
+
             products.append({
                 'brand': brand,
                 'url_part_number': url_part,
-                'cost': cost
+                'cost': cost,
+                'is_backorder': is_backorder
             })
 
         except Exception as e:
@@ -391,10 +396,10 @@ def scrape_brand_page_sync(driver, cookies: List[Dict], brand: str, page: int, b
         if url_part not in state.known_url_parts:
             continue
 
-        cost = product.get('cost', '').strip()
+        # Backorder detection: check for .product-backorder element
+        is_backorder = product.get('is_backorder', False)
 
-        # Backorder detection: no cost = backorder (like quantity='0' in inventory scraper)
-        if not cost or cost == '0':
+        if is_backorder:
             state.consecutive_backorders += 1
 
             if state.consecutive_backorders >= MAX_CONSECUTIVE_BACKORDERS:
@@ -404,8 +409,12 @@ def scrape_brand_page_sync(driver, cookies: List[Dict], brand: str, page: int, b
                     state.stopped = True
                 break
         else:
-            # Reset consecutive counter if we find a product with cost
+            # Reset consecutive counter if product is NOT on backorder
             state.consecutive_backorders = 0
+
+        # Add product to matched list if it has a valid cost
+        cost = product.get('cost', '').strip()
+        if cost and cost != '0':
             matched_products.append(product)
 
     logger.info(f"  ✓ Page {page}: {len(matched_products)} costs ({state.consecutive_backorders} consecutive backorders)")
