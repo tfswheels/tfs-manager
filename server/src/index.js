@@ -53,9 +53,10 @@ app.use('/webhooks/zoho', express.json());
 app.use('/webhooks/track', express.json());
 
 // JSON parsing for all other routes (webhooks already handled above)
-// Increased limit to 50MB to support email attachments (base64 encoded files are ~33% larger)
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Increased limit to 15MB to support email attachments
+// 10MB max file size * 1.33 (base64 overhead) = ~13.3MB
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 // Routes
 app.use('/webhooks/orders', webhookRoutes);  // Shopify order webhooks

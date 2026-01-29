@@ -295,6 +295,18 @@ export default function EmailThread() {
 
   const handleFileSelect = (event) => {
     const files = Array.from(event.target.files);
+
+    // Validate file sizes (10MB max per file)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB in bytes
+    const invalidFiles = files.filter(file => file.size > MAX_FILE_SIZE);
+
+    if (invalidFiles.length > 0) {
+      const fileNames = invalidFiles.map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(2)}MB)`).join(', ');
+      alert(`The following files exceed the 10MB limit:\n${fileNames}\n\nPlease reduce file size or use multiple emails.`);
+      event.target.value = ''; // Reset file input
+      return;
+    }
+
     const newAttachments = files.map(file => ({
       id: Math.random().toString(36).substr(2, 9),
       file,

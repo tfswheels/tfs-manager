@@ -212,6 +212,51 @@ async function getZohoAccountId(accessToken, accountEmail) {
 }
 
 /**
+ * Upload attachment to Zoho file store
+ *
+ * @param {string} accessToken - Zoho access token
+ * @param {string} accountId - Zoho account ID
+ * @param {object} attachment - Attachment object with filename and base64 content
+ * @returns {Promise<object>} Upload result with storeName, attachmentPath, attachmentName
+ */
+async function uploadAttachment(accessToken, accountId, attachment) {
+  try {
+    // Convert base64 to buffer
+    const buffer = Buffer.from(attachment.content, 'base64');
+
+    // Create form data
+    const FormData = (await import('form-data')).default;
+    const formData = new FormData();
+    formData.append('file', buffer, {
+      filename: attachment.filename,
+      contentType: attachment.contentType || 'application/octet-stream'
+    });
+
+    // Upload to Zoho
+    const response = await axios.post(
+      `${ZOHO_API_BASE}/accounts/${accountId}/messages/attachments`,
+      formData,
+      {
+        headers: {
+          'Authorization': `Zoho-oauthtoken ${accessToken}`,
+          ...formData.getHeaders()
+        }
+      }
+    );
+
+    const data = response.data.data;
+    return {
+      storeName: data.storeName,
+      attachmentPath: data.attachmentPath,
+      attachmentName: data.attachmentName
+    };
+  } catch (error) {
+    console.error(`❌ Failed to upload attachment ${attachment.filename}:`, error.response?.data || error.message);
+    throw new Error(`Failed to upload attachment: ${attachment.filename}`);
+  }
+}
+
+/**
  * Send email via Zoho Mail API
  *
  * @param {number} shopId - Shop ID
@@ -270,14 +315,18 @@ export async function sendEmail(shopId, emailData) {
     // Note: Zoho API doesn't support inReplyTo/references headers directly
     // These need to be handled via email threading on Zoho's side
 
-    // Add attachments if provided (base64 format from frontend)
+    // Upload attachments first if provided (Zoho requires 2-step process)
     if (attachments && Array.isArray(attachments) && attachments.length > 0) {
-      payload.attachments = attachments.map(att => ({
-        attachmentName: att.filename,
-        content: att.content, // base64 string
-        contentType: att.contentType || 'application/octet-stream'
-      }));
-      console.log(`📎 Including ${attachments.length} attachment(s)`);
+      console.log(`📎 Uploading ${attachments.length} attachment(s) to Zoho...`);
+
+      const uploadedAttachments = [];
+      for (const attachment of attachments) {
+        const uploaded = await uploadAttachment(accessToken, accountId, attachment);
+        uploadedAttachments.push(uploaded);
+      }
+
+      payload.attachments = uploadedAttachments;
+      console.log(`✅ All attachments uploaded successfully`);
     }
 
     console.log(`📤 Sending email to ${to} via Zoho (from ${accountEmail})...`);
