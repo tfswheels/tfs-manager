@@ -117,16 +117,15 @@ router.post('/send', async (req, res) => {
     // Convert undefined to null for MySQL compatibility
     const [logResult] = await db.execute(
       `INSERT INTO email_logs (
-        shop_id, order_id, customer_id, conversation_id,
-        to_email, to_name, from_email, from_name,
-        subject, body_text, body_html,
+        shop_id, order_id, customer_email_id,
+        recipient_email, recipient_name, from_address, from_name,
+        subject, body, body_html,
         status, is_ai_generated, ai_prompt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sending', ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sending', ?, ?)`,
       [
         shopId,
         orderId || null,
         customerId || null,
-        conversationId || null,
         to,
         toName || null,
         fromAddress || 'sales@tfswheels.com',
