@@ -1,6 +1,16 @@
-import { fetchInbox, fetchEmailDetails } from './zohoMailEnhanced.js';
+import { fetchInbox, fetchEmailDetails, fetchEmailAttachments, downloadAttachment } from './zohoMailEnhanced.js';
 import { findOrCreateConversation, saveEmail } from './emailThreading.js';
 import db from '../config/database.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Attachment storage path
+const ATTACHMENTS_DIR = path.join(__dirname, '../../storage/email_attachments');
 
 /**
  * Email Inbox Synchronization Service
@@ -17,6 +27,74 @@ const lastSyncTimes = {
   sales: null,
   support: null
 };
+
+/**
+ * Save email attachments to file system and database
+ *
+ * @param {number} shopId - Shop ID
+ * @param {number} emailId - Database email ID
+ * @param {string} messageId - Zoho message ID
+ * @param {string} accountEmail - Email account
+ * @param {string} folderId - Folder ID
+ */
+async function processAndSaveAttachments(shopId, emailId, messageId, accountEmail, folderId) {
+  try {
+    // Fetch attachment metadata from Zoho
+    const attachments = await fetchEmailAttachments(shopId, messageId, accountEmail, folderId);
+
+    if (attachments.length === 0) {
+      return; // No attachments to process
+    }
+
+    console.log(`  📎 Processing ${attachments.length} attachment(s) for email ${emailId}...`);
+
+    // Ensure attachments directory exists
+    await fs.mkdir(ATTACHMENTS_DIR, { recursive: true });
+
+    for (const attachment of attachments) {
+      try {
+        // Download attachment from Zoho
+        const fileData = await downloadAttachment(shopId, messageId, attachment.attachmentId, accountEmail, folderId);
+
+        // Generate unique filename
+        const timestamp = Date.now();
+        const safeName = attachment.attachmentName.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const filename = `${timestamp}_${safeName}`;
+        const filePath = path.join(ATTACHMENTS_DIR, filename);
+
+        // Save to file system
+        await fs.writeFile(filePath, fileData);
+
+        // Save to database
+        await db.execute(
+          `INSERT INTO email_attachments
+           (email_id, filename, original_filename, file_path, file_size, mime_type, is_inline, content_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [
+            emailId,
+            filename,
+            attachment.attachmentName,
+            filePath,
+            attachment.size || fileData.length,
+            attachment.mimeType || 'application/octet-stream',
+            attachment.disposition === 'inline' ? 1 : 0,
+            attachment.contentId || null
+          ]
+        );
+
+        console.log(`    ✅ Saved attachment: ${attachment.attachmentName} (${(fileData.length / 1024).toFixed(2)} KB)`);
+
+      } catch (attachmentError) {
+        console.error(`    ❌ Failed to save attachment ${attachment.attachmentName}:`, attachmentError.message);
+        // Continue with other attachments
+      }
+    }
+
+  } catch (error) {
+    console.error(`  ❌ Failed to process attachments for email ${emailId}:`, error.message);
+    // Don't fail the email sync if attachments fail
+  }
+}
 
 /**
  * Sync emails from a specific inbox or folder
@@ -164,7 +242,7 @@ async function syncInbox(shopId, accountEmail, options = {}) {
           bodyHtml = null;
         }
 
-        await saveEmail(shopId, conversationId, {
+        const emailId = await saveEmail(shopId, conversationId, {
           zohoMessageId: fullEmail.messageId,
           messageId: fullEmail.messageId,
           inReplyTo: fullEmail.inReplyTo || null,
@@ -181,6 +259,9 @@ async function syncInbox(shopId, accountEmail, options = {}) {
           receivedAt: receivedAt,
           sentAt: direction === 'outbound' ? receivedAt : null
         });
+
+        // Process and save attachments
+        await processAndSaveAttachments(shopId, emailId, fullEmail.messageId, accountEmail, folderId);
 
         batchNewCount++;
 

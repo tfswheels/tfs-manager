@@ -5,6 +5,9 @@
 
 import express from 'express';
 import db from '../config/database.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   logStatusChange,
   logAssignment,
@@ -16,6 +19,10 @@ import {
   getActivityTimeline,
   getRecentActivities
 } from '../services/ticketActivities.js';
+
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
@@ -1346,6 +1353,96 @@ router.post('/merge', async (req, res) => {
   } catch (error) {
     console.error('❌ Ticket merge error:', error);
     res.status(500).json({ error: 'Failed to merge tickets' });
+  }
+});
+
+/**
+ * GET /api/tickets/attachments/:attachmentId
+ * Serve an email attachment file
+ */
+router.get('/attachments/:attachmentId', async (req, res) => {
+  try {
+    const { attachmentId } = req.params;
+
+    // Get attachment metadata from database
+    const [rows] = await db.execute(
+      `SELECT filename, original_filename, file_path, mime_type
+       FROM email_attachments
+       WHERE id = ?`,
+      [attachmentId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+
+    const attachment = rows[0];
+
+    // Check if file exists
+    try {
+      await fs.access(attachment.file_path);
+    } catch (error) {
+      console.error(`❌ Attachment file not found: ${attachment.file_path}`);
+      return res.status(404).json({ error: 'Attachment file not found on server' });
+    }
+
+    // Read file
+    const fileData = await fs.readFile(attachment.file_path);
+
+    // Set appropriate headers
+    res.setHeader('Content-Type', attachment.mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${attachment.original_filename}"`);
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+
+    // Send file
+    res.send(fileData);
+
+  } catch (error) {
+    console.error('❌ Error serving attachment:', error);
+    res.status(500).json({ error: 'Failed to serve attachment' });
+  }
+});
+
+/**
+ * GET /api/tickets/:ticketId/attachments
+ * Get all attachments for a specific ticket/email thread
+ */
+router.get('/:ticketId/attachments', async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+
+    // Get all attachments for emails in this conversation
+    const [attachments] = await db.execute(
+      `SELECT
+        a.id,
+        a.email_id,
+        a.filename,
+        a.original_filename,
+        a.file_size,
+        a.mime_type,
+        a.is_inline,
+        a.content_id,
+        a.created_at,
+        e.subject as email_subject,
+        e.direction
+       FROM email_attachments a
+       JOIN customer_emails e ON a.email_id = e.id
+       WHERE e.conversation_id = ?
+       ORDER BY a.created_at DESC`,
+      [ticketId]
+    );
+
+    res.json({
+      success: true,
+      attachments: attachments.map(att => ({
+        ...att,
+        url: `/api/tickets/attachments/${att.id}`
+      }))
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching attachments:', error);
+    res.status(500).json({ error: 'Failed to fetch attachments' });
   }
 });
 

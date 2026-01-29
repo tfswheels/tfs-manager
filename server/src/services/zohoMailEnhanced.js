@@ -445,6 +445,90 @@ export async function fetchEmailDetails(shopId, messageId, accountEmail = EMAIL_
 }
 
 /**
+ * Fetch email attachments from Zoho
+ *
+ * @param {number} shopId - Shop ID
+ * @param {string} messageId - Zoho message ID
+ * @param {string} accountEmail - Email account
+ * @param {string} folderId - Folder ID (1=Inbox, 2=Sent)
+ * @returns {Promise<Array>} Array of attachment metadata
+ */
+export async function fetchEmailAttachments(shopId, messageId, accountEmail = EMAIL_ACCOUNTS.sales, folderId = '1') {
+  try {
+    const accessToken = await getAccessToken(shopId);
+    const accountId = await getZohoAccountId(accessToken, accountEmail);
+
+    console.log(`📎 Fetching attachments for message ${messageId}...`);
+
+    // Fetch attachment list
+    const response = await axios.get(
+      `${ZOHO_API_BASE}/accounts/${accountId}/folders/${folderId}/messages/${messageId}/attachmentinfo`,
+      {
+        headers: {
+          'Authorization': `Zoho-oauthtoken ${accessToken}`
+        }
+      }
+    );
+
+    const attachments = response.data.data?.attachments || [];
+
+    if (attachments.length === 0) {
+      console.log(`  No attachments found for message ${messageId}`);
+      return [];
+    }
+
+    console.log(`  Found ${attachments.length} attachment(s)`);
+    return attachments;
+
+  } catch (error) {
+    // If endpoint doesn't exist or no attachments, return empty array
+    if (error.response?.status === 404 || error.response?.data?.code === 'E101') {
+      console.log(`  No attachments for message ${messageId}`);
+      return [];
+    }
+
+    console.error('❌ Failed to fetch attachments:', error.response?.data || error.message);
+    return []; // Don't fail the whole email sync if attachments fail
+  }
+}
+
+/**
+ * Download specific attachment from Zoho
+ *
+ * @param {number} shopId - Shop ID
+ * @param {string} messageId - Zoho message ID
+ * @param {string} attachmentId - Attachment ID
+ * @param {string} accountEmail - Email account
+ * @param {string} folderId - Folder ID
+ * @returns {Promise<Buffer>} Attachment file data as buffer
+ */
+export async function downloadAttachment(shopId, messageId, attachmentId, accountEmail = EMAIL_ACCOUNTS.sales, folderId = '1') {
+  try {
+    const accessToken = await getAccessToken(shopId);
+    const accountId = await getZohoAccountId(accessToken, accountEmail);
+
+    console.log(`⬇️  Downloading attachment ${attachmentId}...`);
+
+    const response = await axios.get(
+      `${ZOHO_API_BASE}/accounts/${accountId}/folders/${folderId}/messages/${messageId}/attachments/${attachmentId}`,
+      {
+        headers: {
+          'Authorization': `Zoho-oauthtoken ${accessToken}`
+        },
+        responseType: 'arraybuffer' // Get binary data
+      }
+    );
+
+    console.log(`✅ Downloaded attachment ${attachmentId}`);
+    return Buffer.from(response.data);
+
+  } catch (error) {
+    console.error(`❌ Failed to download attachment ${attachmentId}:`, error.response?.data || error.message);
+    throw new Error('Failed to download attachment');
+  }
+}
+
+/**
  * Get tracking pixel URL for email open tracking
  */
 export function getTrackingPixelUrl(emailLogId) {

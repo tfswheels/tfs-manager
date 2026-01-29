@@ -39,15 +39,19 @@ export default function EmailThread() {
   const [replySubject, setReplySubject] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
   const [showReplyBox, setShowReplyBox] = useState(false);
-  const [attachments, setAttachments] = useState([]);
+  const [replyAttachments, setReplyAttachments] = useState([]);
 
   // Placeholder state
   const [availablePlaceholders, setAvailablePlaceholders] = useState([]);
+
+  // Email attachments state (for displaying inline images)
+  const [emailAttachments, setEmailAttachments] = useState([]);
 
   useEffect(() => {
     if (conversationId) {
       fetchConversation();
       fetchPlaceholders();
+      fetchAttachments();
     }
   }, [conversationId]);
 
@@ -98,6 +102,56 @@ export default function EmailThread() {
     } catch (err) {
       console.error('Error fetching placeholders:', err);
     }
+  };
+
+  const fetchAttachments = async () => {
+    try {
+      const response = await axios.get(
+        `${API_URL}/api/tickets/${conversationId}/attachments`,
+        {
+          params: {
+            shop: '2f3d7a-2.myshopify.com'
+          }
+        }
+      );
+      setEmailAttachments(response.data.attachments || []);
+    } catch (err) {
+      console.error('Error fetching attachments:', err);
+    }
+  };
+
+  /**
+   * Process HTML content to replace cid: references with actual image URLs
+   * @param {string} html - Original HTML content
+   * @param {Array} attachments - Array of attachment objects
+   * @returns {string} - Processed HTML with image URLs
+   */
+  const processInlineImages = (html, attachments) => {
+    if (!html || !attachments || attachments.length === 0) {
+      return html;
+    }
+
+    let processedHtml = html;
+
+    // Find all inline attachments (those with content_id)
+    const inlineAttachments = attachments.filter(att => att.is_inline && att.content_id);
+
+    // Replace each cid: reference with the actual image URL
+    inlineAttachments.forEach(attachment => {
+      // Zoho uses content_id with angle brackets sometimes, so handle both
+      const cidPatterns = [
+        `cid:${attachment.content_id}`,
+        `cid:${attachment.content_id.replace(/[<>]/g, '')}`,
+        `cid:<${attachment.content_id.replace(/[<>]/g, '')}>`,
+      ];
+
+      cidPatterns.forEach(cidPattern => {
+        const imageUrl = `${API_URL}${attachment.url}`;
+        processedHtml = processedHtml.replace(new RegExp(cidPattern.replace(/[<>]/g, '\\$&'), 'g'), imageUrl);
+      });
+    });
+
+    return processedHtml;
   };
 
   const handleGenerateSummary = async () => {
@@ -167,7 +221,7 @@ export default function EmailThread() {
       const plainTextBody = tempDiv.textContent || tempDiv.innerText || '';
 
       // Convert attachments to base64
-      const attachmentPromises = attachments.map(async (attachment) => {
+      const attachmentPromises = replyAttachments.map(async (attachment) => {
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => {
@@ -210,7 +264,7 @@ export default function EmailThread() {
 
       // Refresh conversation
       setReplyBody('');
-      setAttachments([]);
+      setReplyAttachments([]);
       setShowReplyBox(false);
       fetchConversation();
     } catch (err) {
@@ -237,11 +291,11 @@ export default function EmailThread() {
       size: file.size,
       type: file.type
     }));
-    setAttachments([...attachments, ...newAttachments]);
+    setReplyAttachments([...replyAttachments, ...newAttachments]);
   };
 
   const removeAttachment = (id) => {
-    setAttachments(attachments.filter(att => att.id !== id));
+    setReplyAttachments(replyAttachments.filter(att => att.id !== id));
   };
 
   const formatFileSize = (bytes) => {
@@ -549,10 +603,10 @@ export default function EmailThread() {
                         Attach Files
                       </Button>
 
-                      {attachments.length > 0 && (
+                      {replyAttachments.length > 0 && (
                         <div style={{ marginTop: '12px' }}>
                           <BlockStack gap="200">
-                            {attachments.map((attachment) => (
+                            {replyAttachments.map((attachment) => (
                               <div
                                 key={attachment.id}
                                 style={{
@@ -642,7 +696,7 @@ export default function EmailThread() {
                       {message.body_html ? (
                         <div
                           className="email-html-content"
-                          dangerouslySetInnerHTML={{ __html: message.body_html }}
+                          dangerouslySetInnerHTML={{ __html: processInlineImages(message.body_html, emailAttachments) }}
                         />
                       ) : (
                         <div className="email-text-content">
