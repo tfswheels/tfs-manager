@@ -338,8 +338,6 @@ def fetch_page_hybrid(driver, url: str, cookies: List[Dict]) -> Optional[str]:
     for attempt in range(HYBRID_RETRY_COUNT):
         html = fetch_page_direct(driver, url, cookies)
         if html and 'product-card' in html:
-            async with stats_lock:
-                stats['direct_requests'] += 1
             return html
         logger.warning(f"Direct fetch attempt {attempt + 1}/{HYBRID_RETRY_COUNT} failed for {url}")
         time.sleep(1)
@@ -347,35 +345,20 @@ def fetch_page_hybrid(driver, url: str, cookies: List[Dict]) -> Optional[str]:
     # Fallback to ZenRows
     logger.info(f"Falling back to ZenRows for {url}")
     html = fetch_page_zenrows(url, cookies)
-    if html:
-        async with stats_lock:
-            stats['zenrows_requests'] += 1
     return html
 
 
 def fetch_page(driver, url: str, cookies: List[Dict]) -> Optional[str]:
     """Fetch page using configured scraping mode"""
     if SCRAPING_MODE == 'direct':
-        html = fetch_page_direct(driver, url, cookies)
-        if html:
-            asyncio.create_task(increment_stat('direct_requests'))
-        return html
+        return fetch_page_direct(driver, url, cookies)
     elif SCRAPING_MODE == 'zenrows':
-        html = fetch_page_zenrows(url, cookies)
-        if html:
-            asyncio.create_task(increment_stat('zenrows_requests'))
-        return html
+        return fetch_page_zenrows(url, cookies)
     elif SCRAPING_MODE == 'hybrid':
         return fetch_page_hybrid(driver, url, cookies)
     else:
         logger.error(f"Unknown scraping mode: {SCRAPING_MODE}")
         return fetch_page_direct(driver, url, cookies)
-
-
-async def increment_stat(key: str):
-    """Thread-safe stat increment"""
-    async with stats_lock:
-        stats[key] = stats.get(key, 0) + 1
 
 # =============================================================================
 # BRAND SCRAPING WITH PROPER BACKORDER DETECTION
