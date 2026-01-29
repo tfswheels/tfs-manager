@@ -95,7 +95,7 @@ DB_CONFIG = {
     'host': os.getenv('DB_HOST', '34.67.162.140'),
     'user': os.getenv('DB_USER', 'tfs'),
     'password': os.getenv('DB_PASSWORD', '[XtlAUU5;"1Ti*Ry'),
-    'db': 'tfs-manager',  # Use tfs-manager for shopify_products table
+    'db': 'tfs-db',  # shopify_products table is in tfs-db
     'port': int(os.getenv('DB_PORT', 3306)),
     'maxsize': 20,
     'minsize': 5
