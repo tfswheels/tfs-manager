@@ -586,6 +586,124 @@ async def create_single_product(session: aiohttp.ClientSession, gcs_manager, db_
         return False
 
 
+async def batch_insert_products_optimized(db_pool, products: List[Dict], stats: Dict):
+    """
+    Optimized batch insert for products when skip_shopify_creation=True.
+    Uses multi-row INSERT which is 10-50x faster than individual inserts.
+
+    Returns:
+        (successful, failed) counts
+    """
+    logger.info(f"Starting optimized batch insert for {len(products)} products...")
+
+    successful = 0
+    failed = 0
+
+    try:
+        # Prepare all product data
+        table_name = MODE
+        all_data = []
+
+        for product in products:
+            extracted_data = product.get('extracted_data')
+            if not extracted_data:
+                logger.error(f"No extracted data for product: {product.get('url_part_number')}")
+                failed += 1
+                continue
+
+            klaviyo_data = extracted_data.get('klaviyo_data', {})
+
+            # Check if discontinued
+            status = klaviyo_data.get('status', '').lower()
+            if status == 'discontinued':
+                failed += 1
+                continue
+
+            images = extracted_data.get('images', [])
+            html = extracted_data.get('html', '')
+
+            # Get map_price
+            map_price = product.get('map_price')
+            if not map_price and html:
+                map_price = extract_map_price_from_html(html)
+            if not map_price:
+                map_price = 0
+
+            # Map data to table schema
+            if MODE == 'wheels':
+                # For wheels, use first image
+                gcs_image = images[0] if images else None
+                mapped_data = map_klaviyo_to_wheels_table(klaviyo_data, product, gcs_image, map_price)
+            else:  # tires
+                # For tires, use up to 3 images
+                gcs_images = images[:3] if images else []
+                mapped_data = map_klaviyo_to_tires_table(klaviyo_data, product, gcs_images, map_price)
+
+            all_data.append(mapped_data)
+
+        if not all_data:
+            logger.warning("No valid products to insert")
+            return 0, len(products)
+
+        # Split into chunks to avoid memory issues and transaction timeouts
+        CHUNK_SIZE = 100  # Insert 100 products per batch
+        total_inserted = 0
+        total_chunks = (len(all_data) + CHUNK_SIZE - 1) // CHUNK_SIZE
+
+        logger.info(f"Splitting {len(all_data)} products into {total_chunks} chunks of {CHUNK_SIZE}")
+
+        # Get column structure from first product
+        columns = list(all_data[0].keys())
+        column_str = ', '.join(columns)
+        placeholders = ', '.join(['%s'] * len(columns))
+
+        query = f"""
+        INSERT INTO {table_name} ({column_str})
+        VALUES ({placeholders})
+        """
+
+        # Process in chunks
+        for chunk_idx in range(0, len(all_data), CHUNK_SIZE):
+            chunk = all_data[chunk_idx:chunk_idx + CHUNK_SIZE]
+            chunk_num = (chunk_idx // CHUNK_SIZE) + 1
+
+            # Prepare values as list of tuples
+            values_list = [tuple(data[col] for col in columns) for data in chunk]
+
+            async with db_pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    # Use executemany for batch insert
+                    await cur.executemany(query, values_list)
+                    await conn.commit()
+
+                    chunk_inserted = len(values_list)
+                    total_inserted += chunk_inserted
+                    logger.info(f"✅ Chunk {chunk_num}/{total_chunks}: Inserted {chunk_inserted} products ({total_inserted}/{len(all_data)} total)")
+
+                    # Batch update product_sync status to 'pending' for this chunk
+                    url_parts = [data.get('url_part_number') for data in chunk]
+                    if url_parts:
+                        placeholders_update = ','.join(['%s'] * len(url_parts))
+                        update_query = f"""
+                        UPDATE {table_name}
+                        SET product_sync = 'pending', sync_error = NULL
+                        WHERE url_part_number IN ({placeholders_update})
+                        """
+                        await cur.execute(update_query, url_parts)
+                        await conn.commit()
+
+        logger.info(f"✅ Batch insert complete: {total_inserted} products saved to {table_name} table")
+        successful = total_inserted
+        stats['products_created_wheels_table'] += successful
+        return successful, failed
+
+    except Exception as e:
+        logger.error(f"Error in batch insert: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return successful, len(products) - successful
+
+
 async def create_products_batch(session: aiohttp.ClientSession, gcs_manager, db_pool, products: List[Dict], stats: Dict, skip_shopify_creation: bool = False):
     """
     Create a batch of products.
@@ -600,6 +718,10 @@ async def create_products_batch(session: aiohttp.ClientSession, gcs_manager, db_
     """
     if skip_shopify_creation:
         logger.info(f"Saving {len(products)} products to database (Shopify creation skipped)...")
+        # Use optimized batch insert for database-only saves
+        successful, failed = await batch_insert_products_optimized(db_pool, products, stats)
+        logger.info(f"Batch complete: {successful} successful, {failed} failed")
+        return successful, failed
     else:
         logger.info(f"Creating {len(products)} products...")
 

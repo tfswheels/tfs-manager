@@ -103,20 +103,42 @@ router.post('/start', async (req, res) => {
 
     // Spawn Python scraper process
     const scraperPath = path.join(__dirname, '../../workers/scrapers');
-    const pythonScript = path.join(scraperPath, 'run_scraper.py');
+
+    // Select the appropriate scraper script based on job type
+    let pythonScript;
+    let args;
+
+    if (scraperType === 'inventory_cost') {
+      // Cost scraper for SDW Wheel Wholesale
+      pythonScript = path.join(scraperPath, 'sdw_cost_scraper.py');
+      args = [pythonScript];
+
+      // Add wheels/tires flag
+      if (config.productType === 'tires' || scraperType.includes('tire')) {
+        args.push('--tires');
+      } else {
+        args.push('--wheels');
+      }
+
+      // Add headed flag if needed
+      if (config.headed) {
+        args.push('--headed');
+      }
+    } else {
+      // Regular inventory scraper (CWO)
+      pythonScript = path.join(scraperPath, 'run_scraper.py');
+      args = [
+        pythonScript,
+        `--job-id=${jobId}`,
+        `--type=${scraperType}`
+      ];
+
+      // Add optional flags based on config
+      if (config.saleOnly) args.push('--sale-only');
+    }
 
     console.log(`🐍 Launching Python scraper: ${pythonScript}`);
     console.log(`📂 Working directory: ${scraperPath}`);
-
-    // Build command line arguments from config
-    const args = [
-      pythonScript,
-      `--job-id=${jobId}`,
-      `--type=${scraperType}`
-    ];
-
-    // Add optional flags based on config
-    if (config.saleOnly) args.push('--sale-only');
 
     // Handle legacy useZenrows boolean (backward compatibility)
     if (config.useZenrows === false && !config.scrapingMode) {
@@ -125,21 +147,29 @@ router.post('/start', async (req, res) => {
 
     console.log(`🔧 Python args:`, args.join(' '));
 
+    // Build environment variables for Python process
+    const pythonEnv = {
+      ...process.env,
+      // Ensure the scraper uses tfs-db for product data
+      DB_NAME: 'tfs-db',  // Override to use product database
+      // Pass config via environment variables
+      EXCLUDED_BRANDS: config.excludedBrands ? JSON.stringify(config.excludedBrands) : '[]',
+      SPECIFIC_BRANDS: config.specificBrands ? JSON.stringify(config.specificBrands) : '[]',
+      BACKORDER_COUNT: config.backorderCount?.toString() || '5',
+      // Scraping mode configuration
+      SCRAPING_MODE: config.scrapingMode || 'zenrows',
+      HYBRID_RETRY_COUNT: config.hybridRetryCount?.toString() || '3'
+    };
+
+    // Add scraper-specific environment variables
+    if (scraperType !== 'inventory_cost') {
+      // Regular inventory scraper specific config
+      pythonEnv.MAX_PRODUCTS_PER_DAY = config.maxProductsPerDay?.toString() || '1000';
+    }
+
     const pythonProcess = spawn('python3', args, {
       cwd: scraperPath,
-      env: {
-        ...process.env,
-        // Ensure the scraper uses tfs-db for product data
-        DB_NAME: 'tfs-db',  // Override to use product database
-        // Pass config via environment variables
-        MAX_PRODUCTS_PER_DAY: config.maxProductsPerDay?.toString() || '1000',
-        EXCLUDED_BRANDS: config.excludedBrands ? JSON.stringify(config.excludedBrands) : '[]',
-        SPECIFIC_BRANDS: config.specificBrands ? JSON.stringify(config.specificBrands) : '[]',
-        BACKORDER_COUNT: config.backorderCount?.toString() || '5',
-        // New scraping mode configuration
-        SCRAPING_MODE: config.scrapingMode || 'zenrows',
-        HYBRID_RETRY_COUNT: config.hybridRetryCount?.toString() || '3'
-      }
+      env: pythonEnv
     });
 
     // Log Python output in real-time

@@ -2163,5 +2163,105 @@ class DatabaseClient:
             if connection:
                 connection.close()
 
+    async def batch_update_costs(self, products: List[Dict], product_type: str) -> int:
+        """
+        Batch update sdw_cost for products.
+
+        Args:
+            products: List of dicts with 'url_part_number' and 'cost' keys
+            product_type: 'wheel' or 'tire'
+
+        Returns:
+            Number of products updated
+        """
+        if self.no_db or not products:
+            return 0
+
+        logger.info(f"Batch updating costs for {len(products)} products...")
+
+        # Extract URL parts and costs
+        url_parts = []
+        costs = []
+
+        for product in products:
+            url_part = product.get('url_part_number')
+            cost = product.get('cost')
+
+            if not url_part:
+                continue
+
+            try:
+                # Parse cost
+                cost_float = float(cost) if cost and str(cost).replace('.', '').replace(',', '').isdigit() else None
+
+                # Only update if we have a valid cost
+                if cost_float is not None and cost_float > 0:
+                    url_parts.append(url_part)
+                    costs.append(cost_float)
+            except (ValueError, TypeError) as e:
+                logger.debug(f"Error parsing cost for {url_part}: {e}")
+                continue
+
+        if not url_parts:
+            logger.warning("No valid costs to update")
+            return 0
+
+        logger.info(f"Updating costs for {len(url_parts)} products with valid cost data")
+
+        batch_size = 300
+        total_updates = 0
+
+        for i in range(0, len(url_parts), batch_size):
+            batch_urls = url_parts[i:i+batch_size]
+            batch_costs = costs[i:i+batch_size]
+
+            connection = None
+            try:
+                connection = await self._get_connection()
+                cursor = connection.cursor(buffered=True)
+
+                # Build update query with CASE statement for costs
+                cost_cases = []
+                params = []
+
+                for url, cost in zip(batch_urls, batch_costs):
+                    cost_cases.append("WHEN %s THEN %s")
+                    params.extend([url, cost])
+
+                query = f"""
+                    UPDATE {self.mode_to_table[self.mode]}
+                    SET sdw_cost = CASE url_part_number {' '.join(cost_cases)} ELSE sdw_cost END,
+                        last_modified = NOW(),
+                        last_sdw_sync = NOW()
+                    WHERE url_part_number IN ({', '.join(['%s'] * len(batch_urls))})
+                    AND product_type = %s
+                """
+
+                params.extend(batch_urls)
+                params.append(product_type)
+
+                cursor.execute(query, params)
+                batch_updates = cursor.rowcount
+                total_updates += batch_updates
+
+                connection.commit()
+                cursor.close()
+
+                logger.debug(f"Cost batch updated {batch_updates} products (batch {i//batch_size + 1})")
+
+            except Exception as e:
+                logger.error(f"Error in batch_update_costs: {e}")
+                if connection:
+                    try:
+                        connection.rollback()
+                    except:
+                        pass
+            finally:
+                if connection:
+                    connection.close()
+
+        logger.info(f"✓ Updated costs for {total_updates} products")
+        return total_updates
+
 # Create singleton database client instance
 db_client = DatabaseClient()

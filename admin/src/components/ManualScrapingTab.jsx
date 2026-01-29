@@ -380,6 +380,7 @@ export default function ManualScrapingTab() {
             </Banner>
           )}
 
+          <Text variant="headingSm" as="h3">Inventory Scraper</Text>
           <InlineStack gap="300">
             <Button
               primary
@@ -395,6 +396,20 @@ export default function ManualScrapingTab() {
               Scrape Tires Now
             </Button>
           </InlineStack>
+
+          <Text variant="headingSm" as="h3">Inventory Cost Scraper</Text>
+          <InlineStack gap="300">
+            <Button
+              loading={loading}
+              onClick={() => startScraping('inventory_cost')}
+              tone="success"
+            >
+              Scrape Costs (Wheels & Tires)
+            </Button>
+          </InlineStack>
+          <Text tone="subdued" variant="bodySm">
+            Updates sdw_cost column for all wheels and tires from SDW Wheel Wholesale
+          </Text>
         </BlockStack>
       </Card>
 

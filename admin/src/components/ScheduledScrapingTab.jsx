@@ -283,7 +283,8 @@ export default function ScheduledScrapingTab() {
               label="Scraper Type"
               options={[
                 { label: 'Wheels', value: 'wheels' },
-                { label: 'Tires', value: 'tires' }
+                { label: 'Tires', value: 'tires' },
+                { label: 'Inventory Cost (Wheels & Tires)', value: 'inventory_cost' }
               ]}
               value={scraperType}
               onChange={setScraperType}
