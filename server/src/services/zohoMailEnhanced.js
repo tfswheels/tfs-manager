@@ -246,11 +246,22 @@ async function uploadAttachment(accessToken, accountId, attachment) {
       }
     );
 
+    console.log(`🔍 Upload response for ${attachment.filename}:`, JSON.stringify(response.data, null, 2));
+
+    // Zoho returns an array of uploaded attachments
     const data = response.data.data;
+
+    // If data is an array, take the first element
+    const attachmentData = Array.isArray(data) ? data[0] : data;
+
+    if (!attachmentData) {
+      throw new Error(`No attachment data returned from Zoho for ${attachment.filename}`);
+    }
+
     return {
-      storeName: data.storeName,
-      attachmentPath: data.attachmentPath,
-      attachmentName: data.attachmentName
+      storeName: attachmentData.storeName,
+      attachmentPath: attachmentData.attachmentPath,
+      attachmentName: attachmentData.attachmentName
     };
   } catch (error) {
     console.error(`❌ Failed to upload attachment ${attachment.filename}:`, error.response?.data || error.message);
