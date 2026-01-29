@@ -28,6 +28,17 @@ export default function EmailThread() {
   const { conversationId } = useParams();
   const navigate = useNavigate();
 
+  // Handle back navigation with fallback
+  const handleBack = () => {
+    // Check if there's browser history to go back to
+    if (window.history.state && window.history.state.idx > 0) {
+      navigate(-1);
+    } else {
+      // No history, go to tickets list
+      navigate('/tickets');
+    }
+  };
+
   const [conversation, setConversation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -344,7 +355,7 @@ export default function EmailThread() {
     return (
       <Page
         title="Loading..."
-        backAction={{ content: 'Emails', onAction: () => navigate('/emails') }}
+        backAction={{ content: 'Back', onAction: handleBack }}
       >
         <div style={{ display: 'flex', justifyContent: 'center', padding: '100px 0' }}>
           <Spinner size="large" />
@@ -357,7 +368,7 @@ export default function EmailThread() {
     return (
       <Page
         title="Error"
-        backAction={{ content: 'Back', onAction: () => navigate(-1) }}
+        backAction={{ content: 'Back', onAction: handleBack }}
       >
         <Banner tone="critical">
           <p>{error}</p>
@@ -376,7 +387,7 @@ export default function EmailThread() {
   return (
     <Page
       title={conversation.subject || '(No Subject)'}
-      backAction={{ content: 'Back', onAction: () => navigate(-1) }}
+      backAction={{ content: 'Back', onAction: handleBack }}
       primaryAction={{
         content: 'Reply',
         onAction: () => setShowReplyBox(!showReplyBox)

@@ -267,8 +267,8 @@ export async function sendEmail(shopId, emailData) {
     // Add optional fields
     if (cc) payload.ccAddress = Array.isArray(cc) ? cc.join(',') : cc;
     if (bcc) payload.bccAddress = Array.isArray(bcc) ? bcc.join(',') : bcc;
-    if (inReplyTo) payload.inReplyTo = inReplyTo;
-    if (references) payload.references = references;
+    // Note: Zoho API doesn't support inReplyTo/references headers directly
+    // These need to be handled via email threading on Zoho's side
 
     // Add attachments if provided (base64 format from frontend)
     if (attachments && Array.isArray(attachments) && attachments.length > 0) {

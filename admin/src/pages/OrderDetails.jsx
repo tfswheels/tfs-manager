@@ -24,6 +24,17 @@ function OrderDetails() {
   const { orderId } = useParams();
   const navigate = useNavigate();
 
+  // Handle back navigation with fallback
+  const handleBack = () => {
+    // Check if there's browser history to go back to
+    if (window.history.state && window.history.state.idx > 0) {
+      navigate(-1);
+    } else {
+      // No history, go to orders list
+      navigate('/');
+    }
+  };
+
   // Order data
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -350,7 +361,7 @@ function OrderDetails() {
     return (
       <Page
         title="Order Details"
-        backAction={{ content: 'Back', onAction: () => navigate(-1) }}
+        backAction={{ content: 'Back', onAction: handleBack }}
       >
         <Card>
           <div style={{ padding: '40px', textAlign: 'center' }}>
@@ -365,7 +376,7 @@ function OrderDetails() {
     return (
       <Page
         title="Order Not Found"
-        backAction={{ content: 'Back', onAction: () => navigate(-1) }}
+        backAction={{ content: 'Back', onAction: handleBack }}
       >
         <Banner tone="critical">
           <p>Order not found</p>
@@ -377,7 +388,7 @@ function OrderDetails() {
   return (
     <Page
       title={`Order ${order.name}`}
-      backAction={{ content: 'Back', onAction: () => navigate(-1) }}
+      backAction={{ content: 'Back', onAction: handleBack }}
       subtitle={`${order.customer?.first_name || ''} ${order.customer?.last_name || ''}`}
     >
       <BlockStack gap="500">
