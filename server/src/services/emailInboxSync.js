@@ -284,7 +284,8 @@ async function syncInbox(shopId, accountEmail, options = {}) {
 
       // If we got fewer emails than requested, we've reached the end
       if (emails.length < limit) {
-        console.log(`  ✅ Reached end of ${folderName} (last batch had ${emails.length}/${limit} emails)`);
+        // Reduced logging - don't log end of folder
+        // console.log(`  ✅ Reached end of ${folderName} (last batch had ${emails.length}/${limit} emails)`);
         break;
       }
     }
