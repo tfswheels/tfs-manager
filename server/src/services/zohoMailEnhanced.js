@@ -227,14 +227,16 @@ async function uploadAttachment(accessToken, accountId, attachment) {
     // Create form data
     const FormData = (await import('form-data')).default;
     const formData = new FormData();
-    formData.append('file', buffer, {
+
+    // Zoho requires the field to be named 'attach' (not 'file')
+    formData.append('attach', buffer, {
       filename: attachment.filename,
       contentType: attachment.contentType || 'application/octet-stream'
     });
 
-    // Upload to Zoho
+    // Upload to Zoho with required query parameter uploadType=multipart
     const response = await axios.post(
-      `${ZOHO_API_BASE}/accounts/${accountId}/messages/attachments`,
+      `${ZOHO_API_BASE}/accounts/${accountId}/messages/attachments?uploadType=multipart`,
       formData,
       {
         headers: {
