@@ -242,8 +242,8 @@ export default function EmailThread() {
       await axios.post(
         `${API_URL}/api/emails/send`,
         {
-          to: conversation.customer.email,
-          toName: conversation.customer.name,
+          to: conversation.customer_email,
+          toName: conversation.customer_name,
           subject: replySubject,
           body: plainTextBody,
           bodyHtml: replyBody,
@@ -465,61 +465,20 @@ export default function EmailThread() {
             )}
 
             {/* Customer Details */}
-            {conversation.customer &&
-             !['sales@tfswheels.com', 'support@tfswheels.com'].includes(conversation.customer.email?.toLowerCase()) && (
+            {conversation.customer_email &&
+             !['sales@tfswheels.com', 'support@tfswheels.com'].includes(conversation.customer_email?.toLowerCase()) && (
               <Card>
                 <Box padding="400">
                   <BlockStack gap="300">
                     <Text variant="headingMd" as="h3">Customer</Text>
                     <div>
                       <Text variant="bodyMd" as="p" fontWeight="semibold">
-                        {conversation.customer.name || 'Unknown'}
+                        {conversation.customer_name || 'Unknown'}
                       </Text>
                       <Text variant="bodyMd" as="p" tone="subdued">
-                        {conversation.customer.email}
+                        {conversation.customer_email}
                       </Text>
-                      {conversation.customer.phone && (
-                        <Text variant="bodyMd" as="p" tone="subdued">
-                          {conversation.customer.phone}
-                        </Text>
-                      )}
                     </div>
-
-                    {/* Past Orders */}
-                    {conversation.customer.pastOrders && conversation.customer.pastOrders.length > 0 && (
-                      <>
-                        <Divider />
-                        <div>
-                          <Text variant="bodyMd" as="p" fontWeight="semibold">
-                            Past Orders
-                          </Text>
-                          <BlockStack gap="200">
-                            {conversation.customer.pastOrders.map((order) => (
-                              <div key={order.id}>
-                                <Button
-                                  plain
-                                  onClick={() => navigate(`/orders/${order.shopify_order_id}`)}
-                                >
-                                  #{order.order_number}
-                                </Button>
-                                <Text variant="bodySm" as="p" tone="subdued">
-                                  {new Date(order.created_at).toLocaleDateString()} - ${parseFloat(order.total_price || 0).toFixed(2)}
-                                </Text>
-                              </div>
-                            ))}
-                          </BlockStack>
-                        </div>
-                      </>
-                    )}
-
-                    {conversation.customer.pastOrders && conversation.customer.pastOrders.length === 0 && (
-                      <>
-                        <Divider />
-                        <Text variant="bodySm" as="p" tone="subdued">
-                          No previous orders
-                        </Text>
-                      </>
-                    )}
                   </BlockStack>
                 </Box>
               </Card>
