@@ -246,8 +246,6 @@ async function uploadAttachment(accessToken, accountId, attachment) {
       }
     );
 
-    console.log(`🔍 Upload response for ${attachment.filename}:`, JSON.stringify(response.data, null, 2));
-
     // Zoho returns an array of uploaded attachments
     const data = response.data.data;
 
@@ -336,19 +334,13 @@ export async function sendEmail(shopId, emailData) {
       for (const attachment of attachments) {
         const uploaded = await uploadAttachment(accessToken, accountId, attachment);
         uploadedAttachments.push(uploaded);
-        console.log(`   ✅ Uploaded: ${uploaded.attachmentName} -> store:${uploaded.storeName}`);
       }
 
       payload.attachments = uploadedAttachments;
-      console.log(`✅ All attachments uploaded successfully`);
-      console.log(`📋 Attachment payload:`, JSON.stringify(uploadedAttachments, null, 2));
+      console.log(`✅ Attachments uploaded and ready to send`);
     }
 
     console.log(`📤 Sending email to ${to} via Zoho (from ${accountEmail})...`);
-    console.log(`📋 Full email payload:`, JSON.stringify({
-      ...payload,
-      content: payload.content?.substring(0, 100) + '...' // Truncate content for readability
-    }, null, 2));
 
     // Send email via Zoho Mail API
     const response = await axios.post(
