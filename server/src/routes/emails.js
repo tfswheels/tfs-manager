@@ -106,6 +106,7 @@ router.post('/send', async (req, res) => {
       customerId,
       inReplyTo,
       references,
+      attachments,
       isAiGenerated = false,
       aiPrompt = null
     } = req.body;
@@ -148,7 +149,8 @@ router.post('/send', async (req, res) => {
       cc,
       bcc,
       inReplyTo,
-      references
+      references,
+      attachments
     });
 
     // Update log with message ID and status

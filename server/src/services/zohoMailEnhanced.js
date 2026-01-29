@@ -234,7 +234,8 @@ export async function sendEmail(shopId, emailData) {
       cc,
       bcc,
       inReplyTo,
-      references
+      references,
+      attachments
     } = emailData;
 
     // Add signature if not already present
@@ -264,6 +265,16 @@ export async function sendEmail(shopId, emailData) {
     if (bcc) payload.bccAddress = Array.isArray(bcc) ? bcc.join(',') : bcc;
     if (inReplyTo) payload.inReplyTo = inReplyTo;
     if (references) payload.references = references;
+
+    // Add attachments if provided (base64 format from frontend)
+    if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+      payload.attachments = attachments.map(att => ({
+        attachmentName: att.filename,
+        content: att.content, // base64 string
+        contentType: att.contentType || 'application/octet-stream'
+      }));
+      console.log(`📎 Including ${attachments.length} attachment(s)`);
+    }
 
     console.log(`📤 Sending email to ${to} via Zoho...`);
 
