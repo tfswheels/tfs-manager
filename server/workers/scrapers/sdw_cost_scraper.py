@@ -347,55 +347,94 @@ def fetch_page(driver, url: str, cookies: List[Dict]) -> Optional[str]:
 # BRAND SCRAPING
 # =============================================================================
 
+async def scrape_page_async(driver, cookies: List[Dict], brand: str, page: int, brand_encoded: str) -> tuple:
+    """Scrape a single page asynchronously"""
+    url = f"{TARGET}?store={MODE}&brand={brand_encoded}&page={page}"
+    logger.info(f"  📄 Scraping {brand} page {page}")
+
+    html = fetch_page(driver, url, cookies)
+    if not html:
+        logger.warning(f"  ⚠️  Failed to fetch {brand} page {page}")
+        return page, [], False
+
+    products = scrape_page_costs(html, brand)
+    stats['pages_scraped'] += 1
+
+    # Check if all products are backorder
+    all_backorder = False
+    if products:
+        backorder_count = sum(1 for p in products if p['is_backorder'])
+        all_backorder = (backorder_count == len(products))
+
+    return page, products, all_backorder
+
+
 async def scrape_brand(driver, cookies: List[Dict], brand: str, known_url_parts: Set[str]) -> List[Dict]:
-    """Scrape all pages for a brand"""
+    """Scrape all pages for a brand with concurrent page fetching"""
     all_products = []
-    page = 1
     brand_encoded = brand.replace(' ', '+')
     consecutive_backorders = 0
+    page = 1
+    max_concurrent_pages = 3  # Scrape 3 pages at a time
 
     logger.info(f"Starting brand: {brand} ({len(known_url_parts)} known products)")
 
     while True:
-        url = f"{TARGET}?store={MODE}&brand={brand_encoded}&page={page}"
-        logger.info(f"  Scraping {brand} page {page}")
+        # Create tasks for next batch of pages
+        tasks = []
+        page_numbers = []
 
-        html = fetch_page(driver, url, cookies)
-        if not html:
-            logger.warning(f"  Failed to fetch {brand} page {page}, stopping brand")
-            break
+        for i in range(max_concurrent_pages):
+            current_page = page + i
+            page_numbers.append(current_page)
+            task = scrape_page_async(driver, cookies, brand, current_page, brand_encoded)
+            tasks.append(task)
 
-        products = scrape_page_costs(html, brand)
-        stats['pages_scraped'] += 1
+        # Execute pages concurrently
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        if not products:
-            logger.info(f"  No products on {brand} page {page}, moving to next brand")
-            break
+        # Process results
+        found_empty_page = False
+        pages_processed = 0
 
-        # Filter to only products we know about
-        matched_products = [p for p in products if p['url_part_number'] in known_url_parts]
-        stats['products_found'] += len(matched_products)
+        for page_num, (pg, products, all_backorder) in zip(page_numbers, results):
+            if isinstance(results, Exception):
+                logger.error(f"  ❌ Error scraping page {page_num}: {results}")
+                continue
 
-        # Check backorder logic
-        backorder_count = sum(1 for p in products if p['is_backorder'])
-        if backorder_count == len(products):
-            consecutive_backorders += 1
-            logger.info(f"  Page {page}: All {len(products)} products are backorder ({consecutive_backorders}/{MAX_CONSECUTIVE_BACKORDERS})")
-
-            if consecutive_backorders >= MAX_CONSECUTIVE_BACKORDERS:
-                logger.info(f"  Reached {MAX_CONSECUTIVE_BACKORDERS} consecutive backorder pages for {brand}, stopping")
-                stats['backorder_stops'] += 1
+            if not products:
+                logger.info(f"  📭 No products on {brand} page {pg}, stopping brand")
+                found_empty_page = True
                 break
-        else:
-            consecutive_backorders = 0  # Reset counter
 
-        all_products.extend(matched_products)
-        logger.info(f"  Found {len(matched_products)} matching products on {brand} page {page}")
+            # Filter to only products we know about
+            matched_products = [p for p in products if p['url_part_number'] in known_url_parts]
+            stats['products_found'] += len(matched_products)
 
-        page += 1
-        await asyncio.sleep(0.5)  # Small delay between pages
+            # Check backorder logic
+            if all_backorder:
+                consecutive_backorders += 1
+                logger.info(f"  📦 Page {pg}: All {len(products)} products are backorder ({consecutive_backorders}/{MAX_CONSECUTIVE_BACKORDERS})")
 
-    logger.info(f"✓ Completed brand: {brand} - {len(all_products)} products")
+                if consecutive_backorders >= MAX_CONSECUTIVE_BACKORDERS:
+                    logger.info(f"  🛑 Reached {MAX_CONSECUTIVE_BACKORDERS} consecutive backorder pages for {brand}")
+                    stats['backorder_stops'] += 1
+                    found_empty_page = True
+                    break
+            else:
+                consecutive_backorders = 0  # Reset counter
+
+            all_products.extend(matched_products)
+            logger.info(f"  ✓ Found {len(matched_products)} costs on {brand} page {pg}")
+            pages_processed += 1
+
+        if found_empty_page or consecutive_backorders >= MAX_CONSECUTIVE_BACKORDERS:
+            break
+
+        page += max_concurrent_pages
+        await asyncio.sleep(0.3)  # Small delay between batches
+
+    logger.info(f"✅ Completed brand: {brand} - {len(all_products)} products with costs")
     stats['brands_processed'] += 1
     return all_products
 
@@ -403,18 +442,24 @@ async def scrape_brand(driver, cookies: List[Dict], brand: str, known_url_parts:
 # DATABASE OPERATIONS
 # =============================================================================
 
-async def update_database(products: List[Dict]) -> int:
+async def update_database(brand: str, products: List[Dict]) -> int:
     """Update database with scraped costs"""
     if not products:
         return 0
 
     try:
+        logger.info(f"  💾 Updating database for {brand}: {len(products)} products...")
+
         # Use the new batch_update_costs function
         updated = await db_client.batch_update_costs(products, PRODUCT_TYPE)
         stats['costs_updated'] += updated
+
+        logger.info(f"  ✅ Updated {updated} costs for {brand}")
         return updated
     except Exception as e:
-        logger.error(f"Database update error: {e}")
+        logger.error(f"  ❌ Database update error for {brand}: {e}")
+        import traceback
+        traceback.print_exc()
         stats['errors'] += 1
         return 0
 
@@ -510,9 +555,8 @@ async def main():
                 total_products += len(products)
 
                 if products:
-                    updated = await update_database(products)
+                    updated = await update_database(brand, products)
                     total_updates += updated
-                    logger.info(f"  ✓ Updated {updated} products for {brand}")
 
             except Exception as e:
                 logger.error(f"Error scraping brand {brand}: {e}")

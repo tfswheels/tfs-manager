@@ -2228,11 +2228,10 @@ class DatabaseClient:
                     cost_cases.append("WHEN %s THEN %s")
                     params.extend([url, cost])
 
+                # Update shopify_products table (not wheels/tires table)
                 query = f"""
-                    UPDATE {self.mode_to_table[self.mode]}
-                    SET sdw_cost = CASE url_part_number {' '.join(cost_cases)} ELSE sdw_cost END,
-                        last_modified = NOW(),
-                        last_sdw_sync = NOW()
+                    UPDATE shopify_products
+                    SET sdw_cost = CASE url_part_number {' '.join(cost_cases)} ELSE sdw_cost END
                     WHERE url_part_number IN ({', '.join(['%s'] * len(batch_urls))})
                     AND product_type = %s
                 """
