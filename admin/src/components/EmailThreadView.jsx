@@ -201,22 +201,17 @@ export default function EmailThreadView({ conversationId, open, onClose }) {
                   <BlockStack gap="300">
                     <Text variant="headingMd" as="h3">Details</Text>
 
-                    {conversation.customer && (
+                    {conversation.customer_email && (
                       <div>
                         <Text variant="bodyMd" as="p" fontWeight="semibold">
                           Customer
                         </Text>
                         <Text variant="bodyMd" as="p">
-                          {conversation.customer.name}
+                          {conversation.customer_name || 'Unknown'}
                         </Text>
                         <Text variant="bodyMd" as="p" tone="subdued">
-                          {conversation.customer.email}
+                          {conversation.customer_email}
                         </Text>
-                        {conversation.customer.phone && (
-                          <Text variant="bodyMd" as="p" tone="subdued">
-                            {conversation.customer.phone}
-                          </Text>
-                        )}
                       </div>
                     )}
 
