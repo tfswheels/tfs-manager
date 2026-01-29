@@ -77,7 +77,9 @@ PASS = "K7}@e)G?d0Gq"
 PRODUCT_TYPE = 'wheel' if MODE == 'wheels' else 'tire'
 
 # Scraping configuration from environment variables (passed by backend)
-SCRAPING_MODE = os.environ.get('SCRAPING_MODE', 'hybrid').lower()
+# NOTE: SDW scraper MUST use direct mode because it requires authenticated session
+# ZenRows cannot maintain the login session cookie, so we force direct mode
+SCRAPING_MODE = 'direct'  # Always use direct mode for authenticated scraping
 HYBRID_RETRY_COUNT = int(os.environ.get('HYBRID_RETRY_COUNT', '3'))
 MAX_CONSECUTIVE_BACKORDERS = int(os.environ.get('BACKORDER_COUNT', '5'))
 CONCURRENT_WORKERS = 5  # Number of concurrent page fetchers
@@ -105,8 +107,6 @@ stats = {
     'products_found': 0,
     'costs_updated': 0,
     'errors': 0,
-    'direct_requests': 0,
-    'zenrows_requests': 0,
     'backorder_stops': 0
 }
 
@@ -255,72 +255,15 @@ def fetch_page_direct(driver, url: str, cookies: List[Dict]) -> Optional[str]:
         except:
             logger.debug(f"No products found on {url}")
 
-        stats['direct_requests'] += 1
         return driver.page_source
     except Exception as e:
         logger.error(f"Direct fetch failed for {url}: {e}")
         return None
 
-def fetch_page_zenrows(url: str, cookies: List[Dict]) -> Optional[str]:
-    """Fetch a page using ZenRows proxy"""
-    try:
-        import requests
-        ZENROWS_API_KEY = os.environ.get('ZENROWS_API_KEY')
-        if not ZENROWS_API_KEY:
-            logger.error("ZenRows API key not found")
-            return None
-
-        # Build cookie header
-        cookie_header = '; '.join([f"{c['name']}={c['value']}" for c in cookies])
-
-        params = {
-            'url': url,
-            'apikey': ZENROWS_API_KEY,
-            'js_render': 'true',
-            'premium_proxy': 'true',
-            'custom_headers': 'true',
-        }
-
-        headers = {
-            'Cookie': cookie_header
-        }
-
-        response = requests.get('https://api.zenrows.com/v1/', params=params, headers=headers, timeout=60)
-
-        if response.status_code == 200:
-            stats['zenrows_requests'] += 1
-            return response.text
-        else:
-            logger.error(f"ZenRows returned status {response.status_code}")
-            return None
-    except Exception as e:
-        logger.error(f"ZenRows fetch failed for {url}: {e}")
-        return None
-
-def fetch_page_hybrid(driver, url: str, cookies: List[Dict]) -> Optional[str]:
-    """Fetch page with hybrid strategy - try direct first, fallback to ZenRows"""
-    for attempt in range(HYBRID_RETRY_COUNT):
-        html = fetch_page_direct(driver, url, cookies)
-        if html and 'product-card' in html:
-            return html
-        logger.warning(f"Direct fetch attempt {attempt + 1}/{HYBRID_RETRY_COUNT} failed for {url}")
-        time.sleep(1)
-
-    # Fallback to ZenRows
-    logger.info(f"Falling back to ZenRows for {url}")
-    return fetch_page_zenrows(url, cookies)
-
 def fetch_page(driver, url: str, cookies: List[Dict]) -> Optional[str]:
-    """Fetch page using configured scraping mode"""
-    if SCRAPING_MODE == 'direct':
-        return fetch_page_direct(driver, url, cookies)
-    elif SCRAPING_MODE == 'zenrows':
-        return fetch_page_zenrows(url, cookies)
-    elif SCRAPING_MODE == 'hybrid':
-        return fetch_page_hybrid(driver, url, cookies)
-    else:
-        logger.error(f"Unknown scraping mode: {SCRAPING_MODE}")
-        return fetch_page_direct(driver, url, cookies)
+    """Fetch page using direct Selenium (required for authenticated session)"""
+    # SDW scraper MUST use direct mode to maintain authenticated session
+    return fetch_page_direct(driver, url, cookies)
 
 # =============================================================================
 # BRAND SCRAPING
@@ -416,9 +359,7 @@ async def main():
     logger.info("=" * 80)
     logger.info(f"Mode: {MODE}")
     logger.info(f"Headless: {HEADLESS}")
-    logger.info(f"Scraping Mode: {SCRAPING_MODE}")
-    if SCRAPING_MODE == 'hybrid':
-        logger.info(f"Hybrid Retry Count: {HYBRID_RETRY_COUNT}")
+    logger.info(f"Scraping Mode: Direct (required for authenticated session)")
     logger.info(f"Backorder Stop Limit: {MAX_CONSECUTIVE_BACKORDERS} consecutive pages")
     if EXCLUDED_BRANDS:
         logger.info(f"Excluded Brands: {len(EXCLUDED_BRANDS)}")
@@ -509,8 +450,6 @@ async def main():
         logger.info(f"Products found: {stats['products_found']}")
         logger.info(f"Costs updated: {stats['costs_updated']}")
         logger.info(f"Backorder stops: {stats['backorder_stops']}")
-        logger.info(f"Direct requests: {stats['direct_requests']}")
-        logger.info(f"ZenRows requests: {stats['zenrows_requests']}")
         logger.info(f"Errors: {stats['errors']}")
         logger.info("=" * 80)
 
