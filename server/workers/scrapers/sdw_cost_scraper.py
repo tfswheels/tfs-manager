@@ -150,8 +150,8 @@ class BrandState:
 def get_driver():
     """Create a new Selenium driver instance"""
     driver = Driver(uc=True, headless=HEADLESS)
-    # Set page load timeout to prevent infinite hangs
-    driver.set_page_load_timeout(30)
+    # Set page load timeout to prevent infinite hangs (20s)
+    driver.set_page_load_timeout(20)
     return driver
 
 # =============================================================================
@@ -270,6 +270,7 @@ def scrape_page_costs(html: str, brand: str) -> List[Dict]:
 def fetch_page_direct(driver, url: str, cookies: List[Dict]) -> Optional[str]:
     """Fetch a page using direct Selenium"""
     try:
+        logger.debug(f"Direct fetch: Loading homepage to set cookies")
         driver.get("https://www.sdwheelwholesale.com")
 
         for cookie in cookies:
@@ -278,16 +279,21 @@ def fetch_page_direct(driver, url: str, cookies: List[Dict]) -> Optional[str]:
             except Exception as e:
                 logger.debug(f"Could not add cookie: {e}")
 
+        logger.debug(f"Direct fetch: Loading {url}")
         driver.get(url)
 
+        logger.debug(f"Direct fetch: Waiting for product cards")
         try:
-            WebDriverWait(driver, 15).until(
+            WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.CLASS_NAME, "product-card"))
             )
+            logger.debug(f"Direct fetch: Found product cards")
         except TimeoutException:
-            logger.debug(f"Timeout waiting for products on {url}")
+            logger.warning(f"Timeout waiting for products on {url}")
+            return None  # Return None if no products found
         except Exception as e:
-            logger.debug(f"Error waiting for products: {e}")
+            logger.warning(f"Error waiting for products: {e}")
+            return None
 
         return driver.page_source
     except TimeoutException as e:
@@ -346,17 +352,23 @@ def fetch_page_zenrows(url: str, cookies: List[Dict]) -> Optional[str]:
 
 
 def fetch_page_hybrid(driver, url: str, cookies: List[Dict]) -> Optional[str]:
-    """Fetch page with hybrid strategy - try direct first, fallback to ZenRows"""
-    for attempt in range(HYBRID_RETRY_COUNT):
-        html = fetch_page_direct(driver, url, cookies)
-        if html and 'product-card' in html:
-            return html
-        logger.warning(f"Direct fetch attempt {attempt + 1}/{HYBRID_RETRY_COUNT} failed for {url}")
-        time.sleep(1)
+    """Fetch page with hybrid strategy - try direct ONCE, then fallback to ZenRows"""
+    logger.debug(f"Hybrid fetch: Trying direct scraping first")
+    html = fetch_page_direct(driver, url, cookies)
 
-    # Fallback to ZenRows
-    logger.info(f"Falling back to ZenRows for {url}")
+    if html and 'product-card' in html:
+        logger.debug(f"Hybrid fetch: Direct scraping succeeded")
+        return html
+
+    # Direct failed - fallback to ZenRows immediately (don't retry direct)
+    logger.warning(f"Direct fetch failed for {url}, falling back to ZenRows")
     html = fetch_page_zenrows(url, cookies)
+
+    if html:
+        logger.info(f"ZenRows fetch succeeded for {url}")
+    else:
+        logger.error(f"Both direct and ZenRows failed for {url}")
+
     return html
 
 
