@@ -81,7 +81,7 @@ PRODUCT_TYPE = 'wheel' if MODE == 'wheels' else 'tire'
 # Scraping configuration
 SCRAPING_MODE = os.environ.get('SCRAPING_MODE', 'hybrid').lower()
 HYBRID_RETRY_COUNT = int(os.environ.get('HYBRID_RETRY_COUNT', '3'))
-MAX_CONSECUTIVE_BACKORDERS = 2  # Stop after 2 consecutive products with no cost
+MAX_CONSECUTIVE_BACKORDERS = int(os.environ.get('BACKORDER_COUNT', '5'))
 ZENROWS_API_KEY = os.environ.get('ZENROWS_API_KEY', '1952d3d9f407cef089c0871d5d37d426fe78546e')
 
 # Concurrency configuration
@@ -393,7 +393,7 @@ async def scrape_brand_page(driver, cookies: List[Dict], brand: str, page: int, 
 
             if state.consecutive_backorders >= MAX_CONSECUTIVE_BACKORDERS:
                 if not state.stopped:
-                    logger.info(f"  🛑 {brand}: {MAX_CONSECUTIVE_BACKORDERS} consecutive products with no cost on page {page}, stopping")
+                    logger.info(f"  🛑 {brand}: {MAX_CONSECUTIVE_BACKORDERS} consecutive backorders on page {page}, stopping")
                     async with stats_lock:
                         stats['backorder_stops'] += 1
                     state.stopped = True
@@ -403,7 +403,7 @@ async def scrape_brand_page(driver, cookies: List[Dict], brand: str, page: int, 
             state.consecutive_backorders = 0
             matched_products.append(product)
 
-    logger.info(f"  ✓ Page {page}: {len(matched_products)} costs ({state.consecutive_backorders} consecutive no-cost)")
+    logger.info(f"  ✓ Page {page}: {len(matched_products)} costs ({state.consecutive_backorders} consecutive backorders)")
 
     return page, matched_products
 
@@ -435,10 +435,14 @@ async def scrape_brand(driver, cookies: List[Dict], brand: str, known_url_parts:
 
         # Process results
         found_empty = False
-        for pg, products in results:
-            if isinstance(products, Exception):
-                logger.error(f"  ❌ Error on page {pg}: {products}")
+        for result in results:
+            # Check if result is an exception first
+            if isinstance(result, Exception):
+                logger.error(f"  ❌ Error scraping page: {result}")
                 continue
+
+            # Now safe to unpack
+            pg, products = result
 
             if not products and not state.stopped:
                 logger.info(f"  📭 No products on page {pg}, stopping")
@@ -580,7 +584,7 @@ async def main():
     logger.info(f"Scraping Mode: {SCRAPING_MODE}")
     if SCRAPING_MODE == 'hybrid':
         logger.info(f"Hybrid Retry Count: {HYBRID_RETRY_COUNT}")
-    logger.info(f"Backorder Stop: {MAX_CONSECUTIVE_BACKORDERS} consecutive products without cost")
+    logger.info(f"Backorder Stop: {MAX_CONSECUTIVE_BACKORDERS} consecutive backorders")
     logger.info(f"Concurrency: {MAX_CONCURRENT_BRANDS} brands, {PAGES_PER_BRAND_CONCURRENT} pages/brand")
     logger.info(f"DB Batch Size: {DB_BATCH_SIZE}")
     if EXCLUDED_BRANDS:
@@ -648,7 +652,13 @@ async def main():
                 tasks.append(task)
 
             # Process batch of brands concurrently
-            await asyncio.gather(*tasks)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Log any exceptions from brand processing
+            for idx, result in enumerate(results):
+                if isinstance(result, Exception):
+                    brand_name = batch_brands[idx]
+                    logger.error(f"❌ Brand '{brand_name}' failed: {result}")
 
         # Final stats
         elapsed = time.time() - start_time
