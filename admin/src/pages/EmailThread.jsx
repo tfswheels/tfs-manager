@@ -350,6 +350,30 @@ export default function EmailThread() {
     setReplyAttachments(replyAttachments.filter(att => att.id !== id));
   };
 
+  const handleDownloadAttachment = async (attachment) => {
+    try {
+      // Fetch attachment from backend
+      const response = await axios.get(attachment.url, {
+        params: { shop: '2f3d7a-2.myshopify.com' },
+        responseType: 'blob' // Important: get binary data as blob
+      });
+
+      // Create blob URL and trigger download
+      const blob = new Blob([response.data], { type: attachment.mime_type || 'application/octet-stream' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = attachment.original_filename || attachment.filename || 'download';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading attachment:', error);
+      alert('Failed to download attachment. Please try again.');
+    }
+  };
+
   const formatFileSize = (bytes) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -749,8 +773,7 @@ export default function EmailThread() {
                                 {attachment.url && (
                                   <Button
                                     size="slim"
-                                    url={attachment.url}
-                                    external
+                                    onClick={() => handleDownloadAttachment(attachment)}
                                   >
                                     Download
                                   </Button>

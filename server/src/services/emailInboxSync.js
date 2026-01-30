@@ -367,19 +367,6 @@ async function syncInbox(shopId, accountEmail, options = {}) {
           sentAt: direction === 'outbound' ? receivedAt : null
         });
 
-        // Process embedded images in HTML (downloads and replaces ImageDisplay URLs with cid:)
-        if (bodyHtml) {
-          const modifiedHtml = await processEmbeddedImages(shopId, emailId, bodyHtml, fullEmail.messageId, accountEmail, folderId);
-
-          // Update email with modified HTML if it changed
-          if (modifiedHtml !== bodyHtml) {
-            await db.execute(
-              `UPDATE customer_emails SET body_html = ? WHERE id = ?`,
-              [modifiedHtml, emailId]
-            );
-          }
-        }
-
         // Process and save regular attachments
         await processAndSaveAttachments(shopId, emailId, fullEmail.messageId, accountEmail, folderId);
 
