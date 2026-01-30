@@ -220,6 +220,7 @@ router.get('/:id', async (req, res) => {
     );
 
     // Get attachments for each message
+    const baseUrl = process.env.APP_URL || 'https://tfs-manager-server-production.up.railway.app';
     for (const message of messages) {
       const [attachments] = await db.execute(
         `SELECT id, filename, original_filename, file_size, mime_type, is_inline, content_id
@@ -228,10 +229,10 @@ router.get('/:id', async (req, res) => {
         [message.id]
       );
 
-      // Add attachments to message with proper URLs
+      // Add attachments to message with full backend URLs
       message.attachments = attachments.map(att => ({
         ...att,
-        url: `/api/tickets/attachments/${att.id}`
+        url: `${baseUrl}/api/tickets/attachments/${att.id}`
       }));
     }
 
@@ -1448,17 +1449,63 @@ router.get('/:ticketId/attachments', async (req, res) => {
       [ticketId]
     );
 
+    const baseUrl = process.env.APP_URL || 'https://tfs-manager-server-production.up.railway.app';
     res.json({
       success: true,
       attachments: attachments.map(att => ({
         ...att,
-        url: `/api/tickets/attachments/${att.id}`
+        url: `${baseUrl}/api/tickets/attachments/${att.id}`
       }))
     });
 
   } catch (error) {
     console.error('❌ Error fetching attachments:', error);
     res.status(500).json({ error: 'Failed to fetch attachments' });
+  }
+});
+
+/**
+ * GET /api/tickets/attachments/:id
+ * Download/serve an attachment file
+ */
+router.get('/attachments/:id', async (req, res) => {
+  try {
+    const attachmentId = req.params.id;
+
+    // Get attachment from database
+    const [attachments] = await db.execute(
+      'SELECT * FROM email_attachments WHERE id = ?',
+      [attachmentId]
+    );
+
+    if (attachments.length === 0) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+
+    const attachment = attachments[0];
+
+    // Check if file exists
+    try {
+      await fs.access(attachment.file_path);
+    } catch (error) {
+      console.error(`File not found: ${attachment.file_path}`);
+      return res.status(404).json({ error: 'Attachment file not found on disk' });
+    }
+
+    // Read the file
+    const fileBuffer = await fs.readFile(attachment.file_path);
+
+    // Set appropriate headers
+    res.setHeader('Content-Type', attachment.mime_type || 'application/octet-stream');
+    res.setHeader('Content-Length', fileBuffer.length);
+    res.setHeader('Content-Disposition', `attachment; filename="${attachment.original_filename || attachment.filename}"`);
+
+    // Send the file
+    res.send(fileBuffer);
+
+  } catch (error) {
+    console.error('❌ Error serving attachment:', error);
+    res.status(500).json({ error: 'Failed to serve attachment' });
   }
 });
 
