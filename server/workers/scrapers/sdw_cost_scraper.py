@@ -12,6 +12,7 @@ Usage:
 """
 
 import asyncio
+import aiohttp
 import re
 import time
 import sys
@@ -86,8 +87,8 @@ MAX_CONSECUTIVE_BACKORDERS = int(os.environ.get('BACKORDER_COUNT', '5'))
 ZENROWS_API_KEY = os.environ.get('ZENROWS_API_KEY', '1952d3d9f407cef089c0871d5d37d426fe78546e')
 
 # Concurrency configuration
-MAX_CONCURRENT_BRANDS = 1  # Process 1 brand at a time (Selenium driver not thread-safe)
-PAGES_PER_BRAND_CONCURRENT = 1  # Scrape 1 page at a time (sequential)
+MAX_CONCURRENT_BRANDS = 20  # Process 20 brands at a time (aiohttp concurrent)
+PAGES_PER_BRAND_CONCURRENT = 3  # Scrape 3 pages per brand concurrently
 
 # Database configuration
 DB_BATCH_SIZE = 100  # Insert in chunks of 100
@@ -129,6 +130,8 @@ stats = {
     'direct_requests': 0,
     'zenrows_requests': 0
 }
+
+stats_lock = asyncio.Lock()
 
 # =============================================================================
 # DATA STRUCTURES
@@ -264,56 +267,51 @@ def scrape_page_costs(html: str, brand: str) -> List[Dict]:
     return products
 
 # =============================================================================
-# PAGE FETCHING
+# PAGE FETCHING (AIOHTTP)
 # =============================================================================
 
-def fetch_page_direct(driver, url: str, cookies: List[Dict]) -> Optional[str]:
-    """Fetch a page using direct Selenium"""
+async def fetch_page_direct(session: aiohttp.ClientSession, url: str, cookies: List[Dict]) -> Optional[str]:
+    """Fetch a page directly using aiohttp with cookies"""
     try:
-        logger.debug(f"Direct fetch: Loading homepage to set cookies")
-        driver.get("https://www.sdwheelwholesale.com")
+        cookie_str = '; '.join(f"{c['name']}={c['value']}" for c in cookies)
 
-        for cookie in cookies:
-            try:
-                driver.add_cookie(cookie)
-            except Exception as e:
-                logger.debug(f"Could not add cookie: {e}")
+        headers = {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Cookie': cookie_str,
+            'Connection': 'keep-alive'
+        }
 
-        logger.debug(f"Direct fetch: Loading {url}")
-        driver.get(url)
+        logger.debug(f"Direct fetch: {url}")
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            if resp.status != 200:
+                logger.warning(f"Direct fetch returned status {resp.status} for {url}")
+                return None
 
-        logger.debug(f"Direct fetch: Waiting for product cards")
-        try:
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "product-card"))
-            )
-            logger.debug(f"Direct fetch: Found product cards")
-        except TimeoutException:
-            logger.warning(f"Timeout waiting for products on {url}")
-            return None  # Return None if no products found
-        except Exception as e:
-            logger.warning(f"Error waiting for products: {e}")
-            return None
+            html = await resp.text()
 
-        return driver.page_source
-    except TimeoutException as e:
-        logger.warning(f"Page load timeout for {url}: {e}")
+            if 'product-card' not in html:
+                logger.debug(f"No product cards found on {url}")
+                return None
+
+            return html
+
+    except asyncio.TimeoutError:
+        logger.warning(f"Timeout fetching {url}")
         return None
     except Exception as e:
         logger.error(f"Direct fetch failed for {url}: {e}")
         return None
 
 
-def fetch_page_zenrows(url: str, cookies: List[Dict]) -> Optional[str]:
+async def fetch_page_zenrows(session: aiohttp.ClientSession, url: str, cookies: List[Dict]) -> Optional[str]:
     """Fetch a page using ZenRows proxy with authenticated session cookies"""
     try:
-        import requests
-
         if not ZENROWS_API_KEY:
             logger.error("ZenRows API key not found")
             return None
 
-        # Build cookie header string from cookie list
         cookie_str = '; '.join(f"{c['name']}={c['value']}" for c in cookies)
 
         params = {
@@ -322,7 +320,7 @@ def fetch_page_zenrows(url: str, cookies: List[Dict]) -> Optional[str]:
             'js_render': 'true',
             'premium_proxy': 'true',
             'proxy_country': 'us',
-            'wait_for': '.product-card, .store-active-filters',
+            'wait_for': '.product-card',
             'wait': '5000',
             'custom_headers': 'true'
         }
@@ -333,72 +331,68 @@ def fetch_page_zenrows(url: str, cookies: List[Dict]) -> Optional[str]:
             'Cookie': cookie_str
         }
 
-        response = requests.get(
-            'https://api.zenrows.com/v1/',
-            params=params,
-            headers=headers,
-            timeout=60
-        )
+        logger.debug(f"ZenRows fetch: {url}")
+        async with session.get('https://api.zenrows.com/v1/', params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+            if resp.status != 200:
+                logger.error(f"ZenRows returned status {resp.status}")
+                return None
 
-        if response.status_code == 200:
-            return response.text
-        else:
-            logger.error(f"ZenRows returned status {response.status_code}")
-            return None
+            return await resp.text()
 
     except Exception as e:
         logger.error(f"ZenRows fetch failed for {url}: {e}")
         return None
 
 
-def fetch_page_hybrid(driver, url: str, cookies: List[Dict]) -> Optional[str]:
+async def fetch_page_hybrid(session: aiohttp.ClientSession, url: str, cookies: List[Dict]) -> Optional[str]:
     """Fetch page with hybrid strategy - try direct ONCE, then fallback to ZenRows"""
-    logger.debug(f"Hybrid fetch: Trying direct scraping first")
-    html = fetch_page_direct(driver, url, cookies)
+    logger.debug(f"Hybrid fetch: Trying direct first")
+    html = await fetch_page_direct(session, url, cookies)
 
     if html and 'product-card' in html:
-        logger.debug(f"Hybrid fetch: Direct scraping succeeded")
+        logger.debug(f"Hybrid fetch: Direct succeeded")
         return html
 
-    # Direct failed - fallback to ZenRows immediately (don't retry direct)
-    logger.warning(f"Direct fetch failed for {url}, falling back to ZenRows")
-    html = fetch_page_zenrows(url, cookies)
+    # Direct failed - fallback to ZenRows
+    logger.warning(f"Direct failed for {url}, trying ZenRows")
+    html = await fetch_page_zenrows(session, url, cookies)
 
     if html:
-        logger.info(f"ZenRows fetch succeeded for {url}")
+        logger.info(f"ZenRows succeeded for {url}")
     else:
         logger.error(f"Both direct and ZenRows failed for {url}")
 
     return html
 
 
-def fetch_page(driver, url: str, cookies: List[Dict]) -> Optional[str]:
+async def fetch_page(session: aiohttp.ClientSession, url: str, cookies: List[Dict]) -> Optional[str]:
     """Fetch page using configured scraping mode"""
     if SCRAPING_MODE == 'direct':
-        return fetch_page_direct(driver, url, cookies)
+        return await fetch_page_direct(session, url, cookies)
     elif SCRAPING_MODE == 'zenrows':
-        return fetch_page_zenrows(url, cookies)
+        return await fetch_page_zenrows(session, url, cookies)
     elif SCRAPING_MODE == 'hybrid':
-        return fetch_page_hybrid(driver, url, cookies)
+        return await fetch_page_hybrid(session, url, cookies)
     else:
         logger.error(f"Unknown scraping mode: {SCRAPING_MODE}")
-        return fetch_page_direct(driver, url, cookies)
+        return await fetch_page_direct(session, url, cookies)
 
 # =============================================================================
 # BRAND SCRAPING WITH PROPER BACKORDER DETECTION
 # =============================================================================
 
-def scrape_brand_page_sync(driver, cookies: List[Dict], brand: str, page: int, brand_encoded: str, state: BrandState):
-    """Scrape a single page for a brand (synchronous)"""
+async def scrape_brand_page(session: aiohttp.ClientSession, cookies: List[Dict], brand: str, page: int, brand_encoded: str, state: BrandState):
+    """Scrape a single page for a brand (async with aiohttp)"""
     url = f"{TARGET}?store={MODE}&brand={brand_encoded}&page={page}"
 
-    html = fetch_page(driver, url, cookies)
+    html = await fetch_page(session, url, cookies)
     if not html:
         logger.warning(f"  ⚠️  Failed to fetch {brand} page {page}")
         return page, []
 
     products = scrape_page_costs(html, brand)
-    stats['pages_scraped'] += 1
+    async with stats_lock:
+        stats['pages_scraped'] += 1
 
     # Filter to only products we know about and process backorder detection
     matched_products = []
@@ -417,7 +411,8 @@ def scrape_brand_page_sync(driver, cookies: List[Dict], brand: str, page: int, b
             if state.consecutive_backorders >= MAX_CONSECUTIVE_BACKORDERS:
                 if not state.stopped:
                     logger.info(f"  🛑 {brand}: {MAX_CONSECUTIVE_BACKORDERS} consecutive backorders on page {page}, stopping")
-                    stats['backorder_stops'] += 1
+                    async with stats_lock:
+                        stats['backorder_stops'] += 1
                     state.stopped = True
                 break
         else:
@@ -434,8 +429,8 @@ def scrape_brand_page_sync(driver, cookies: List[Dict], brand: str, page: int, b
     return page, matched_products
 
 
-def scrape_brand_sync(driver, cookies: List[Dict], brand: str, known_url_parts: Set[str]) -> List[Dict]:
-    """Scrape all pages for a brand sequentially with proper backorder detection"""
+async def scrape_brand(session: aiohttp.ClientSession, cookies: List[Dict], brand: str, known_url_parts: Set[str]) -> List[Dict]:
+    """Scrape all pages for a brand with concurrent page fetching"""
     brand_encoded = brand.replace(' ', '+')
     state = BrandState(
         brand=brand,
@@ -448,23 +443,42 @@ def scrape_brand_sync(driver, cookies: List[Dict], brand: str, known_url_parts: 
     page = 1
 
     while not state.stopped:
-        # Scrape page sequentially
-        pg, products = scrape_brand_page_sync(driver, cookies, brand, page, brand_encoded, state)
+        # Create tasks for concurrent page fetching
+        tasks = []
+        page_numbers = list(range(page, page + PAGES_PER_BRAND_CONCURRENT))
 
-        if not products and not state.stopped:
-            logger.info(f"  📭 No products on page {pg}, stopping")
+        for page_num in page_numbers:
+            task = scrape_brand_page(session, cookies, brand, page_num, brand_encoded, state)
+            tasks.append(task)
+
+        # Execute pages concurrently
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Process results
+        found_empty = False
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"  ❌ Error scraping page: {result}")
+                continue
+
+            pg, products = result
+
+            if not products and not state.stopped:
+                logger.info(f"  📭 No products on page {pg}, stopping")
+                found_empty = True
+                break
+
+            state.all_products.extend(products)
+
+        if state.stopped or found_empty:
             break
 
-        state.all_products.extend(products)
+        page += PAGES_PER_BRAND_CONCURRENT
+        await asyncio.sleep(0.3)
 
-        if state.stopped:
-            break
-
-        page += 1
-        time.sleep(0.3)  # Small delay between pages
-
-    stats['products_found'] += len(state.all_products)
-    stats['brands_processed'] += 1
+    async with stats_lock:
+        stats['products_found'] += len(state.all_products)
+        stats['brands_processed'] += 1
 
     logger.info(f"  ✅ Completed: {len(state.all_products)} products with costs")
     return state.all_products
@@ -553,25 +567,27 @@ async def update_database_for_brand(db_pool, brand: str, products: List[Dict]):
 # BRAND COORDINATOR
 # =============================================================================
 
-async def process_brand(driver, cookies, db_pool, brand: str, known_url_parts: Set[str], brand_idx: int, total_brands: int):
+async def process_brand(session: aiohttp.ClientSession, cookies: List[Dict], db_pool, brand: str, known_url_parts: Set[str], brand_idx: int, total_brands: int):
     """Process a single brand: scrape + update database"""
     try:
         logger.info(f"[{brand_idx}/{total_brands}] Processing: {brand}")
 
         if not known_url_parts:
             logger.info(f"  Skipping {brand} - no products in database")
-            stats['brands_skipped'] += 1
+            async with stats_lock:
+                stats['brands_skipped'] += 1
             return
 
-        # Scrape all pages for this brand (synchronous)
-        products = scrape_brand_sync(driver, cookies, brand, known_url_parts)
+        # Scrape all pages for this brand (async with aiohttp)
+        products = await scrape_brand(session, cookies, brand, known_url_parts)
 
         # Update database with all products at once (batched internally)
         await update_database_for_brand(db_pool, brand, products)
 
     except Exception as e:
         logger.error(f"  ❌ Error processing {brand}: {e}")
-        stats['errors'] += 1
+        async with stats_lock:
+            stats['errors'] += 1
 
 # =============================================================================
 # MAIN EXECUTION
@@ -605,24 +621,32 @@ async def main():
         db_pool = await aiomysql.create_pool(**DB_CONFIG)
         logger.info("✓ Database pool created")
 
-        # Login
+        # Login and get brand list (using Selenium temporarily)
         login_cookie = await get_login_cookie()
         if not login_cookie:
             raise Exception("Failed to login")
         cookies = [login_cookie]
 
-        # Create driver for scraping
-        driver = get_driver()
-        logger.info("✓ Browser driver created")
-
-        # Get brand list
+        # Get brand list using Selenium (one-time use)
         logger.info("Fetching brand list...")
-        html = fetch_page(driver, TARGET, cookies)
-        if not html:
-            raise Exception("Failed to fetch initial page")
+        driver = get_driver()
+        try:
+            driver.get("https://www.sdwheelwholesale.com")
+            driver.add_cookie(login_cookie)
+            driver.get(TARGET)
 
-        soup = BeautifulSoup(html, 'html.parser')
-        all_brands = get_brands(soup)
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "filter"))
+            )
+
+            html = driver.page_source
+            soup = BeautifulSoup(html, 'html.parser')
+            all_brands = get_brands(soup)
+        finally:
+            driver.quit()
+            logger.info("✓ Browser driver closed (only needed for brand list)")
+
+        logger.info(f"Found {len(all_brands)} brands on page")
 
         if not all_brands:
             raise Exception("No brands found")
@@ -643,13 +667,29 @@ async def main():
         await db_client.init(MODE)
         await db_client.prefetch_url_parts(brands_to_scrape)
 
-        # Process brands sequentially (Selenium driver is not thread-safe)
-        for idx, brand in enumerate(brands_to_scrape, start=1):
-            known_url_parts = db_client.get_cached_url_parts(brand)
-            try:
-                await process_brand(driver, cookies, db_pool, brand, known_url_parts, idx, len(brands_to_scrape))
-            except Exception as e:
-                logger.error(f"❌ Brand '{brand}' failed: {e}")
+        # Create aiohttp session for concurrent scraping
+        logger.info(f"Creating aiohttp session for concurrent scraping...")
+        async with aiohttp.ClientSession() as session:
+            # Process brands concurrently in batches of MAX_CONCURRENT_BRANDS
+            for i in range(0, len(brands_to_scrape), MAX_CONCURRENT_BRANDS):
+                batch_brands = brands_to_scrape[i:i+MAX_CONCURRENT_BRANDS]
+
+                logger.info(f"Processing batch {i//MAX_CONCURRENT_BRANDS + 1}: {len(batch_brands)} brands")
+
+                tasks = []
+                for idx, brand in enumerate(batch_brands, start=i+1):
+                    known_url_parts = db_client.get_cached_url_parts(brand)
+                    task = process_brand(session, cookies, db_pool, brand, known_url_parts, idx, len(brands_to_scrape))
+                    tasks.append(task)
+
+                # Process batch concurrently
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                # Log any exceptions
+                for idx, result in enumerate(results):
+                    if isinstance(result, Exception):
+                        brand_name = batch_brands[idx]
+                        logger.error(f"❌ Brand '{brand_name}' failed: {result}")
 
         # Final stats
         elapsed = time.time() - start_time
@@ -674,8 +714,6 @@ async def main():
         traceback.print_exc()
         sys.exit(1)
     finally:
-        if driver:
-            driver.quit()
         if db_pool:
             db_pool.close()
             await db_pool.wait_closed()
