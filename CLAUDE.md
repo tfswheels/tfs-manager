@@ -34,6 +34,49 @@ The `RouteManager` component uses **localStorage** to persist the last visited p
 
 ---
 
+## ✅ CRITICAL SUCCESS: Inline Images in Emails (IT WORKS!)
+
+**READ THIS BEFORE TOUCHING EMAIL ATTACHMENT CODE!**
+
+### The Achievement
+
+We successfully implemented inline/embedded image display in email threads! Images now display directly in the email HTML instead of showing placeholder buttons.
+
+**Status:** ✅ WORKING IN PRODUCTION (as of 2026-01-30)
+
+### How It Works
+
+1. **Zoho's `/inline` endpoint**: Uses OAuth to download embedded images during email sync
+2. **HTML replacement**: Parses `/mail/ImageDisplay?...` URLs, extracts cid parameter, replaces with our attachment URLs
+3. **Smart serving**: Tries disk first (fast), falls back to Zoho if missing (handles Railway's ephemeral storage)
+4. **CORS enabled**: Allows Vercel frontend to load images from Railway backend
+
+### ⛔ NEVER DO THIS:
+- ❌ Remove `downloadInlineImage()` function from zohoMailEnhanced.js
+- ❌ Remove `includeInline: 'true'` parameter from fetchEmailAttachments
+- ❌ Remove HTML replacement logic in emailInboxSync.js (lines ~442-502)
+- ❌ Remove fallback logic in tickets.js attachment endpoint (lines ~1456-1484)
+- ❌ Assume cid: references exist in Zoho HTML (they don't - it's ImageDisplay URLs!)
+- ❌ Return 404 when inline image file missing (must fall back to Zoho)
+
+### ✅ ALWAYS DO THIS:
+- ✅ Keep the `/inline` endpoint download logic
+- ✅ Keep the ImageDisplay URL parsing and replacement
+- ✅ Keep the disk → Zoho fallback in attachment endpoint
+- ✅ Use `downloadInlineImage()` for inline images (not downloadAttachment)
+- ✅ Store `content_id` in database for inline images
+- ✅ Set `Content-Disposition: inline` for browser rendering
+
+### 📖 Full Documentation
+**See `INLINE_IMAGES_SOLUTION.md` for complete implementation details, code examples, and troubleshooting.**
+
+**Key Files:**
+- `server/src/services/zohoMailEnhanced.js` - downloadInlineImage() function
+- `server/src/services/emailInboxSync.js` - HTML replacement logic
+- `server/src/routes/tickets.js` - Smart serving endpoint
+
+---
+
 ## ⚠️ CRITICAL: Database Connection
 
 **READ THIS FIRST BEFORE ANY DATABASE OPERATIONS:**
@@ -95,6 +138,7 @@ mysql -h 34.67.162.140 -u tfs -p'[XtlAUU5;"1Ti*Ry' tfs-manager -e "YOUR_QUERY"
 - `DEPLOYMENT_GUIDE.md` - Deployment instructions
 - `EMAIL_SYSTEM_IMPROVEMENTS.md` - Email system changes
 - `TICKETING_COMPLETE_SUMMARY.md` - Ticketing system overview
+- `INLINE_IMAGES_SOLUTION.md` - **✅ Inline image implementation (WORKING!)**
 
 ### Backend Core
 - `server/src/index.js` - Main Express server
@@ -167,4 +211,4 @@ L Skipping database connection testing
 
 ---
 
-**Last Updated:** 2026-01-29
+**Last Updated:** 2026-01-30
