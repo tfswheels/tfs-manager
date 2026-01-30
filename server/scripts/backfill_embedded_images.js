@@ -77,6 +77,9 @@ async function processEmailEmbeddedImages(shopId, email) {
         // Decode HTML entities in query string (&amp; -> &)
         queryString = queryString.replace(/&amp;/g, '&');
 
+        // Reconstruct the full ImageDisplay URL
+        const imageDisplayUrl = `/mail/ImageDisplay?${queryString}`;
+
         // Parse query parameters
         const params = new URLSearchParams(queryString);
         const filename = params.get('f');
@@ -89,8 +92,8 @@ async function processEmailEmbeddedImages(shopId, email) {
           continue;
         }
 
-        // Download the embedded image
-        const imageData = await downloadEmbeddedImage(shopId, zoho_message_id, filename, accountEmail, folderId);
+        // Download the embedded image directly from ImageDisplay endpoint
+        const imageData = await downloadEmbeddedImage(shopId, imageDisplayUrl);
 
         // Generate unique filename
         const timestamp = Date.now();

@@ -168,18 +168,25 @@ export default function EmailThread() {
 
     // Fix Zoho ImageDisplay URLs
     // These are relative URLs like: /mail/ImageDisplay?na=...&nmsgId=...
-    // Replace them with a placeholder since they require Zoho authentication
+    // Replace them with a clickable link that opens in Zoho Mail
     processedHtml = processedHtml.replace(
-      /<img([^>]*?)src=["']\/mail\/ImageDisplay\?[^"']*["']([^>]*?)>/gi,
-      (match, beforeSrc, afterSrc) => {
+      /<img([^>]*?)src=["'](\/mail\/ImageDisplay\?[^"']*)["']([^>]*?)>/gi,
+      (match, beforeSrc, imageDisplayUrl, afterSrc) => {
         // Extract alt text if available
         const altMatch = match.match(/alt=["']([^"']*)["']/i);
         const altText = altMatch ? altMatch[1] : 'Embedded image';
 
-        // Return a placeholder div with a message
-        return `<div style="padding: 12px; background: #f6f6f7; border: 1px dashed #ccc; border-radius: 6px; margin: 8px 0; text-align: center; color: #666;">
-          <div style="font-size: 14px; margin-bottom: 4px;">📷 Image: ${decodeHTMLEntities(altText)}</div>
-          <div style="font-size: 12px; color: #999;">Image unavailable (requires Zoho Mail authentication)</div>
+        // Decode HTML entities in URL (&amp; -> &)
+        const decodedUrl = imageDisplayUrl.replace(/&amp;/g, '&');
+        const fullUrl = `https://mail.zoho.com${decodedUrl}`;
+
+        // Return a clickable link styled as a button
+        return `<div style="padding: 12px; background: #f6f6f7; border: 1px solid #ddd; border-radius: 6px; margin: 8px 0;">
+          <div style="margin-bottom: 8px; color: #666; font-size: 13px;">📷 ${decodeHTMLEntities(altText)}</div>
+          <a href="${fullUrl}" target="_blank" rel="noopener noreferrer" style="display: inline-block; padding: 8px 16px; background: #005E99; color: white; text-decoration: none; border-radius: 4px; font-size: 13px; font-weight: 500;">
+            View Image in Zoho Mail
+          </a>
+          <div style="margin-top: 6px; color: #999; font-size: 11px;">Opens in new tab (requires Zoho Mail login)</div>
         </div>`;
       }
     );

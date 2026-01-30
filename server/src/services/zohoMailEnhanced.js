@@ -606,54 +606,58 @@ export async function downloadAttachment(shopId, messageId, attachmentId, accoun
 }
 
 /**
- * Download embedded image from Zoho ImageDisplay URL
+ * Download embedded image directly from Zoho ImageDisplay URL
  *
  * These are inline images that appear in email HTML as:
  * /mail/ImageDisplay?na=ACCOUNT_ID&nmsgId=MESSAGE_ID&f=FILENAME&mode=inline&cid=CONTENT_ID
  *
  * @param {number} shopId - Shop ID
- * @param {string} messageId - Zoho message ID (from nmsgId parameter)
- * @param {string} filename - Image filename (from f parameter)
- * @param {string} accountEmail - Email account
- * @param {string} folderId - Folder ID
+ * @param {string} imageDisplayUrl - Full ImageDisplay URL with all parameters
  * @returns {Promise<{buffer: Buffer, contentId: string, filename: string}>} Image data and metadata
  */
-export async function downloadEmbeddedImage(shopId, messageId, filename, accountEmail = EMAIL_ACCOUNTS.sales, folderId = '1') {
+export async function downloadEmbeddedImage(shopId, imageDisplayUrl) {
   try {
     const accessToken = await getAccessToken(shopId);
-    const accountId = await getZohoAccountId(accessToken, accountEmail);
 
-    console.log(`⬇️  Downloading embedded image ${filename} from message ${messageId}...`);
+    // Parse the ImageDisplay URL to extract parameters
+    const url = new URL(imageDisplayUrl, 'https://mail.zoho.com');
+    const params = url.searchParams;
+    const filename = params.get('f') || 'image.png';
+    const contentId = params.get('cid') || filename;
 
-    // Zoho's ImageDisplay endpoint can be accessed via the attachments API
-    // We need to first get the list of attachments to find the matching one
-    const attachments = await fetchEmailAttachments(shopId, messageId, accountEmail, folderId);
+    console.log(`⬇️  Downloading embedded image ${filename} from ImageDisplay...`);
 
-    // Find the attachment matching this filename
-    const matchingAttachment = attachments.find(att => {
-      // Match by filename (with or without path)
-      const attFilename = att.attachmentName || '';
-      return attFilename === filename || attFilename.endsWith(filename);
-    });
+    // Download directly from the ImageDisplay endpoint with authentication
+    const response = await axios.get(
+      `https://mail.zoho.com${imageDisplayUrl}`,
+      {
+        headers: {
+          'Authorization': `Zoho-oauthtoken ${accessToken}`
+        },
+        responseType: 'arraybuffer'
+      }
+    );
 
-    if (!matchingAttachment) {
-      console.warn(`⚠️  Could not find attachment for embedded image: ${filename}`);
-      throw new Error(`Embedded image not found in attachments: ${filename}`);
-    }
+    // Determine MIME type from response headers or filename
+    const mimeType = response.headers['content-type'] ||
+                     (filename.endsWith('.png') ? 'image/png' :
+                      filename.endsWith('.jpg') || filename.endsWith('.jpeg') ? 'image/jpeg' :
+                      filename.endsWith('.gif') ? 'image/gif' : 'image/png');
 
-    // Download using the standard attachment download method
-    const buffer = await downloadAttachment(shopId, messageId, matchingAttachment.attachmentId, accountEmail, folderId);
+    const buffer = Buffer.from(response.data);
+
+    console.log(`✅ Downloaded embedded image: ${filename} (${buffer.length} bytes)`);
 
     return {
       buffer,
-      contentId: matchingAttachment.contentId || filename,
-      filename: matchingAttachment.attachmentName || filename,
-      mimeType: matchingAttachment.mimeType || 'image/jpeg',
-      size: matchingAttachment.size || buffer.length
+      contentId: contentId,
+      filename: filename,
+      mimeType: mimeType,
+      size: buffer.length
     };
 
   } catch (error) {
-    console.error(`❌ Failed to download embedded image ${filename}:`, error.message);
+    console.error(`❌ Failed to download embedded image:`, error.message);
     throw error;
   }
 }

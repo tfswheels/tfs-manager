@@ -219,6 +219,22 @@ router.get('/:id', async (req, res) => {
       [ticketId]
     );
 
+    // Get attachments for each message
+    for (const message of messages) {
+      const [attachments] = await db.execute(
+        `SELECT id, filename, original_filename, file_size, mime_type, is_inline, content_id
+         FROM email_attachments
+         WHERE email_id = ?`,
+        [message.id]
+      );
+
+      // Add attachments to message with proper URLs
+      message.attachments = attachments.map(att => ({
+        ...att,
+        url: `/api/tickets/attachments/${att.id}`
+      }));
+    }
+
     res.json({
       success: true,
       ticket,

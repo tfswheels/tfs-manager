@@ -142,7 +142,10 @@ async function processEmbeddedImages(shopId, emailId, html, messageId, accountEm
         // Decode HTML entities in query string (&amp; -> &)
         queryString = queryString.replace(/&amp;/g, '&');
 
-        // Parse query parameters
+        // Reconstruct the full ImageDisplay URL
+        const imageDisplayUrl = `/mail/ImageDisplay?${queryString}`;
+
+        // Parse query parameters for content ID
         const params = new URLSearchParams(queryString);
         const filename = params.get('f');
         const cidParam = params.get('cid');
@@ -153,8 +156,8 @@ async function processEmbeddedImages(shopId, emailId, html, messageId, accountEm
           continue;
         }
 
-        // Download the embedded image
-        const imageData = await downloadEmbeddedImage(shopId, messageId, filename, accountEmail, folderId);
+        // Download the embedded image directly from ImageDisplay endpoint
+        const imageData = await downloadEmbeddedImage(shopId, imageDisplayUrl);
 
         // Generate unique filename
         const timestamp = Date.now();
