@@ -1470,18 +1470,15 @@ router.get('/attachments/:id', async (req, res) => {
       attachment.zoho_folder_id
     );
 
-    // Determine if user wants to view (inline) or download (attachment)
-    const disposition = req.query.view === 'true' ? 'inline' : 'attachment';
-
     // Set appropriate headers
     res.setHeader('Content-Type', attachment.mime_type || 'application/octet-stream');
     res.setHeader('Content-Length', fileData.length);
-    res.setHeader('Content-Disposition', `${disposition}; filename="${attachment.original_filename || attachment.filename}"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${attachment.original_filename || attachment.filename}"`);
 
     // Send the file
     res.send(fileData);
 
-    console.log(`✅ Served attachment: ${attachment.filename} (${(fileData.length / 1024).toFixed(2)} KB) as ${disposition}`);
+    console.log(`✅ Served attachment: ${attachment.filename} (${(fileData.length / 1024).toFixed(2)} KB)`);
 
   } catch (error) {
     console.error('❌ Error serving attachment:', error);
