@@ -771,12 +771,22 @@ export default function EmailThread() {
                                   )}
                                 </div>
                                 {attachment.url && (
-                                  <Button
-                                    size="slim"
-                                    onClick={() => handleDownloadAttachment(attachment)}
-                                  >
-                                    Download
-                                  </Button>
+                                  <InlineStack gap="200">
+                                    <Button
+                                      size="slim"
+                                      url={`${attachment.url}&view=true`}
+                                      external
+                                      target="_blank"
+                                    >
+                                      View
+                                    </Button>
+                                    <Button
+                                      size="slim"
+                                      onClick={() => handleDownloadAttachment(attachment)}
+                                    >
+                                      Download
+                                    </Button>
+                                  </InlineStack>
                                 )}
                               </div>
                             ))}
