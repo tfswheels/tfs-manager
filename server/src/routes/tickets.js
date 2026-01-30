@@ -220,13 +220,13 @@ router.get('/:id', async (req, res) => {
       [ticketId]
     );
 
-    // Get attachments for each message
+    // Get attachments for each message (exclude inline/embedded images)
     const baseUrl = process.env.APP_URL || 'https://tfs-manager-server-production.up.railway.app';
     for (const message of messages) {
       const [attachments] = await db.execute(
         `SELECT id, filename, original_filename, file_size, mime_type, is_inline, content_id
          FROM email_attachments
-         WHERE email_id = ?`,
+         WHERE email_id = ? AND is_inline = 0`,
         [message.id]
       );
 
@@ -1429,7 +1429,7 @@ router.get('/:ticketId/attachments', async (req, res) => {
   try {
     const { ticketId } = req.params;
 
-    // Get all attachments for emails in this conversation
+    // Get all attachments for emails in this conversation (exclude inline/embedded images)
     const [attachments] = await db.execute(
       `SELECT
         a.id,
@@ -1445,7 +1445,7 @@ router.get('/:ticketId/attachments', async (req, res) => {
         e.direction
        FROM email_attachments a
        JOIN customer_emails e ON a.email_id = e.id
-       WHERE e.conversation_id = ?
+       WHERE e.conversation_id = ? AND a.is_inline = 0
        ORDER BY a.created_at DESC`,
       [ticketId]
     );
@@ -1497,6 +1497,15 @@ router.get('/attachments/:id', async (req, res) => {
     }
 
     const attachment = attachments[0];
+
+    // Check if attachment has Zoho metadata (required for on-demand fetching)
+    if (!attachment.zoho_attachment_id || !attachment.zoho_message_id) {
+      console.error(`❌ Attachment ${attachmentId} missing Zoho metadata - cannot fetch`);
+      return res.status(404).json({
+        error: 'Attachment unavailable',
+        message: 'This attachment is missing required metadata and cannot be downloaded'
+      });
+    }
 
     // Fetch attachment from Zoho on-demand
     console.log(`📥 Fetching attachment ${attachment.filename} from Zoho...`);
