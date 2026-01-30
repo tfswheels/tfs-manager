@@ -19,7 +19,7 @@ import {
   getActivityTimeline,
   getRecentActivities
 } from '../services/ticketActivities.js';
-import { downloadAttachment } from '../services/zohoMailEnhanced.js';
+import { downloadAttachment, downloadInlineImage } from '../services/zohoMailEnhanced.js';
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -1453,15 +1453,34 @@ router.get('/attachments/:id', async (req, res) => {
 
     let fileData;
 
-    // Inline images are saved to disk, regular attachments are fetched from Zoho
+    // Try to read inline images from disk first, fall back to Zoho if not found (ephemeral storage)
     if (attachment.is_inline && attachment.file_path) {
-      // Inline image - read from disk
+      // Inline image - try reading from disk
       console.log(`📥 Reading inline image ${attachment.filename} from disk...`);
       try {
         fileData = await fs.readFile(attachment.file_path);
+        console.log(`✅ Loaded inline image from disk`);
       } catch (error) {
-        console.error(`❌ Inline image file not found: ${attachment.file_path}`);
-        return res.status(404).json({ error: 'Inline image file not found' });
+        // File not found (expected on Railway after deployment) - fall back to Zoho
+        console.warn(`⚠️  Inline image not on disk (ephemeral storage cleared), fetching from Zoho...`);
+
+        if (!attachment.zoho_attachment_id || !attachment.zoho_message_id) {
+          console.error(`❌ Inline image ${attachmentId} missing Zoho metadata - cannot fetch`);
+          return res.status(404).json({
+            error: 'Inline image unavailable',
+            message: 'This inline image is not cached and cannot be re-downloaded (missing Zoho metadata)'
+          });
+        }
+
+        // Use downloadInlineImage for inline images
+        fileData = await downloadInlineImage(
+          shopId,
+          attachment.zoho_message_id,
+          attachment.content_id,
+          attachment.original_filename,
+          attachment.zoho_account_email,
+          attachment.zoho_folder_id
+        );
       }
     } else {
       // Regular attachment - fetch from Zoho on-demand
