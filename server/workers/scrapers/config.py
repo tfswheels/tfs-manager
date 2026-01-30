@@ -143,8 +143,8 @@ SHOPIFY_ACCESS_TOKEN = os.environ.get('SHOPIFY_ACCESS_TOKEN', '')
 # =============================================================================
 
 PAGES_PER_REFRESH_BATCH = 600  # Refresh browser every 600 pages to prevent performance degradation
-REFRESH_COOLOFF_MINUTES = 5  # Cool off period when refreshing browser (minutes)
-RETRY_COOLOFF_MINUTES = 5  # Fixed cool off period before retrying failed pages
+REFRESH_COOLOFF_MINUTES = 1  # Cool off period when refreshing browser (minutes)
+RETRY_COOLOFF_MINUTES = 1  # Fixed cool off period before retrying failed pages
 
 # =============================================================================
 # CHECKPOINTING
