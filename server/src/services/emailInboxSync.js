@@ -439,33 +439,65 @@ async function syncInbox(shopId, accountEmail, options = {}) {
         // Process and save attachments (returns cid to attachment ID mapping for inline images)
         const cidMapping = await processAndSaveAttachments(shopId, emailId, fullEmail.messageId, accountEmail, folderId);
 
-        // Replace cid: references in HTML with our attachment URLs
+        // Replace ImageDisplay URLs in HTML with our attachment URLs
+        // Zoho sends HTML with /mail/ImageDisplay URLs that contain cid as a query parameter
         if (bodyHtml && Object.keys(cidMapping).length > 0) {
           let updatedHtml = bodyHtml;
           const baseUrl = process.env.APP_URL || 'https://tfs-manager-server-production.up.railway.app';
 
-          for (const [cid, attachmentId] of Object.entries(cidMapping)) {
-            // Replace all variations of cid references
-            const cidPatterns = [
-              `cid:${cid}`,
-              `cid:"${cid}"`,
-              `cid:'${cid}'`
-            ];
+          // Find all ImageDisplay img tags
+          const imgRegex = /<img([^>]*?)src=["']\/mail\/ImageDisplay\?([^"']+)["']([^>]*?)>/gi;
+          const matches = [...bodyHtml.matchAll(imgRegex)];
 
-            const replacementUrl = `${baseUrl}/api/tickets/attachments/${attachmentId}`;
+          console.log(`  🖼️  Found ${matches.length} ImageDisplay URL(s) to replace...`);
 
-            for (const pattern of cidPatterns) {
-              updatedHtml = updatedHtml.replace(new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacementUrl);
+          for (const match of matches) {
+            try {
+              const fullImgTag = match[0];
+              const beforeSrc = match[1];
+              let queryString = match[2];
+              const afterSrc = match[3];
+
+              // Decode HTML entities (&amp; -> &)
+              queryString = queryString.replace(/&amp;/g, '&');
+
+              // Parse query parameters to extract cid
+              const params = new URLSearchParams(queryString);
+              const cidParam = params.get('cid');
+
+              if (!cidParam) {
+                console.warn(`    ⚠️  ImageDisplay URL has no cid parameter, skipping`);
+                continue;
+              }
+
+              // Look up our attachment ID from the cid mapping
+              const attachmentId = cidMapping[cidParam];
+
+              if (!attachmentId) {
+                console.warn(`    ⚠️  No attachment found for cid: ${cidParam}, skipping`);
+                continue;
+              }
+
+              // Replace the entire img tag with our attachment URL
+              const replacementUrl = `${baseUrl}/api/tickets/attachments/${attachmentId}`;
+              const newImgTag = `<img${beforeSrc}src="${replacementUrl}"${afterSrc}>`;
+
+              updatedHtml = updatedHtml.replace(fullImgTag, newImgTag);
+
+              console.log(`    ✅ Replaced ImageDisplay URL (cid: ${cidParam.substring(0, 30)}...) with attachment ${attachmentId}`);
+
+            } catch (err) {
+              console.error(`    ❌ Failed to replace ImageDisplay URL:`, err.message);
             }
           }
 
-          // Update email HTML in database
+          // Update email HTML in database if changes were made
           if (updatedHtml !== bodyHtml) {
             await db.execute(
               'UPDATE customer_emails SET body_html = ? WHERE id = ?',
               [updatedHtml, emailId]
             );
-            console.log(`  ✅ Replaced ${Object.keys(cidMapping).length} cid: reference(s) in email HTML`);
+            console.log(`  ✅ Replaced ${matches.length} ImageDisplay URL(s) in email HTML`);
           }
         }
 
