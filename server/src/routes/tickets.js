@@ -1375,53 +1375,6 @@ router.post('/merge', async (req, res) => {
 });
 
 /**
- * GET /api/tickets/attachments/:attachmentId
- * Serve an email attachment file
- */
-router.get('/attachments/:attachmentId', async (req, res) => {
-  try {
-    const { attachmentId } = req.params;
-
-    // Get attachment metadata from database
-    const [rows] = await db.execute(
-      `SELECT filename, original_filename, file_path, mime_type
-       FROM email_attachments
-       WHERE id = ?`,
-      [attachmentId]
-    );
-
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Attachment not found' });
-    }
-
-    const attachment = rows[0];
-
-    // Check if file exists
-    try {
-      await fs.access(attachment.file_path);
-    } catch (error) {
-      console.error(`❌ Attachment file not found: ${attachment.file_path}`);
-      return res.status(404).json({ error: 'Attachment file not found on server' });
-    }
-
-    // Read file
-    const fileData = await fs.readFile(attachment.file_path);
-
-    // Set appropriate headers
-    res.setHeader('Content-Type', attachment.mime_type || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${attachment.original_filename}"`);
-    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
-
-    // Send file
-    res.send(fileData);
-
-  } catch (error) {
-    console.error('❌ Error serving attachment:', error);
-    res.status(500).json({ error: 'Failed to serve attachment' });
-  }
-});
-
-/**
  * GET /api/tickets/:ticketId/attachments
  * Get all attachments for a specific ticket/email thread
  */
