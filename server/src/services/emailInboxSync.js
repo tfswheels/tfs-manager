@@ -49,41 +49,30 @@ async function processAndSaveAttachments(shopId, emailId, messageId, accountEmai
 
     console.log(`  📎 Processing ${attachments.length} attachment(s) for email ${emailId}...`);
 
-    // Ensure attachments directory exists
-    await fs.mkdir(ATTACHMENTS_DIR, { recursive: true });
-
     for (const attachment of attachments) {
       try {
-        // Download attachment from Zoho
-        const fileData = await downloadAttachment(shopId, messageId, attachment.attachmentId, accountEmail, folderId);
-
-        // Generate unique filename
-        const timestamp = Date.now();
-        const safeName = attachment.attachmentName.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const filename = `${timestamp}_${safeName}`;
-        const filePath = path.join(ATTACHMENTS_DIR, filename);
-
-        // Save to file system
-        await fs.writeFile(filePath, fileData);
-
-        // Save to database
+        // Save attachment metadata to database (don't download file - fetch from Zoho on-demand)
         await db.execute(
           `INSERT INTO email_attachments
-           (email_id, filename, original_filename, file_path, file_size, mime_type, is_inline, content_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+           (email_id, filename, original_filename, file_size, mime_type, is_inline, content_id,
+            zoho_attachment_id, zoho_message_id, zoho_account_email, zoho_folder_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           [
             emailId,
-            filename,
+            attachment.attachmentName,              // Use original filename
             attachment.attachmentName,
-            filePath,
-            attachment.size || fileData.length,
+            attachment.size || 0,
             attachment.mimeType || 'application/octet-stream',
             attachment.disposition === 'inline' ? 1 : 0,
-            attachment.contentId || null
+            attachment.contentId || null,
+            attachment.attachmentId,                // Zoho attachment ID
+            messageId,                              // Zoho message ID
+            accountEmail,                           // Email account
+            folderId                                // Folder ID
           ]
         );
 
-        console.log(`    ✅ Saved attachment: ${attachment.attachmentName} (${(fileData.length / 1024).toFixed(2)} KB)`);
+        console.log(`    ✅ Saved attachment metadata: ${attachment.attachmentName} (${((attachment.size || 0) / 1024).toFixed(2)} KB)`);
 
       } catch (attachmentError) {
         console.error(`    ❌ Failed to save attachment ${attachment.attachmentName}:`, attachmentError.message);

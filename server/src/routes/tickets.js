@@ -19,6 +19,7 @@ import {
   getActivityTimeline,
   getRecentActivities
 } from '../services/ticketActivities.js';
+import { downloadAttachment } from '../services/zohoMailEnhanced.js';
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -1466,13 +1467,26 @@ router.get('/:ticketId/attachments', async (req, res) => {
 
 /**
  * GET /api/tickets/attachments/:id
- * Download/serve an attachment file
+ * Download/serve an attachment file (fetched from Zoho on-demand)
  */
 router.get('/attachments/:id', async (req, res) => {
   try {
     const attachmentId = req.params.id;
+    const shop = req.query.shop || '2f3d7a-2.myshopify.com';
 
-    // Get attachment from database
+    // Get shop ID
+    const [shopRows] = await db.execute(
+      'SELECT id FROM shops WHERE shop_name = ?',
+      [shop]
+    );
+
+    if (shopRows.length === 0) {
+      return res.status(404).json({ error: 'Shop not found' });
+    }
+
+    const shopId = shopRows[0].id;
+
+    // Get attachment metadata from database
     const [attachments] = await db.execute(
       'SELECT * FROM email_attachments WHERE id = ?',
       [attachmentId]
@@ -1484,24 +1498,25 @@ router.get('/attachments/:id', async (req, res) => {
 
     const attachment = attachments[0];
 
-    // Check if file exists
-    try {
-      await fs.access(attachment.file_path);
-    } catch (error) {
-      console.error(`File not found: ${attachment.file_path}`);
-      return res.status(404).json({ error: 'Attachment file not found on disk' });
-    }
-
-    // Read the file
-    const fileBuffer = await fs.readFile(attachment.file_path);
+    // Fetch attachment from Zoho on-demand
+    console.log(`📥 Fetching attachment ${attachment.filename} from Zoho...`);
+    const fileData = await downloadAttachment(
+      shopId,
+      attachment.zoho_message_id,
+      attachment.zoho_attachment_id,
+      attachment.zoho_account_email,
+      attachment.zoho_folder_id
+    );
 
     // Set appropriate headers
     res.setHeader('Content-Type', attachment.mime_type || 'application/octet-stream');
-    res.setHeader('Content-Length', fileBuffer.length);
+    res.setHeader('Content-Length', fileData.length);
     res.setHeader('Content-Disposition', `attachment; filename="${attachment.original_filename || attachment.filename}"`);
 
     // Send the file
-    res.send(fileBuffer);
+    res.send(fileData);
+
+    console.log(`✅ Served attachment: ${attachment.filename} (${(fileData.length / 1024).toFixed(2)} KB)`);
 
   } catch (error) {
     console.error('❌ Error serving attachment:', error);
