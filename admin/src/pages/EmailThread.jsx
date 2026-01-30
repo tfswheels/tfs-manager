@@ -20,6 +20,7 @@ import { ArrowLeftIcon } from '@shopify/polaris-icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import RichTextEditor from '../components/RichTextEditor';
+import { decodeHTMLEntities } from '../utils/htmlDecode';
 import './EmailThread.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://tfs-manager-server-production.up.railway.app';
@@ -132,35 +133,56 @@ export default function EmailThread() {
   };
 
   /**
-   * Process HTML content to replace cid: references with actual image URLs
+   * Process HTML content to replace cid: references and fix Zoho ImageDisplay URLs
    * @param {string} html - Original HTML content
    * @param {Array} attachments - Array of attachment objects
    * @returns {string} - Processed HTML with image URLs
    */
   const processInlineImages = (html, attachments) => {
-    if (!html || !attachments || attachments.length === 0) {
+    if (!html) {
       return html;
     }
 
     let processedHtml = html;
 
-    // Find all inline attachments (those with content_id)
-    const inlineAttachments = attachments.filter(att => att.is_inline && att.content_id);
+    // Replace cid: references if we have attachments
+    if (attachments && attachments.length > 0) {
+      // Find all inline attachments (those with content_id)
+      const inlineAttachments = attachments.filter(att => att.is_inline && att.content_id);
 
-    // Replace each cid: reference with the actual image URL
-    inlineAttachments.forEach(attachment => {
-      // Zoho uses content_id with angle brackets sometimes, so handle both
-      const cidPatterns = [
-        `cid:${attachment.content_id}`,
-        `cid:${attachment.content_id.replace(/[<>]/g, '')}`,
-        `cid:<${attachment.content_id.replace(/[<>]/g, '')}>`,
-      ];
+      // Replace each cid: reference with the actual image URL
+      inlineAttachments.forEach(attachment => {
+        // Zoho uses content_id with angle brackets sometimes, so handle both
+        const cidPatterns = [
+          `cid:${attachment.content_id}`,
+          `cid:${attachment.content_id.replace(/[<>]/g, '')}`,
+          `cid:<${attachment.content_id.replace(/[<>]/g, '')}>`,
+        ];
 
-      cidPatterns.forEach(cidPattern => {
-        const imageUrl = `${API_URL}${attachment.url}`;
-        processedHtml = processedHtml.replace(new RegExp(cidPattern.replace(/[<>]/g, '\\$&'), 'g'), imageUrl);
+        cidPatterns.forEach(cidPattern => {
+          const imageUrl = `${API_URL}${attachment.url}`;
+          processedHtml = processedHtml.replace(new RegExp(cidPattern.replace(/[<>]/g, '\\$&'), 'g'), imageUrl);
+        });
       });
-    });
+    }
+
+    // Fix Zoho ImageDisplay URLs
+    // These are relative URLs like: /mail/ImageDisplay?na=...&nmsgId=...
+    // Replace them with a placeholder since they require Zoho authentication
+    processedHtml = processedHtml.replace(
+      /<img([^>]*?)src=["']\/mail\/ImageDisplay\?[^"']*["']([^>]*?)>/gi,
+      (match, beforeSrc, afterSrc) => {
+        // Extract alt text if available
+        const altMatch = match.match(/alt=["']([^"']*)["']/i);
+        const altText = altMatch ? altMatch[1] : 'Embedded image';
+
+        // Return a placeholder div with a message
+        return `<div style="padding: 12px; background: #f6f6f7; border: 1px dashed #ccc; border-radius: 6px; margin: 8px 0; text-align: center; color: #666;">
+          <div style="font-size: 14px; margin-bottom: 4px;">📷 Image: ${decodeHTMLEntities(altText)}</div>
+          <div style="font-size: 12px; color: #999;">Image unavailable (requires Zoho Mail authentication)</div>
+        </div>`;
+      }
+    );
 
     return processedHtml;
   };
@@ -398,7 +420,7 @@ export default function EmailThread() {
 
   return (
     <Page
-      title={conversation.subject || '(No Subject)'}
+      title={decodeHTMLEntities(conversation.subject) || '(No Subject)'}
       backAction={{ content: 'Back', onAction: handleBack }}
       primaryAction={{
         content: 'Reply',
@@ -496,10 +518,10 @@ export default function EmailThread() {
                     <Text variant="headingMd" as="h3">Customer</Text>
                     <div>
                       <Text variant="bodyMd" as="p" fontWeight="semibold">
-                        {conversation.customer_name || 'Unknown'}
+                        {decodeHTMLEntities(conversation.customer_name) || 'Unknown'}
                       </Text>
                       <Text variant="bodyMd" as="p" tone="subdued">
-                        {conversation.customer_email}
+                        {decodeHTMLEntities(conversation.customer_email)}
                       </Text>
                     </div>
                   </BlockStack>
@@ -653,7 +675,7 @@ export default function EmailThread() {
                         <InlineStack gap="200" blockAlign="center">
                           <Text variant="headingMd" as="h4">
                             {message.direction === 'inbound'
-                              ? message.from_name || message.from_email
+                              ? decodeHTMLEntities(message.from_name) || decodeHTMLEntities(message.from_email)
                               : 'TFS Wheels'}
                           </Text>
                           {getDirectionBadge(message.direction)}
@@ -670,7 +692,7 @@ export default function EmailThread() {
 
                     {message.subject && index === 0 && (
                       <Text variant="bodyMd" as="p" fontWeight="semibold">
-                        {message.subject}
+                        {decodeHTMLEntities(message.subject)}
                       </Text>
                     )}
 

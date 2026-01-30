@@ -1,9 +1,10 @@
-import { fetchInbox, fetchEmailDetails, fetchEmailAttachments, downloadAttachment } from './zohoMailEnhanced.js';
+import { fetchInbox, fetchEmailDetails, fetchEmailAttachments, downloadAttachment, downloadEmbeddedImage } from './zohoMailEnhanced.js';
 import { findOrCreateConversation, saveEmail } from './emailThreading.js';
 import db from '../config/database.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -93,6 +94,118 @@ async function processAndSaveAttachments(shopId, emailId, messageId, accountEmai
   } catch (error) {
     console.error(`  ❌ Failed to process attachments for email ${emailId}:`, error.message);
     // Don't fail the email sync if attachments fail
+  }
+}
+
+/**
+ * Process embedded images in email HTML
+ * Detects Zoho ImageDisplay URLs, downloads images, saves them as inline attachments,
+ * and replaces URLs with cid: references
+ *
+ * @param {number} shopId - Shop ID
+ * @param {number} emailId - Database email ID
+ * @param {string} html - Email HTML content
+ * @param {string} messageId - Zoho message ID
+ * @param {string} accountEmail - Email account
+ * @param {string} folderId - Folder ID
+ * @returns {Promise<string>} - Modified HTML with cid: references
+ */
+async function processEmbeddedImages(shopId, emailId, html, messageId, accountEmail, folderId) {
+  if (!html) {
+    return html;
+  }
+
+  try {
+    // Find all Zoho ImageDisplay URLs in the HTML
+    // Pattern: /mail/ImageDisplay?na=...&nmsgId=...&f=FILENAME&mode=inline&cid=...
+    const imageDisplayRegex = /<img([^>]*?)src=["']\/mail\/ImageDisplay\?([^"']+)["']([^>]*?)>/gi;
+    const matches = [...html.matchAll(imageDisplayRegex)];
+
+    if (matches.length === 0) {
+      return html; // No embedded images
+    }
+
+    console.log(`  🖼️  Found ${matches.length} embedded image(s) to download...`);
+
+    // Ensure attachments directory exists
+    await fs.mkdir(ATTACHMENTS_DIR, { recursive: true });
+
+    let modifiedHtml = html;
+
+    for (const match of matches) {
+      try {
+        const fullImgTag = match[0];
+        const beforeSrc = match[1];
+        let queryString = match[2];
+        const afterSrc = match[3];
+
+        // Decode HTML entities in query string (&amp; -> &)
+        queryString = queryString.replace(/&amp;/g, '&');
+
+        // Parse query parameters
+        const params = new URLSearchParams(queryString);
+        const filename = params.get('f');
+        const cidParam = params.get('cid');
+
+        if (!filename) {
+          console.warn(`    ⚠️  Skipping image with no filename parameter`);
+          console.warn(`    Query string: ${queryString}`);
+          continue;
+        }
+
+        // Download the embedded image
+        const imageData = await downloadEmbeddedImage(shopId, messageId, filename, accountEmail, folderId);
+
+        // Generate unique filename
+        const timestamp = Date.now();
+        const randomSuffix = crypto.randomBytes(4).toString('hex');
+        const ext = path.extname(imageData.filename) || '.jpg';
+        const safeName = path.basename(imageData.filename, ext).replace(/[^a-zA-Z0-9.-]/g, '_');
+        const uniqueFilename = `${timestamp}_${randomSuffix}_${safeName}${ext}`;
+        const filePath = path.join(ATTACHMENTS_DIR, uniqueFilename);
+
+        // Save to file system
+        await fs.writeFile(filePath, imageData.buffer);
+
+        // Generate content ID for cid: reference
+        const contentId = cidParam || `${safeName}_${randomSuffix}@tfswheels`;
+
+        // Save to database as inline attachment
+        await db.execute(
+          `INSERT INTO email_attachments
+           (email_id, filename, original_filename, file_path, file_size, mime_type, is_inline, content_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [
+            emailId,
+            uniqueFilename,
+            imageData.filename,
+            filePath,
+            imageData.size,
+            imageData.mimeType,
+            1, // is_inline = true
+            contentId
+          ]
+        );
+
+        console.log(`    ✅ Saved embedded image: ${imageData.filename} -> cid:${contentId}`);
+
+        // Replace the ImageDisplay URL with cid: reference
+        const cidUrl = `cid:${contentId}`;
+        const newImgTag = `<img${beforeSrc}src="${cidUrl}"${afterSrc}>`;
+        modifiedHtml = modifiedHtml.replace(fullImgTag, newImgTag);
+
+      } catch (imageError) {
+        console.error(`    ❌ Failed to process embedded image:`, imageError.message);
+        // Continue with other images
+      }
+    }
+
+    return modifiedHtml;
+
+  } catch (error) {
+    console.error(`  ❌ Failed to process embedded images for email ${emailId}:`, error.message);
+    // Return original HTML if processing fails
+    return html;
   }
 }
 
@@ -262,7 +375,20 @@ async function syncInbox(shopId, accountEmail, options = {}) {
           sentAt: direction === 'outbound' ? receivedAt : null
         });
 
-        // Process and save attachments
+        // Process embedded images in HTML (downloads and replaces ImageDisplay URLs with cid:)
+        if (bodyHtml) {
+          const modifiedHtml = await processEmbeddedImages(shopId, emailId, bodyHtml, fullEmail.messageId, accountEmail, folderId);
+
+          // Update email with modified HTML if it changed
+          if (modifiedHtml !== bodyHtml) {
+            await db.execute(
+              `UPDATE customer_emails SET body_html = ? WHERE id = ?`,
+              [modifiedHtml, emailId]
+            );
+          }
+        }
+
+        // Process and save regular attachments
         await processAndSaveAttachments(shopId, emailId, fullEmail.messageId, accountEmail, folderId);
 
         batchNewCount++;

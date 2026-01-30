@@ -25,6 +25,7 @@ import {
 import { CheckMinor, AlertMinor } from '@shopify/polaris-icons';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { decodeHTMLEntities } from '../utils/htmlDecode';
 import './SupportTickets.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://tfs-manager-server-production.up.railway.app';
@@ -549,16 +550,16 @@ export default function SupportTickets() {
                         </div>
                         <div className="ticket-from">
                           <Text variant="bodyMd" as="span" fontWeight={ticket.unread_count > 0 ? 'semibold' : 'regular'}>
-                            {ticket.customer_name || ticket.customer_email}
+                            {decodeHTMLEntities(ticket.customer_name) || decodeHTMLEntities(ticket.customer_email)}
                           </Text>
                         </div>
                         <div className="ticket-subject">
                           <Text variant="bodyMd" as="span" fontWeight={ticket.unread_count > 0 ? 'semibold' : 'regular'}>
-                            {ticket.subject || '(No Subject)'}
+                            {decodeHTMLEntities(ticket.subject) || '(No Subject)'}
                           </Text>
                           {ticket.category && (
                             <Text variant="bodySm" as="p" tone="subdued">
-                              {ticket.category}
+                              {decodeHTMLEntities(ticket.category)}
                             </Text>
                           )}
                         </div>
@@ -575,11 +576,11 @@ export default function SupportTickets() {
                                 <Avatar
                                   size="small"
                                   source={ticket.assigned_to_avatar}
-                                  name={ticket.assigned_to_name}
+                                  name={decodeHTMLEntities(ticket.assigned_to_name)}
                                 />
                               )}
                               <Text variant="bodySm" as="span">
-                                {ticket.assigned_to_name}
+                                {decodeHTMLEntities(ticket.assigned_to_name)}
                               </Text>
                             </InlineStack>
                           ) : (
