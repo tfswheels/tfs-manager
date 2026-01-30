@@ -201,8 +201,7 @@ router.post('/start', async (req, res) => {
           await db.execute(
             `UPDATE scraping_jobs
              SET status = 'completed',
-                 completed_at = NOW(),
-                 updated_at = NOW()
+                 completed_at = NOW()
              WHERE id = ?`,
             [jobId]
           );
@@ -212,8 +211,7 @@ router.post('/start', async (req, res) => {
             `UPDATE scraping_jobs
              SET status = 'failed',
                  error_message = 'Job was terminated',
-                 completed_at = NOW(),
-                 updated_at = NOW()
+                 completed_at = NOW()
              WHERE id = ?`,
             [jobId]
           );
@@ -223,8 +221,7 @@ router.post('/start', async (req, res) => {
             `UPDATE scraping_jobs
              SET status = 'failed',
                  error_message = ?,
-                 completed_at = NOW(),
-                 updated_at = NOW()
+                 completed_at = NOW()
              WHERE id = ?`,
             [`Process exited with code ${code}`, jobId]
           );
@@ -244,8 +241,7 @@ router.post('/start', async (req, res) => {
           `UPDATE scraping_jobs
            SET status = 'failed',
                error_message = ?,
-               completed_at = NOW(),
-               updated_at = NOW()
+               completed_at = NOW()
            WHERE id = ?`,
           [error.message, jobId]
         );
