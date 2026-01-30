@@ -1,4 +1,4 @@
-import { fetchInbox, fetchEmailDetails, fetchEmailAttachments, downloadAttachment, downloadEmbeddedImage } from './zohoMailEnhanced.js';
+import { fetchInbox, fetchEmailDetails, fetchEmailAttachments, downloadAttachment, downloadInlineImage } from './zohoMailEnhanced.js';
 import { findOrCreateConversation, saveEmail } from './emailThreading.js';
 import db from '../config/database.js';
 import fs from 'fs/promises';
@@ -30,28 +30,32 @@ const lastSyncTimes = {
 };
 
 /**
- * Save email attachments to file system and database
+ * Save email attachments and inline images to database
+ * Also downloads inline images and returns cid mapping for HTML replacement
  *
  * @param {number} shopId - Shop ID
  * @param {number} emailId - Database email ID
  * @param {string} messageId - Zoho message ID
  * @param {string} accountEmail - Email account
  * @param {string} folderId - Folder ID
+ * @returns {Promise<Object>} Mapping of cid to attachment IDs for HTML replacement
  */
 async function processAndSaveAttachments(shopId, emailId, messageId, accountEmail, folderId) {
-  try {
-    // Fetch attachment metadata from Zoho
-    const attachments = await fetchEmailAttachments(shopId, messageId, accountEmail, folderId);
+  const cidToAttachmentId = {}; // Map cid: references to our attachment IDs
 
-    if (attachments.length === 0) {
-      return; // No attachments to process
+  try {
+    // Fetch attachment metadata from Zoho (now returns {attachments: [], inline: []})
+    const { attachments, inline } = await fetchEmailAttachments(shopId, messageId, accountEmail, folderId);
+
+    if (attachments.length === 0 && inline.length === 0) {
+      return cidToAttachmentId; // No attachments to process
     }
 
-    console.log(`  📎 Processing ${attachments.length} attachment(s) for email ${emailId}...`);
+    console.log(`  📎 Processing ${attachments.length} attachment(s) and ${inline.length} inline image(s)...`);
 
+    // Process regular attachments (save metadata only - download on-demand)
     for (const attachment of attachments) {
       try {
-        // Save attachment metadata to database (don't download file - fetch from Zoho on-demand)
         await db.execute(
           `INSERT INTO email_attachments
            (email_id, filename, original_filename, file_size, mime_type, is_inline, content_id,
@@ -59,30 +63,95 @@ async function processAndSaveAttachments(shopId, emailId, messageId, accountEmai
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           [
             emailId,
-            attachment.attachmentName,              // Use original filename
             attachment.attachmentName,
-            attachment.size || 0,
+            attachment.attachmentName,
+            attachment.attachmentSize || 0,
             attachment.mimeType || 'application/octet-stream',
-            attachment.disposition === 'inline' ? 1 : 0,
-            attachment.contentId || null,
-            attachment.attachmentId,                // Zoho attachment ID
-            messageId,                              // Zoho message ID
-            accountEmail,                           // Email account
-            folderId                                // Folder ID
+            0, // is_inline = false for regular attachments
+            null,
+            attachment.attachmentId,
+            messageId,
+            accountEmail,
+            folderId
           ]
         );
 
-        console.log(`    ✅ Saved attachment metadata: ${attachment.attachmentName} (${((attachment.size || 0) / 1024).toFixed(2)} KB)`);
-
-      } catch (attachmentError) {
-        console.error(`    ❌ Failed to save attachment ${attachment.attachmentName}:`, attachmentError.message);
-        // Continue with other attachments
+        console.log(`    ✅ Saved attachment metadata: ${attachment.attachmentName}`);
+      } catch (err) {
+        console.error(`    ❌ Failed to save attachment ${attachment.attachmentName}:`, err.message);
       }
     }
 
+    // Process inline images (download and save)
+    for (const inlineImage of inline) {
+      try {
+        // Download the inline image using the /inline endpoint
+        const imageData = await downloadInlineImage(
+          shopId,
+          messageId,
+          inlineImage.cid,
+          inlineImage.attachmentName,
+          accountEmail,
+          folderId
+        );
+
+        // Determine MIME type from filename
+        const filename = inlineImage.attachmentName;
+        const mimeType = filename.endsWith('.png') ? 'image/png' :
+                        filename.endsWith('.jpg') || filename.endsWith('.jpeg') ? 'image/jpeg' :
+                        filename.endsWith('.gif') ? 'image/gif' :
+                        filename.endsWith('.webp') ? 'image/webp' : 'image/png';
+
+        // Generate unique filename for storage
+        const timestamp = Date.now();
+        const randomSuffix = crypto.randomBytes(4).toString('hex');
+        const ext = path.extname(filename) || '.jpg';
+        const safeName = path.basename(filename, ext).replace(/[^a-zA-Z0-9.-]/g, '_');
+        const uniqueFilename = `${timestamp}_${randomSuffix}_${safeName}${ext}`;
+        const filePath = path.join(ATTACHMENTS_DIR, uniqueFilename);
+
+        // Ensure directory exists
+        await fs.mkdir(ATTACHMENTS_DIR, { recursive: true });
+
+        // Save to file system
+        await fs.writeFile(filePath, imageData);
+
+        // Save to database
+        const [result] = await db.execute(
+          `INSERT INTO email_attachments
+           (email_id, filename, original_filename, file_path, file_size, mime_type, is_inline, content_id,
+            zoho_attachment_id, zoho_message_id, zoho_account_email, zoho_folder_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [
+            emailId,
+            uniqueFilename,
+            filename,
+            filePath,
+            imageData.length,
+            mimeType,
+            1, // is_inline = true
+            inlineImage.cid,
+            inlineImage.attachmentId,
+            messageId,
+            accountEmail,
+            folderId
+          ]
+        );
+
+        // Store cid mapping for HTML replacement
+        cidToAttachmentId[inlineImage.cid] = result.insertId;
+
+        console.log(`    ✅ Downloaded and saved inline image: ${filename} (cid: ${inlineImage.cid})`);
+      } catch (err) {
+        console.error(`    ❌ Failed to process inline image ${inlineImage.attachmentName}:`, err.message);
+      }
+    }
+
+    return cidToAttachmentId;
+
   } catch (error) {
     console.error(`  ❌ Failed to process attachments for email ${emailId}:`, error.message);
-    // Don't fail the email sync if attachments fail
+    return cidToAttachmentId; // Return partial results
   }
 }
 
@@ -367,8 +436,38 @@ async function syncInbox(shopId, accountEmail, options = {}) {
           sentAt: direction === 'outbound' ? receivedAt : null
         });
 
-        // Process and save regular attachments
-        await processAndSaveAttachments(shopId, emailId, fullEmail.messageId, accountEmail, folderId);
+        // Process and save attachments (returns cid to attachment ID mapping for inline images)
+        const cidMapping = await processAndSaveAttachments(shopId, emailId, fullEmail.messageId, accountEmail, folderId);
+
+        // Replace cid: references in HTML with our attachment URLs
+        if (bodyHtml && Object.keys(cidMapping).length > 0) {
+          let updatedHtml = bodyHtml;
+          const baseUrl = process.env.APP_URL || 'https://tfs-manager-server-production.up.railway.app';
+
+          for (const [cid, attachmentId] of Object.entries(cidMapping)) {
+            // Replace all variations of cid references
+            const cidPatterns = [
+              `cid:${cid}`,
+              `cid:"${cid}"`,
+              `cid:'${cid}'`
+            ];
+
+            const replacementUrl = `${baseUrl}/api/tickets/attachments/${attachmentId}`;
+
+            for (const pattern of cidPatterns) {
+              updatedHtml = updatedHtml.replace(new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacementUrl);
+            }
+          }
+
+          // Update email HTML in database
+          if (updatedHtml !== bodyHtml) {
+            await db.execute(
+              'UPDATE customer_emails SET body_html = ? WHERE id = ?',
+              [updatedHtml, emailId]
+            );
+            console.log(`  ✅ Replaced ${Object.keys(cidMapping).length} cid: reference(s) in email HTML`);
+          }
+        }
 
         batchNewCount++;
 

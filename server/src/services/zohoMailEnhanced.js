@@ -537,35 +537,39 @@ export async function fetchEmailAttachments(shopId, messageId, accountEmail = EM
 
     console.log(`📎 Fetching attachments for message ${messageId}...`);
 
-    // Fetch attachment list
+    // Fetch attachment list (including inline images)
     const response = await axios.get(
       `${ZOHO_API_BASE}/accounts/${accountId}/folders/${folderId}/messages/${messageId}/attachmentinfo`,
       {
         headers: {
           'Authorization': `Zoho-oauthtoken ${accessToken}`
+        },
+        params: {
+          includeInline: 'true' // Include inline images in response
         }
       }
     );
 
-    const attachments = response.data.data?.attachments || [];
+    const regularAttachments = response.data.data?.attachments || [];
+    const inlineImages = response.data.data?.inline || [];
 
-    if (attachments.length === 0) {
+    if (regularAttachments.length === 0 && inlineImages.length === 0) {
       console.log(`  No attachments found for message ${messageId}`);
-      return [];
+      return { attachments: [], inline: [] };
     }
 
-    console.log(`  Found ${attachments.length} attachment(s)`);
-    return attachments;
+    console.log(`  Found ${regularAttachments.length} attachment(s) and ${inlineImages.length} inline image(s)`);
+    return { attachments: regularAttachments, inline: inlineImages };
 
   } catch (error) {
-    // If endpoint doesn't exist or no attachments, return empty array
+    // If endpoint doesn't exist or no attachments, return empty arrays
     if (error.response?.status === 404 || error.response?.data?.code === 'E101') {
       console.log(`  No attachments for message ${messageId}`);
-      return [];
+      return { attachments: [], inline: [] };
     }
 
     console.error('❌ Failed to fetch attachments:', error.response?.data || error.message);
-    return []; // Don't fail the whole email sync if attachments fail
+    return { attachments: [], inline: [] }; // Don't fail the whole email sync if attachments fail
   }
 }
 
@@ -606,59 +610,45 @@ export async function downloadAttachment(shopId, messageId, attachmentId, accoun
 }
 
 /**
- * Download embedded image directly from Zoho ImageDisplay URL
+ * Download inline image using Zoho Mail API's /inline endpoint
  *
- * These are inline images that appear in email HTML as:
- * /mail/ImageDisplay?na=ACCOUNT_ID&nmsgId=MESSAGE_ID&f=FILENAME&mode=inline&cid=CONTENT_ID
+ * Uses OAuth to download embedded images that have content-id (cid) references
  *
  * @param {number} shopId - Shop ID
- * @param {string} imageDisplayUrl - Full ImageDisplay URL with all parameters
- * @returns {Promise<{buffer: Buffer, contentId: string, filename: string}>} Image data and metadata
+ * @param {string} messageId - Zoho message ID
+ * @param {string} contentId - Content ID (cid) of the inline image
+ * @param {string} filename - Filename of the image
+ * @param {string} accountEmail - Email account
+ * @param {string} folderId - Folder ID
+ * @returns {Promise<Buffer>} Image file data as buffer
  */
-export async function downloadEmbeddedImage(shopId, imageDisplayUrl) {
+export async function downloadInlineImage(shopId, messageId, contentId, filename, accountEmail = EMAIL_ACCOUNTS.sales, folderId = '1') {
   try {
     const accessToken = await getAccessToken(shopId);
+    const accountId = await getZohoAccountId(accessToken, accountEmail);
 
-    // Parse the ImageDisplay URL to extract parameters
-    const url = new URL(imageDisplayUrl, 'https://mail.zoho.com');
-    const params = url.searchParams;
-    const filename = params.get('f') || 'image.png';
-    const contentId = params.get('cid') || filename;
+    console.log(`⬇️  Downloading inline image ${filename} (cid: ${contentId})...`);
 
-    console.log(`⬇️  Downloading embedded image ${filename} from ImageDisplay...`);
-
-    // Download directly from the ImageDisplay endpoint with authentication
+    // Use Zoho's proper /inline endpoint with OAuth
     const response = await axios.get(
-      `https://mail.zoho.com${imageDisplayUrl}`,
+      `${ZOHO_API_BASE}/accounts/${accountId}/folders/${folderId}/messages/${messageId}/inline`,
       {
         headers: {
           'Authorization': `Zoho-oauthtoken ${accessToken}`
+        },
+        params: {
+          contentId: contentId
         },
         responseType: 'arraybuffer'
       }
     );
 
-    // Determine MIME type from response headers or filename
-    const mimeType = response.headers['content-type'] ||
-                     (filename.endsWith('.png') ? 'image/png' :
-                      filename.endsWith('.jpg') || filename.endsWith('.jpeg') ? 'image/jpeg' :
-                      filename.endsWith('.gif') ? 'image/gif' : 'image/png');
-
-    const buffer = Buffer.from(response.data);
-
-    console.log(`✅ Downloaded embedded image: ${filename} (${buffer.length} bytes)`);
-
-    return {
-      buffer,
-      contentId: contentId,
-      filename: filename,
-      mimeType: mimeType,
-      size: buffer.length
-    };
+    console.log(`✅ Downloaded inline image ${filename}`);
+    return Buffer.from(response.data);
 
   } catch (error) {
-    console.error(`❌ Failed to download embedded image:`, error.message);
-    throw error;
+    console.error(`❌ Failed to download inline image ${filename}:`, error.response?.data || error.message);
+    throw new Error('Failed to download inline image');
   }
 }
 

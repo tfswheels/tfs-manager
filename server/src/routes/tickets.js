@@ -1451,34 +1451,50 @@ router.get('/attachments/:id', async (req, res) => {
 
     const attachment = attachments[0];
 
-    // Check if attachment has Zoho metadata (required for on-demand fetching)
-    if (!attachment.zoho_attachment_id || !attachment.zoho_message_id) {
-      console.error(`❌ Attachment ${attachmentId} missing Zoho metadata - cannot fetch`);
-      return res.status(404).json({
-        error: 'Attachment unavailable',
-        message: 'This attachment is missing required metadata and cannot be downloaded'
-      });
+    let fileData;
+
+    // Inline images are saved to disk, regular attachments are fetched from Zoho
+    if (attachment.is_inline && attachment.file_path) {
+      // Inline image - read from disk
+      console.log(`📥 Reading inline image ${attachment.filename} from disk...`);
+      try {
+        fileData = await fs.readFile(attachment.file_path);
+      } catch (error) {
+        console.error(`❌ Inline image file not found: ${attachment.file_path}`);
+        return res.status(404).json({ error: 'Inline image file not found' });
+      }
+    } else {
+      // Regular attachment - fetch from Zoho on-demand
+      if (!attachment.zoho_attachment_id || !attachment.zoho_message_id) {
+        console.error(`❌ Attachment ${attachmentId} missing Zoho metadata - cannot fetch`);
+        return res.status(404).json({
+          error: 'Attachment unavailable',
+          message: 'This attachment is missing required metadata and cannot be downloaded'
+        });
+      }
+
+      console.log(`📥 Fetching attachment ${attachment.filename} from Zoho...`);
+      fileData = await downloadAttachment(
+        shopId,
+        attachment.zoho_message_id,
+        attachment.zoho_attachment_id,
+        attachment.zoho_account_email,
+        attachment.zoho_folder_id
+      );
     }
 
-    // Fetch attachment from Zoho on-demand
-    console.log(`📥 Fetching attachment ${attachment.filename} from Zoho...`);
-    const fileData = await downloadAttachment(
-      shopId,
-      attachment.zoho_message_id,
-      attachment.zoho_attachment_id,
-      attachment.zoho_account_email,
-      attachment.zoho_folder_id
-    );
+    // Set disposition based on whether it's inline or a regular attachment
+    const disposition = attachment.is_inline ? 'inline' : 'attachment';
 
     // Set appropriate headers
     res.setHeader('Content-Type', attachment.mime_type || 'application/octet-stream');
     res.setHeader('Content-Length', fileData.length);
-    res.setHeader('Content-Disposition', `attachment; filename="${attachment.original_filename || attachment.filename}"`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="${attachment.original_filename || attachment.filename}"`);
 
     // Send the file
     res.send(fileData);
 
-    console.log(`✅ Served attachment: ${attachment.filename} (${(fileData.length / 1024).toFixed(2)} KB)`);
+    console.log(`✅ Served ${disposition} ${attachment.is_inline ? 'image' : 'attachment'}: ${attachment.filename} (${(fileData.length / 1024).toFixed(2)} KB)`);
 
   } catch (error) {
     console.error('❌ Error serving attachment:', error);
