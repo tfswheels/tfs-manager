@@ -657,7 +657,7 @@ export async function downloadInlineImage(shopId, messageId, contentId, filename
  */
 export function getTrackingPixelUrl(emailLogId) {
   const baseUrl = process.env.APP_URL || 'https://tfs-manager-server-production.up.railway.app';
-  return `${baseUrl}/api/emails/track/open/${emailLogId}/pixel.gif`;
+  return `${baseUrl}/webhooks/track/open/${emailLogId}/pixel.gif`;
 }
 
 /**
@@ -670,7 +670,7 @@ export function wrapLinksForTracking(html, emailLogId) {
   return html.replace(
     /href="([^"]+)"/g,
     (match, url) => {
-      const trackingUrl = `${baseUrl}/api/emails/track/click/${emailLogId}?url=${encodeURIComponent(url)}`;
+      const trackingUrl = `${baseUrl}/webhooks/track/click/${emailLogId}?url=${encodeURIComponent(url)}`;
       return `href="${trackingUrl}"`;
     }
   );
