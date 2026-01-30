@@ -488,7 +488,7 @@ async def scrape_brand(session: aiohttp.ClientSession, cookies: List[Dict], bran
 # =============================================================================
 
 async def batch_update_costs_direct(db_pool, products: List[Dict]) -> int:
-    """Update costs in shopify_products table using direct SQL"""
+    """Update costs in shopify_products table using direct SQL (only when cost changed)"""
     if not products:
         return 0
 
@@ -509,12 +509,54 @@ async def batch_update_costs_direct(db_pool, products: List[Dict]) -> int:
     if not valid_updates:
         return 0
 
-    logger.info(f"    Updating {len(valid_updates)} costs in batches of {DB_BATCH_SIZE}...")
+    logger.info(f"    Checking {len(valid_updates)} costs for changes...")
+
+    # Fetch current costs from database
+    url_parts_to_check = [url_part for url_part, _ in valid_updates]
+    current_costs = {}
+
+    async with db_pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            placeholders = ','.join(['%s'] * len(url_parts_to_check))
+            query = f"""
+                SELECT url_part_number, sdw_cost
+                FROM shopify_products
+                WHERE url_part_number IN ({placeholders})
+                AND product_type = %s
+            """
+            await cur.execute(query, url_parts_to_check + [PRODUCT_TYPE])
+            rows = await cur.fetchall()
+
+            for row in rows:
+                url_part, db_cost = row
+                current_costs[url_part] = float(db_cost) if db_cost else None
+
+    # Filter to only products where cost actually changed
+    changed_updates = []
+    unchanged_count = 0
+
+    for url_part, new_cost in valid_updates:
+        current_cost = current_costs.get(url_part)
+
+        # Update if: no existing cost, or cost changed
+        if current_cost is None or abs(current_cost - new_cost) > 0.01:
+            changed_updates.append((url_part, new_cost))
+        else:
+            unchanged_count += 1
+
+    if unchanged_count > 0:
+        logger.info(f"    ⏭️  Skipped {unchanged_count} products (cost unchanged)")
+
+    if not changed_updates:
+        logger.info(f"    ✓ No cost changes detected")
+        return 0
+
+    logger.info(f"    Updating {len(changed_updates)} products with cost changes...")
 
     total_updated = 0
 
-    for i in range(0, len(valid_updates), DB_BATCH_SIZE):
-        batch = valid_updates[i:i+DB_BATCH_SIZE]
+    for i in range(0, len(changed_updates), DB_BATCH_SIZE):
+        batch = changed_updates[i:i+DB_BATCH_SIZE]
 
         async with db_pool.acquire() as conn:
             async with conn.cursor() as cur:

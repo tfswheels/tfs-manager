@@ -190,22 +190,68 @@ router.post('/start', async (req, res) => {
       }
     });
 
-    pythonProcess.on('close', (code) => {
+    pythonProcess.on('close', async (code) => {
       // Remove from running processes
       runningProcesses.delete(jobId);
 
-      if (code === 0) {
-        console.log(`✅ Scraper job #${jobId} completed successfully`);
-      } else if (code === null) {
-        console.log(`⚠️  Scraper job #${jobId} was terminated`);
-      } else {
-        console.error(`❌ Scraper job #${jobId} failed with code ${code}`);
+      // Update database status based on exit code
+      try {
+        if (code === 0) {
+          console.log(`✅ Scraper job #${jobId} completed successfully`);
+          await db.execute(
+            `UPDATE scraping_jobs
+             SET status = 'completed',
+                 completed_at = NOW(),
+                 updated_at = NOW()
+             WHERE id = ?`,
+            [jobId]
+          );
+        } else if (code === null) {
+          console.log(`⚠️  Scraper job #${jobId} was terminated`);
+          await db.execute(
+            `UPDATE scraping_jobs
+             SET status = 'failed',
+                 error_message = 'Job was terminated',
+                 completed_at = NOW(),
+                 updated_at = NOW()
+             WHERE id = ?`,
+            [jobId]
+          );
+        } else {
+          console.error(`❌ Scraper job #${jobId} failed with code ${code}`);
+          await db.execute(
+            `UPDATE scraping_jobs
+             SET status = 'failed',
+                 error_message = ?,
+                 completed_at = NOW(),
+                 updated_at = NOW()
+             WHERE id = ?`,
+            [`Process exited with code ${code}`, jobId]
+          );
+        }
+      } catch (dbError) {
+        console.error(`❌ Failed to update job status for #${jobId}:`, dbError);
       }
     });
 
-    pythonProcess.on('error', (error) => {
+    pythonProcess.on('error', async (error) => {
       console.error(`❌ Failed to start scraper job #${jobId}:`, error);
       runningProcesses.delete(jobId);
+
+      // Update database status
+      try {
+        await db.execute(
+          `UPDATE scraping_jobs
+           SET status = 'failed',
+               error_message = ?,
+               completed_at = NOW(),
+               updated_at = NOW()
+           WHERE id = ?`,
+          [error.message, jobId]
+        );
+      } catch (dbError) {
+        console.error(`❌ Failed to update job status for #${jobId}:`, dbError);
+      }
     });
 
     // Track the process
