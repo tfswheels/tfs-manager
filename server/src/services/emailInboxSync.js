@@ -14,6 +14,34 @@ const __dirname = path.dirname(__filename);
 const ATTACHMENTS_DIR = path.join(__dirname, '../../storage/email_attachments');
 
 /**
+ * Clean email address from Zoho's response
+ * Removes HTML entities and angle brackets
+ * Example: "&lt;user@example.com&gt;" → "user@example.com"
+ */
+function cleanEmailAddress(email) {
+  if (!email) return email;
+
+  // Decode HTML entities
+  let cleaned = email
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+
+  // Extract email from angle brackets: "Name <email@domain.com>" → "email@domain.com"
+  const match = cleaned.match(/<([^>]+)>/);
+  if (match) {
+    return match[1].trim();
+  }
+
+  // Remove any remaining angle brackets
+  cleaned = cleaned.replace(/[<>]/g, '').trim();
+
+  return cleaned;
+}
+
+/**
  * Email Inbox Synchronization Service
  *
  * Hybrid approach: API polling + Webhooks
@@ -372,12 +400,21 @@ async function syncInbox(shopId, accountEmail, options = {}) {
 
         // Find or create conversation thread
         // Handle both inbound and outbound emails
+        // Clean email addresses from HTML entities and angle brackets
+        const fromEmail = direction === 'inbound'
+          ? cleanEmailAddress(fullEmail.fromAddress)
+          : accountEmail;
+
+        const toEmail = direction === 'inbound'
+          ? accountEmail
+          : cleanEmailAddress(fullEmail.toAddress || fullEmail.recipient);
+
         const emailData = {
           subject: fullEmail.subject,
-          fromEmail: direction === 'inbound' ? fullEmail.fromAddress : accountEmail,
-          fromName: direction === 'inbound' ? (fullEmail.sender?.name || fullEmail.fromAddress) : 'TFS Wheels',
-          toEmail: direction === 'inbound' ? accountEmail : (fullEmail.toAddress || fullEmail.recipient),
-          toName: direction === 'inbound' ? 'TFS Wheels' : (fullEmail.recipientName || fullEmail.toAddress),
+          fromEmail: fromEmail,
+          fromName: direction === 'inbound' ? (fullEmail.sender?.name || fromEmail) : 'TFS Wheels',
+          toEmail: toEmail,
+          toName: direction === 'inbound' ? 'TFS Wheels' : (fullEmail.recipientName || toEmail),
           messageId: fullEmail.messageId,
           threadId: fullEmail.threadId,  // Zoho's thread ID for grouping emails
           inReplyTo: fullEmail.inReplyTo,
