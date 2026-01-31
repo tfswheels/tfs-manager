@@ -323,8 +323,12 @@ export async function sendEmail(shopId, emailData) {
     // Add optional fields
     if (cc) payload.ccAddress = Array.isArray(cc) ? cc.join(',') : cc;
     if (bcc) payload.bccAddress = Array.isArray(bcc) ? bcc.join(',') : bcc;
-    // Note: Zoho API doesn't support inReplyTo/references headers directly
-    // These need to be handled via email threading on Zoho's side
+
+    // If replying to a message, use the reply endpoint
+    if (inReplyTo) {
+      payload.action = 'reply';
+      console.log(`💬 This is a reply to message ${inReplyTo}`);
+    }
 
     // Upload attachments first if provided (Zoho requires 2-step process)
     if (attachments && Array.isArray(attachments) && attachments.length > 0) {
@@ -340,11 +344,21 @@ export async function sendEmail(shopId, emailData) {
       console.log(`✅ Attachments uploaded and ready to send`);
     }
 
-    console.log(`📤 Sending email to ${to} via Zoho (from ${accountEmail})...`);
+    // Determine endpoint based on whether this is a reply or new message
+    let endpoint;
+    if (inReplyTo) {
+      // Reply to existing message - use message-specific endpoint
+      endpoint = `${ZOHO_API_BASE}/accounts/${accountId}/messages/${inReplyTo}`;
+      console.log(`↩️  Sending threaded reply to ${to} via Zoho (from ${accountEmail})...`);
+    } else {
+      // New message - use general messages endpoint
+      endpoint = `${ZOHO_API_BASE}/accounts/${accountId}/messages`;
+      console.log(`📤 Sending new email to ${to} via Zoho (from ${accountEmail})...`);
+    }
 
     // Send email via Zoho Mail API
     const response = await axios.post(
-      `${ZOHO_API_BASE}/accounts/${accountId}/messages`,
+      endpoint,
       payload,
       {
         headers: {
