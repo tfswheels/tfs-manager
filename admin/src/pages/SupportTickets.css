@@ -308,9 +308,66 @@
   color: #065f46;
 }
 
-/* Bulk Actions Bar */
-.Polaris-Card .Polaris-Box[data-bulk-actions="true"] {
-  border-left: 4px solid #3b82f6;
+/* Bulk Actions Bar - Sticky Bottom */
+.bulk-actions-bar {
+  position: fixed;
+  bottom: 0;
+  left: var(--sidebar-width);
+  right: 0;
+  background-color: #1f2937;
+  color: white;
+  padding: 16px 32px;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+  z-index: var(--z-40);
+  border-top: 1px solid #374151;
+  transition: transform 0.2s ease-in-out;
+}
+
+.bulk-actions-bar.hidden {
+  transform: translateY(100%);
+}
+
+.bulk-actions-content {
+  max-width: 1600px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bulk-actions-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.bulk-actions-count {
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+}
+
+.bulk-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .bulk-actions-bar {
+    left: 0;
+    padding: 12px 16px;
+  }
+
+  .bulk-actions-content {
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .bulk-actions-right {
+    justify-content: space-between;
+  }
 }
 
 /* Empty State */

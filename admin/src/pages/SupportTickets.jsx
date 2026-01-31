@@ -528,6 +528,7 @@ export default function SupportTickets() {
   const hasSelection = selectedCount > 0;
 
   return (
+    <>
     <Page
       title="Support Tickets"
       subtitle={`Manage your customer support tickets`}
@@ -635,65 +636,6 @@ export default function SupportTickets() {
           </Card>
         </div>
 
-        {/* Bulk Actions Bar */}
-        {hasSelection && (
-          <Card>
-            <Box padding="400">
-              <InlineStack align="space-between" blockAlign="center">
-                <InlineStack gap="300" blockAlign="center">
-                  <Text variant="bodyMd" as="p" fontWeight="semibold">
-                    {selectedCount} ticket{selectedCount !== 1 ? 's' : ''} selected
-                  </Text>
-                  <Button size="slim" onClick={clearSelection}>Clear</Button>
-                </InlineStack>
-                <InlineStack gap="200">
-                  <Popover
-                    active={bulkActionActive}
-                    activator={
-                      <Button onClick={() => setBulkActionActive(!bulkActionActive)}>
-                        Bulk Actions
-                      </Button>
-                    }
-                    onClose={() => setBulkActionActive(false)}
-                  >
-                    <ActionList
-                      items={[
-                        {
-                          content: 'Change Status',
-                          onAction: () => {
-                            setBulkStatusModal(true);
-                            setBulkActionActive(false);
-                          }
-                        },
-                        {
-                          content: 'Assign to Staff',
-                          onAction: () => {
-                            setBulkAssignModal(true);
-                            setBulkActionActive(false);
-                          }
-                        },
-                        {
-                          content: 'Add Tags',
-                          onAction: () => {
-                            setBulkTagModal(true);
-                            setBulkActionActive(false);
-                          }
-                        },
-                        {
-                          content: 'Close Tickets',
-                          onAction: () => {
-                            setBulkCloseModal(true);
-                            setBulkActionActive(false);
-                          }
-                        }
-                      ]}
-                    />
-                  </Popover>
-                </InlineStack>
-              </InlineStack>
-            </Box>
-          </Card>
-        )}
 
         {/* Main Tickets Table Card */}
         <Card>
@@ -1119,5 +1061,51 @@ export default function SupportTickets() {
         </Modal.Section>
       </Modal>
     </Page>
+
+      {/* Sticky Bulk Actions Bar */}
+      {hasSelection && (
+        <div className="bulk-actions-bar">
+          <div className="bulk-actions-content">
+            <div className="bulk-actions-left">
+              <span className="bulk-actions-count">
+                {selectedCount} selected
+              </span>
+              <Button size="slim" onClick={clearSelection} variant="plain">
+                Clear
+              </Button>
+            </div>
+            <div className="bulk-actions-right">
+              <Button
+                size="medium"
+                onClick={() => setBulkStatusModal(true)}
+                icon={<Icon source={PersonIcon} />}
+              >
+                Assign
+              </Button>
+              <Button
+                size="medium"
+                onClick={() => setBulkAssignModal(true)}
+              >
+                Tag
+              </Button>
+              <Button
+                size="medium"
+                onClick={() => setBulkCloseModal(true)}
+                tone="critical"
+              >
+                Close
+              </Button>
+              <Button
+                size="medium"
+                onClick={() => setBulkStatusModal(true)}
+                tone="critical"
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
