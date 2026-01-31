@@ -132,6 +132,7 @@ mysql -h 34.67.162.140 -u tfs -p'[XtlAUU5;"1Ti*Ry' tfs-manager -e "YOUR_QUERY"
 - `server/.env` - **Database credentials and API keys**
 - `DATABASE_CONNECTION.md` - **How to connect to external database**
 - `DATABASE_SETUP.md` - Database schema and setup
+- `DATABASE_SCHEMA_REFERENCE.md` - **⚠️ Correct column names for all tables**
 
 ### Documentation
 - `README.md` - Project overview

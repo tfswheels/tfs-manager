@@ -347,10 +347,9 @@ router.get('/track/open/:emailLogId/pixel.gif', async (req, res) => {
           email_log_id,
           opened_at,
           open_count,
-          last_opened_at,
           user_agent,
           ip_address
-        ) VALUES (?, NOW(), 1, NOW(), ?, ?)`,
+        ) VALUES (?, NOW(), 1, ?, ?)`,
         [
           emailLogId,
           req.headers['user-agent'] || null,
@@ -360,11 +359,10 @@ router.get('/track/open/:emailLogId/pixel.gif', async (req, res) => {
 
       console.log(`📧 Email #${emailLogId} opened (first time)`);
     } else {
-      // Increment open count
+      // Increment open count (opened_at stays as first open time)
       await db.execute(
         `UPDATE email_delivery_stats
          SET open_count = open_count + 1,
-             last_opened_at = NOW(),
              user_agent = ?,
              ip_address = ?
          WHERE email_log_id = ?`,
@@ -436,14 +434,11 @@ router.get('/track/click/:emailLogId', async (req, res) => {
           email_log_id,
           clicked_at,
           click_count,
-          last_clicked_at,
-          last_clicked_url,
           user_agent,
           ip_address
-        ) VALUES (?, NOW(), 1, NOW(), ?, ?, ?)`,
+        ) VALUES (?, NOW(), 1, ?, ?)`,
         [
           emailLogId,
-          targetUrl,
           req.headers['user-agent'] || null,
           req.ip || req.headers['x-forwarded-for'] || null
         ]
@@ -451,18 +446,15 @@ router.get('/track/click/:emailLogId', async (req, res) => {
 
       console.log(`🖱️  Email #${emailLogId} link clicked (first time): ${targetUrl}`);
     } else {
-      // Update click stats
+      // Update click stats (clicked_at stays as first click time)
       await db.execute(
         `UPDATE email_delivery_stats
          SET clicked_at = COALESCE(clicked_at, NOW()),
              click_count = click_count + 1,
-             last_clicked_at = NOW(),
-             last_clicked_url = ?,
              user_agent = ?,
              ip_address = ?
          WHERE email_log_id = ?`,
         [
-          targetUrl,
           req.headers['user-agent'] || existing[0].user_agent,
           req.ip || req.headers['x-forwarded-for'] || existing[0].ip_address,
           emailLogId
