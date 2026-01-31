@@ -334,6 +334,20 @@ router.get('/track/open/:emailLogId/pixel.gif', async (req, res) => {
   try {
     const emailLogId = parseInt(req.params.emailLogId);
 
+    // First check if the email_log exists (to avoid foreign key constraint error)
+    const [emailLog] = await db.execute(
+      'SELECT id FROM email_logs WHERE id = ?',
+      [emailLogId]
+    );
+
+    if (emailLog.length === 0) {
+      // Email log doesn't exist (probably external email), just return the pixel
+      console.log(`⚠️  Open tracking pixel requested for non-existent email_log_id: ${emailLogId}`);
+      res.setHeader('Content-Type', 'image/gif');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      return res.send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
+    }
+
     // Check if email_delivery_stats record exists
     const [existing] = await db.execute(
       'SELECT * FROM email_delivery_stats WHERE email_log_id = ?',
