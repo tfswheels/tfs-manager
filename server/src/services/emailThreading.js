@@ -35,13 +35,37 @@ export function generateThreadId(email) {
     }
   }
 
-  // FALLBACK 3: If email has Message-ID, use that as new thread ID
+  // FALLBACK 3: Subject-based threading
+  // Group emails with same subject (normalized) + customer
+  // This handles cases where Zoho doesn't provide threadId or headers
+  if (email.subject) {
+    // Normalize subject: remove Re:, Fwd:, etc. and trim
+    const normalizedSubject = email.subject
+      .replace(/^(Re:|RE:|Fwd:|FW:|Fwd\[.*?\]:|RE\[.*?\]:)\s*/gi, '')
+      .trim()
+      .toLowerCase();
+
+    // Use customer email (not our own) for threading
+    const ourEmails = ['sales@tfswheels.com', 'support@tfswheels.com'];
+    const customerEmail = (ourEmails.includes(email.fromEmail?.toLowerCase()) ? email.toEmail : email.fromEmail)?.toLowerCase();
+
+    if (normalizedSubject && customerEmail) {
+      // Create consistent thread ID from subject + customer
+      const hash = crypto.createHash('md5')
+        .update(`${normalizedSubject}|${customerEmail}`)
+        .digest('hex');
+
+      return `subject-thread-${hash}`;
+    }
+  }
+
+  // FALLBACK 4: If email has Message-ID, use that as new thread ID
   // This creates a new conversation (first email in thread)
   if (email.messageId) {
     return email.messageId;
   }
 
-  // LAST RESORT: Generate new thread ID based on subject and sender
+  // LAST RESORT: Generate new thread ID based on timestamp
   const hash = crypto.createHash('md5')
     .update(`${email.subject}-${email.fromEmail}-${Date.now()}`)
     .digest('hex');
