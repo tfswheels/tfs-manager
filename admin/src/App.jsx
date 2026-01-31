@@ -12,6 +12,7 @@ import EmailThread from './pages/EmailThread';
 import EmailTemplates from './pages/EmailTemplates';
 import Settings from './pages/Settings';
 import SupportTickets from './pages/SupportTickets';
+import TicketSettings from './pages/TicketSettings';
 
 // Redirect component for old email routes
 function EmailRedirect() {
@@ -106,6 +107,7 @@ function App() {
                 <Route path="/orders/:orderId" element={<OrderDetails />} />
                 <Route path="/products" element={<Products />} />
                 <Route path="/tickets" element={<SupportTickets />} />
+                <Route path="/tickets/settings" element={<TicketSettings />} />
                 <Route path="/tickets/:conversationId" element={<EmailThread />} />
                 {/* Redirect old /emails routes to /tickets */}
                 <Route path="/emails" element={<Navigate to="/tickets" replace />} />

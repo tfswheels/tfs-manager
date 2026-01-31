@@ -344,6 +344,10 @@ export default function SupportTickets() {
       }}
       secondaryActions={[
         {
+          content: 'Settings',
+          onAction: () => navigate('/tickets/settings')
+        },
+        {
           content: 'Sync Staff',
           onAction: async () => {
             try {
