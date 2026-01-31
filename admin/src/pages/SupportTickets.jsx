@@ -22,6 +22,13 @@ import {
   Avatar,
   Icon
 } from '@shopify/polaris';
+import {
+  ClipboardIcon,
+  PlayIcon,
+  CheckCircleIcon,
+  PersonIcon,
+  AlertCircleIcon
+} from '@shopify/polaris-icons';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { decodeHTMLEntities } from '../utils/htmlDecode';
@@ -426,10 +433,6 @@ export default function SupportTickets() {
     <Page
       title="Support Tickets"
       subtitle={`${total} total ticket${total !== 1 ? 's' : ''}`}
-      primaryAction={{
-        content: 'New Ticket',
-        onAction: () => navigate('/emails/new')
-      }}
       secondaryActions={[
         {
           content: 'Settings',
@@ -447,17 +450,10 @@ export default function SupportTickets() {
               console.error('Staff sync failed:', err);
             }
           }
-        },
-        {
-          content: 'Refresh',
-          onAction: () => {
-            fetchTickets();
-            fetchStats();
-          }
         }
       ]}
     >
-      <BlockStack gap="500">
+      <BlockStack gap="400">
         {/* Search Bar */}
         <Card>
           <Box padding="400">
@@ -469,16 +465,22 @@ export default function SupportTickets() {
                 autoComplete="off"
                 clearButton
                 onClearButtonClick={() => setSearchQuery('')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    fetchTickets();
+                  }
+                }}
               />
 
               {/* Phase 3B: Enhanced Filters Toggle */}
-              <Button
-                size="slim"
-                onClick={() => setShowFilters(!showFilters)}
-                disclosure={showFilters ? 'up' : 'down'}
-              >
-                {showFilters ? 'Hide Filters' : 'Show Filters'}
-              </Button>
+              <InlineStack gap="200">
+                <Button
+                  onClick={() => setShowFilters(!showFilters)}
+                  disclosure={showFilters ? 'up' : 'down'}
+                >
+                  {showFilters ? 'Hide Filters' : 'Show Filters'}
+                </Button>
+              </InlineStack>
 
               {showFilters && (
                 <Box paddingBlockStart="300">
@@ -521,6 +523,11 @@ export default function SupportTickets() {
                           onChange={setFilterTags}
                           autoComplete="off"
                           helpText="Comma-separated"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              fetchTickets();
+                            }
+                          }}
                         />
                       </div>
                     </InlineStack>
@@ -567,55 +574,123 @@ export default function SupportTickets() {
 
         {/* Stats Cards */}
         <div className="stats-grid">
+          {/* Open Tickets */}
           <Card>
             <Box padding="400">
-              <BlockStack gap="200">
-                <Text variant="bodyMd" as="p" tone="subdued">Open</Text>
-                <Text variant="heading2xl" as="h2">
-                  {stats.byStatus?.open?.count || 0}
-                </Text>
-              </BlockStack>
+              <InlineStack align="space-between" blockAlign="start">
+                <BlockStack gap="200">
+                  <Text variant="bodyMd" as="p" tone="subdued">Open Tickets</Text>
+                  <Text variant="heading2xl" as="h2" fontWeight="bold">
+                    {stats.byStatus?.open?.count || 0}
+                  </Text>
+                </BlockStack>
+                <div style={{
+                  padding: '8px',
+                  borderRadius: '8px',
+                  backgroundColor: '#dbeafe',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Icon source={ClipboardIcon} tone="info" />
+                </div>
+              </InlineStack>
             </Box>
           </Card>
+
+          {/* In Progress */}
           <Card>
             <Box padding="400">
-              <BlockStack gap="200">
-                <Text variant="bodyMd" as="p" tone="subdued">In Progress</Text>
-                <Text variant="heading2xl" as="h2">
-                  {stats.byStatus?.in_progress?.count || 0}
-                </Text>
-              </BlockStack>
+              <InlineStack align="space-between" blockAlign="start">
+                <BlockStack gap="200">
+                  <Text variant="bodyMd" as="p" tone="subdued">In Progress</Text>
+                  <Text variant="heading2xl" as="h2" fontWeight="bold">
+                    {stats.byStatus?.in_progress?.count || 0}
+                  </Text>
+                </BlockStack>
+                <div style={{
+                  padding: '8px',
+                  borderRadius: '8px',
+                  backgroundColor: '#fef3c7',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Icon source={PlayIcon} tone="warning" />
+                </div>
+              </InlineStack>
             </Box>
           </Card>
+
+          {/* Resolved */}
           <Card>
             <Box padding="400">
-              <BlockStack gap="200">
-                <Text variant="bodyMd" as="p" tone="subdued">Resolved</Text>
-                <Text variant="heading2xl" as="h2">
-                  {stats.byStatus?.resolved?.count || 0}
-                </Text>
-              </BlockStack>
+              <InlineStack align="space-between" blockAlign="start">
+                <BlockStack gap="200">
+                  <Text variant="bodyMd" as="p" tone="subdued">Resolved</Text>
+                  <Text variant="heading2xl" as="h2" fontWeight="bold">
+                    {stats.byStatus?.resolved?.count || 0}
+                  </Text>
+                </BlockStack>
+                <div style={{
+                  padding: '8px',
+                  borderRadius: '8px',
+                  backgroundColor: '#d1fae5',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Icon source={CheckCircleIcon} tone="success" />
+                </div>
+              </InlineStack>
             </Box>
           </Card>
+
+          {/* Unassigned */}
           <Card>
             <Box padding="400">
-              <BlockStack gap="200">
-                <Text variant="bodyMd" as="p" tone="subdued">Unassigned</Text>
-                <Text variant="heading2xl" as="h2">
-                  {stats.unassigned || 0}
-                </Text>
-              </BlockStack>
+              <InlineStack align="space-between" blockAlign="start">
+                <BlockStack gap="200">
+                  <Text variant="bodyMd" as="p" tone="subdued">Unassigned</Text>
+                  <Text variant="heading2xl" as="h2" fontWeight="bold">
+                    {stats.unassigned || 0}
+                  </Text>
+                </BlockStack>
+                <div style={{
+                  padding: '8px',
+                  borderRadius: '8px',
+                  backgroundColor: '#f3f4f6',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Icon source={PersonIcon} tone="base" />
+                </div>
+              </InlineStack>
             </Box>
           </Card>
-          {/* Phase 3B.3: SLA Breach Indicator */}
+
+          {/* SLA Breached */}
           <Card>
             <Box padding="400">
-              <BlockStack gap="200">
-                <Text variant="bodyMd" as="p" tone="subdued">SLA Breached</Text>
-                <Text variant="heading2xl" as="h2" tone="critical">
-                  {stats.sla_breached || 0}
-                </Text>
-              </BlockStack>
+              <InlineStack align="space-between" blockAlign="start">
+                <BlockStack gap="200">
+                  <Text variant="bodyMd" as="p" tone="subdued">SLA Breached</Text>
+                  <Text variant="heading2xl" as="h2" fontWeight="bold" tone="critical">
+                    {stats.sla_breached || 0}
+                  </Text>
+                </BlockStack>
+                <div style={{
+                  padding: '8px',
+                  borderRadius: '8px',
+                  backgroundColor: '#fee2e2',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Icon source={AlertCircleIcon} tone="critical" />
+                </div>
+              </InlineStack>
             </Box>
           </Card>
         </div>

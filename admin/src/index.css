@@ -156,15 +156,15 @@ a:hover {
 }
 
 .content-wrapper {
-  padding: var(--space-8) var(--space-6);
+  padding: var(--space-6) var(--space-8);
   max-width: 100%;
   width: 100%;
 }
 
-/* For very large screens, use max-width but keep it generous */
-@media (min-width: 1920px) {
+/* For ultra-wide screens (4K+), add some reasonable max-width for readability */
+@media (min-width: 2560px) {
   .content-wrapper {
-    max-width: var(--container-max-width);
+    max-width: 2400px;
     margin: 0 auto;
   }
 }
@@ -279,6 +279,48 @@ textarea:focus-visible,
 select:focus-visible {
   outline: 2px solid var(--primary-500);
   outline-offset: 2px;
+}
+
+/* ===== Shopify Polaris Overrides for Full Width ===== */
+
+/* Override Polaris Page max-width constraints */
+.Polaris-Page {
+  max-width: 100% !important;
+}
+
+.Polaris-Page__Content {
+  max-width: 100% !important;
+}
+
+.Polaris-Page-Header {
+  max-width: 100% !important;
+}
+
+.Polaris-Page-Header__Row {
+  max-width: 100% !important;
+}
+
+/* Override Polaris Card to use full width */
+.Polaris-Card {
+  max-width: 100% !important;
+}
+
+/* Override Polaris Layout for better space usage */
+.Polaris-Layout {
+  max-width: 100% !important;
+}
+
+.Polaris-Layout__Section {
+  max-width: 100% !important;
+}
+
+/* Ensure DataTable uses full width */
+.Polaris-DataTable {
+  width: 100% !important;
+}
+
+.Polaris-DataTable__Table {
+  width: 100% !important;
 }
 
 /* ===== Print Styles ===== */
