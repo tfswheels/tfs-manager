@@ -14,15 +14,20 @@ import crypto from 'crypto';
 
 /**
  * Generate thread ID from email headers
- * Uses In-Reply-To or References headers, or generates new ID
+ * Prefers Zoho's threadId, falls back to In-Reply-To/References, then Message-ID
  */
 export function generateThreadId(email) {
-  // If email has In-Reply-To, use that as thread ID
+  // PREFERRED: Use Zoho's threadId if available (most reliable for grouping emails)
+  if (email.threadId) {
+    return email.threadId;
+  }
+
+  // FALLBACK 1: If email has In-Reply-To, use that as thread ID
   if (email.inReplyTo) {
     return email.inReplyTo;
   }
 
-  // If email has References, use the first one
+  // FALLBACK 2: If email has References, use the first one
   if (email.references) {
     const refs = Array.isArray(email.references) ? email.references : email.references.split(' ');
     if (refs.length > 0) {
@@ -30,12 +35,13 @@ export function generateThreadId(email) {
     }
   }
 
-  // If email has Message-ID, use that as new thread ID
+  // FALLBACK 3: If email has Message-ID, use that as new thread ID
+  // This creates a new conversation (first email in thread)
   if (email.messageId) {
     return email.messageId;
   }
 
-  // Generate new thread ID based on subject and sender
+  // LAST RESORT: Generate new thread ID based on subject and sender
   const hash = crypto.createHash('md5')
     .update(`${email.subject}-${email.fromEmail}-${Date.now()}`)
     .digest('hex');

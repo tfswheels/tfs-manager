@@ -379,6 +379,7 @@ async function syncInbox(shopId, accountEmail, options = {}) {
           toEmail: direction === 'inbound' ? accountEmail : (fullEmail.toAddress || fullEmail.recipient),
           toName: direction === 'inbound' ? 'TFS Wheels' : (fullEmail.recipientName || fullEmail.toAddress),
           messageId: fullEmail.messageId,
+          threadId: fullEmail.threadId,  // Zoho's thread ID for grouping emails
           inReplyTo: fullEmail.inReplyTo,
           references: fullEmail.references,
           direction: direction
