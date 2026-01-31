@@ -267,10 +267,10 @@ export async function getActivityTimeline(conversationId, limit = 100) {
       [conversationId]
     );
 
-    // Parse metadata JSON
+    // Parse metadata JSON (only if it's a string, not already parsed)
     return activities.map(activity => ({
       ...activity,
-      metadata: activity.metadata ? JSON.parse(activity.metadata) : null
+      metadata: activity.metadata ? (typeof activity.metadata === 'string' ? JSON.parse(activity.metadata) : activity.metadata) : null
     }));
   } catch (error) {
     console.error('❌ Error getting activity timeline:', error);
