@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useLocatio
 import { AppProvider } from '@shopify/polaris';
 import AppBridgeProvider from './components/AppBridgeProvider';
 import Layout from './components/Layout';
+import StaffRegistration from './components/StaffRegistration';
 
 // Pages
 import Orders from './pages/Orders';
@@ -101,21 +102,24 @@ function App() {
         <AppBridgeProvider>
           {/* ⚠️ CRITICAL: RouteManager must wrap Layout - see comments above and CLAUDE.md */}
           <RouteManager>
-            <Layout>
-              <Routes>
-                <Route path="/" element={<Orders />} />
-                <Route path="/orders/:orderId" element={<OrderDetails />} />
-                <Route path="/products" element={<Products />} />
-                <Route path="/tickets" element={<SupportTickets />} />
-                <Route path="/tickets/settings" element={<TicketSettings />} />
-                <Route path="/tickets/:conversationId" element={<EmailThread />} />
-                {/* Redirect old /emails routes to /tickets */}
-                <Route path="/emails" element={<Navigate to="/tickets" replace />} />
-                <Route path="/emails/:conversationId" element={<EmailRedirect />} />
-                <Route path="/email" element={<EmailTemplates />} />
-                <Route path="/settings" element={<Settings />} />
-              </Routes>
-            </Layout>
+            {/* Staff Registration Modal - shows on first app access */}
+            <StaffRegistration>
+              <Layout>
+                <Routes>
+                  <Route path="/" element={<Orders />} />
+                  <Route path="/orders/:orderId" element={<OrderDetails />} />
+                  <Route path="/products" element={<Products />} />
+                  <Route path="/tickets" element={<SupportTickets />} />
+                  <Route path="/tickets/settings" element={<TicketSettings />} />
+                  <Route path="/tickets/:conversationId" element={<EmailThread />} />
+                  {/* Redirect old /emails routes to /tickets */}
+                  <Route path="/emails" element={<Navigate to="/tickets" replace />} />
+                  <Route path="/emails/:conversationId" element={<EmailRedirect />} />
+                  <Route path="/email" element={<EmailTemplates />} />
+                  <Route path="/settings" element={<Settings />} />
+                </Routes>
+              </Layout>
+            </StaffRegistration>
           </RouteManager>
         </AppBridgeProvider>
       </Router>

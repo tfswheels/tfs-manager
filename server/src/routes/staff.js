@@ -350,4 +350,97 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// =============================================================================
+// STAFF SELF-REGISTRATION
+// =============================================================================
+
+/**
+ * POST /api/staff/:shopId/register
+ * Self-register a staff member when they first access the app
+ *
+ * This solves the problem of Shopify's deprecated staffMembers API
+ * by allowing staff to register themselves on first app access.
+ */
+router.post('/:shopId/register', async (req, res) => {
+  try {
+    const { shopId } = req.params;
+    const { email, first_name, last_name, full_name, role } = req.body;
+
+    // Validation
+    if (!email || !first_name) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email and first name are required'
+      });
+    }
+
+    // Check if staff member already exists with this email
+    const [existing] = await db.execute(
+      'SELECT * FROM staff_users WHERE shop_id = ? AND email = ?',
+      [parseInt(shopId), email]
+    );
+
+    if (existing.length > 0) {
+      // Staff already exists - reactivate if inactive and return
+      const staff = existing[0];
+
+      if (!staff.is_active) {
+        await db.execute(
+          'UPDATE staff_users SET is_active = TRUE, updated_at = NOW() WHERE id = ?',
+          [staff.id]
+        );
+        console.log(`✅ Reactivated staff member: ${email}`);
+      }
+
+      return res.json({
+        success: true,
+        data: staff,
+        message: 'Staff member already registered'
+      });
+    }
+
+    // Create new staff member
+    const [result] = await db.execute(
+      `INSERT INTO staff_users (
+        shop_id,
+        email,
+        first_name,
+        last_name,
+        full_name,
+        role,
+        is_active
+      ) VALUES (?, ?, ?, ?, ?, ?, TRUE)`,
+      [
+        parseInt(shopId),
+        email,
+        first_name,
+        last_name || null,
+        full_name || `${first_name} ${last_name || ''}`.trim(),
+        role || 'staff'
+      ]
+    );
+
+    // Fetch the created staff member
+    const [newStaff] = await db.execute(
+      'SELECT * FROM staff_users WHERE id = ?',
+      [result.insertId]
+    );
+
+    console.log(`✅ Self-registered new staff member: ${email} (ID: ${result.insertId})`);
+
+    res.json({
+      success: true,
+      data: newStaff[0],
+      message: 'Staff member registered successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Staff self-registration error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to register staff member'
+    });
+  }
+});
+
 export default router;
