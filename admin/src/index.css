@@ -176,7 +176,7 @@ a:hover {
 }
 
 .ticket-list {
-  min-width: 1200px; /* Minimum width before horizontal scroll kicks in */
+  min-width: 1000px; /* Minimum width before horizontal scroll kicks in */
 }
 
 /* ===== Mobile Menu ===== */

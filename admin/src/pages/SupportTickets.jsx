@@ -256,10 +256,10 @@ export default function SupportTickets() {
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: '6px',
-          padding: '6px 12px',
-          borderRadius: '16px',
-          fontSize: '13px',
+          gap: '4px',
+          padding: '4px 8px',
+          borderRadius: '12px',
+          fontSize: '12px',
           fontWeight: '500',
           backgroundColor: config.bg,
           color: config.text,
@@ -270,8 +270,8 @@ export default function SupportTickets() {
         {config.dot && (
           <span
             style={{
-              width: '6px',
-              height: '6px',
+              width: '5px',
+              height: '5px',
               borderRadius: '50%',
               backgroundColor: config.text,
               flexShrink: 0
@@ -313,14 +313,14 @@ export default function SupportTickets() {
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: '4px',
-          fontSize: '13px',
+          gap: '3px',
+          fontSize: '12px',
           fontWeight: '600',
           color: config.text,
           whiteSpace: 'nowrap'
         }}
       >
-        <span style={{ fontSize: '10px' }}>{config.icon}</span>
+        <span style={{ fontSize: '9px' }}>{config.icon}</span>
         {config.label}
       </span>
     );

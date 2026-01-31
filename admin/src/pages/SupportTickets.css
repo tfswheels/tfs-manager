@@ -96,32 +96,32 @@
 
 .ticket-row {
   display: grid;
-  grid-template-columns: 40px minmax(140px, 0.9fr) minmax(300px, 3fr) 140px 120px 140px minmax(130px, 1fr) 130px;
-  gap: 20px;
+  grid-template-columns: 40px minmax(100px, 0.7fr) minmax(200px, 2fr) 105px 95px 90px minmax(120px, 1fr) 105px;
+  gap: 12px;
   align-items: center;
-  padding: 20px 24px;
+  padding: 14px 20px;
   border-bottom: 1px solid #f3f4f6;
   transition: all 0.15s ease;
   cursor: pointer;
-  min-height: 72px;
+  min-height: 64px;
 }
 
 .ticket-row:hover:not(.ticket-header) {
   background-color: #fafbfc;
   border-left: 3px solid #e5e7eb;
-  padding-left: 21px;
+  padding-left: 17px;
 }
 
 .ticket-row.selected {
   background-color: #eff6ff;
   border-left: 3px solid #3b82f6;
-  padding-left: 21px;
+  padding-left: 17px;
 }
 
 .ticket-row.unread {
   background-color: transparent;
   border-left: 3px solid #f59e0b;
-  padding-left: 21px;
+  padding-left: 17px;
 }
 
 .ticket-row.unread:hover {
@@ -137,14 +137,14 @@
   background-color: #fafbfc;
   cursor: default;
   border-bottom: 2px solid #e5e7eb;
-  padding: 12px 24px;
+  padding: 12px 20px;
   min-height: auto;
 }
 
 .ticket-header:hover {
   background-color: #fafbfc;
   border-left: none;
-  padding-left: 24px;
+  padding-left: 20px;
 }
 
 .ticket-checkbox {
@@ -199,16 +199,16 @@
 /* Large Desktop: Maximum spacing */
 @media (min-width: 1400px) {
   .ticket-row {
-    grid-template-columns: 40px minmax(140px, 1fr) minmax(180px, 1.2fr) minmax(250px, 2.5fr) 130px 110px minmax(150px, 1.2fr) 140px;
-    padding: 18px 24px;
+    grid-template-columns: 40px minmax(110px, 0.8fr) minmax(220px, 2.2fr) 115px 100px 95px minmax(130px, 1.1fr) 110px;
+    padding: 14px 20px;
   }
 }
 
 /* Tablet: Hide priority column */
 @media (max-width: 1200px) {
   .ticket-row {
-    grid-template-columns: 40px minmax(110px, 0.8fr) minmax(140px, 1fr) minmax(180px, 2fr) 110px minmax(130px, 1fr) 110px;
-    gap: 12px;
+    grid-template-columns: 40px minmax(95px, 0.7fr) minmax(180px, 2fr) 105px 85px minmax(115px, 1fr) 100px;
+    gap: 10px;
     padding: 14px 16px;
   }
 
@@ -367,6 +367,23 @@
 .ticket-priority .Polaris-Badge {
   font-size: 0.75rem;
   padding: 2px 8px;
+}
+
+/* Tab Hover Effects */
+.Polaris-Tabs__Tab {
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.Polaris-Tabs__Tab:hover {
+  background-color: #f3f4f6;
+}
+
+.Polaris-Tabs__Tab--selected {
+  font-weight: 600;
+}
+
+.Polaris-Tabs__Tab--selected:hover {
+  background-color: transparent;
 }
 
 /* Better Card Styling */
