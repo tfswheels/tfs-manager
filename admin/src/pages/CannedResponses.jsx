@@ -23,7 +23,7 @@ import {
   Popover,
   ActionList,
 } from '@shopify/polaris';
-import { DeleteMinor, EditMinor, DuplicateMinor } from '@shopify/polaris-icons';
+import { DeleteIcon, EditIcon, DuplicateIcon } from '@shopify/polaris-icons';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -317,17 +317,17 @@ export default function CannedResponses() {
                           items={[
                             {
                               content: 'Edit',
-                              icon: EditMinor,
+                              icon: EditIcon,
                               onAction: () => handleEdit(response),
                             },
                             {
                               content: 'Duplicate',
-                              icon: DuplicateMinor,
+                              icon: DuplicateIcon,
                               onAction: () => handleDuplicate(response),
                             },
                             {
                               content: 'Delete',
-                              icon: DeleteMinor,
+                              icon: DeleteIcon,
                               destructive: true,
                               onAction: () => handleDelete(response),
                             },

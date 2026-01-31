@@ -22,7 +22,6 @@ import {
   Avatar,
   Icon
 } from '@shopify/polaris';
-import { CheckMinor, AlertMinor } from '@shopify/polaris-icons';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { decodeHTMLEntities } from '../utils/htmlDecode';
