@@ -140,11 +140,12 @@ router.post('/send', async (req, res) => {
 
     const emailLogId = logResult.insertId;
 
-    // Add tracking to HTML body
-    let trackedBodyHtml = bodyHtml;
-    if (bodyHtml) {
-      trackedBodyHtml = addEmailTracking(bodyHtml, emailLogId);
-    }
+    // NOTE: Email tracking (open pixels, click tracking) is disabled
+    // If you want to re-enable it, uncomment the lines below:
+    // let trackedBodyHtml = bodyHtml;
+    // if (bodyHtml) {
+    //   trackedBodyHtml = addEmailTracking(bodyHtml, emailLogId);
+    // }
 
     // Send email via Zoho
     const sendResult = await sendEmail(shopId, {
@@ -152,7 +153,7 @@ router.post('/send', async (req, res) => {
       toName,
       subject,
       bodyText: body,
-      bodyHtml: trackedBodyHtml,
+      bodyHtml: bodyHtml,  // Send original HTML without tracking
       fromAddress,
       fromName,
       cc,
