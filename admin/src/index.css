@@ -156,16 +156,16 @@ a:hover {
 }
 
 .content-wrapper {
-  padding: var(--space-6) var(--space-8);
-  max-width: 100%;
+  padding: var(--space-8);
+  max-width: 1600px;
   width: 100%;
+  margin: 0 auto;
 }
 
-/* For ultra-wide screens (4K+), add some reasonable max-width for readability */
-@media (min-width: 2560px) {
+/* For larger screens, increase max-width but maintain visible margins */
+@media (min-width: 1920px) {
   .content-wrapper {
-    max-width: 2400px;
-    margin: 0 auto;
+    max-width: 1800px;
   }
 }
 

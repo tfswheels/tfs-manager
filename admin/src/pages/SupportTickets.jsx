@@ -432,7 +432,7 @@ export default function SupportTickets() {
   return (
     <Page
       title="Support Tickets"
-      subtitle={`${total} total ticket${total !== 1 ? 's' : ''}`}
+      subtitle={`Manage your customer support tickets`}
       secondaryActions={[
         {
           content: 'Settings',
@@ -453,146 +453,24 @@ export default function SupportTickets() {
         }
       ]}
     >
-      <BlockStack gap="400">
-        {/* Search Bar */}
-        <Card>
-          <Box padding="400">
-            <BlockStack gap="300">
-              <TextField
-                placeholder="Search by ticket #, email, name, or subject..."
-                value={searchQuery}
-                onChange={setSearchQuery}
-                autoComplete="off"
-                clearButton
-                onClearButtonClick={() => setSearchQuery('')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    fetchTickets();
-                  }
-                }}
-              />
-
-              {/* Phase 3B: Enhanced Filters Toggle */}
-              <InlineStack gap="200">
-                <Button
-                  onClick={() => setShowFilters(!showFilters)}
-                  disclosure={showFilters ? 'up' : 'down'}
-                >
-                  {showFilters ? 'Hide Filters' : 'Show Filters'}
-                </Button>
-              </InlineStack>
-
-              {showFilters && (
-                <Box paddingBlockStart="300">
-                  <BlockStack gap="300">
-                    <InlineStack gap="300" wrap>
-                      <div style={{ minWidth: '200px' }}>
-                        <Select
-                          label="Priority"
-                          options={[
-                            { label: 'All Priorities', value: '' },
-                            { label: 'Low', value: 'low' },
-                            { label: 'Normal', value: 'normal' },
-                            { label: 'High', value: 'high' },
-                            { label: 'Urgent', value: 'urgent' }
-                          ]}
-                          value={filterPriority}
-                          onChange={setFilterPriority}
-                        />
-                      </div>
-                      <div style={{ minWidth: '200px' }}>
-                        <Select
-                          label="Assigned To"
-                          options={[
-                            { label: 'All Staff', value: '' },
-                            { label: 'Unassigned', value: 'unassigned' },
-                            ...staff.map(s => ({
-                              label: s.full_name || s.email,
-                              value: String(s.id)
-                            }))
-                          ]}
-                          value={filterAssignedTo}
-                          onChange={setFilterAssignedTo}
-                        />
-                      </div>
-                      <div style={{ minWidth: '200px' }}>
-                        <TextField
-                          label="Tags"
-                          placeholder="Enter tags..."
-                          value={filterTags}
-                          onChange={setFilterTags}
-                          autoComplete="off"
-                          helpText="Comma-separated"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              fetchTickets();
-                            }
-                          }}
-                        />
-                      </div>
-                    </InlineStack>
-
-                    <InlineStack gap="300" wrap>
-                      <div style={{ minWidth: '200px' }}>
-                        <TextField
-                          label="From Date"
-                          type="date"
-                          value={filterDateFrom}
-                          onChange={setFilterDateFrom}
-                          autoComplete="off"
-                        />
-                      </div>
-                      <div style={{ minWidth: '200px' }}>
-                        <TextField
-                          label="To Date"
-                          type="date"
-                          value={filterDateTo}
-                          onChange={setFilterDateTo}
-                          autoComplete="off"
-                        />
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'flex-end', paddingBlockEnd: '4px' }}>
-                        <Button
-                          onClick={() => {
-                            setFilterPriority('');
-                            setFilterAssignedTo('');
-                            setFilterTags('');
-                            setFilterDateFrom('');
-                            setFilterDateTo('');
-                          }}
-                        >
-                          Clear Filters
-                        </Button>
-                      </div>
-                    </InlineStack>
-                  </BlockStack>
-                </Box>
-              )}
-            </BlockStack>
-          </Box>
-        </Card>
-
+      <BlockStack gap="500">
         {/* Stats Cards */}
-        <div className="stats-grid">
+        <div className="stats-grid-modern">
           {/* Open Tickets */}
           <Card>
-            <Box padding="400">
+            <Box padding="500">
               <InlineStack align="space-between" blockAlign="start">
                 <BlockStack gap="200">
-                  <Text variant="bodyMd" as="p" tone="subdued">Open Tickets</Text>
+                  <Text variant="bodyMd" as="p" tone="subdued" fontWeight="medium">Open Tickets</Text>
                   <Text variant="heading2xl" as="h2" fontWeight="bold">
                     {stats.byStatus?.open?.count || 0}
                   </Text>
+                  <Text variant="bodySm" as="p" tone="success">
+                    📬 New inquiries
+                  </Text>
                 </BlockStack>
-                <div style={{
-                  padding: '8px',
-                  borderRadius: '8px',
-                  backgroundColor: '#dbeafe',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <Icon source={ClipboardIcon} tone="info" />
+                <div className="stat-icon stat-icon-blue">
+                  📬
                 </div>
               </InlineStack>
             </Box>
@@ -600,23 +478,19 @@ export default function SupportTickets() {
 
           {/* In Progress */}
           <Card>
-            <Box padding="400">
+            <Box padding="500">
               <InlineStack align="space-between" blockAlign="start">
                 <BlockStack gap="200">
-                  <Text variant="bodyMd" as="p" tone="subdued">In Progress</Text>
+                  <Text variant="bodyMd" as="p" tone="subdued" fontWeight="medium">In Progress</Text>
                   <Text variant="heading2xl" as="h2" fontWeight="bold">
                     {stats.byStatus?.in_progress?.count || 0}
                   </Text>
+                  <Text variant="bodySm" as="p" tone="subdued">
+                    ⚡ Being handled
+                  </Text>
                 </BlockStack>
-                <div style={{
-                  padding: '8px',
-                  borderRadius: '8px',
-                  backgroundColor: '#fef3c7',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <Icon source={PlayIcon} tone="warning" />
+                <div className="stat-icon stat-icon-purple">
+                  ⚡
                 </div>
               </InlineStack>
             </Box>
@@ -624,23 +498,19 @@ export default function SupportTickets() {
 
           {/* Resolved */}
           <Card>
-            <Box padding="400">
+            <Box padding="500">
               <InlineStack align="space-between" blockAlign="start">
                 <BlockStack gap="200">
-                  <Text variant="bodyMd" as="p" tone="subdued">Resolved</Text>
+                  <Text variant="bodyMd" as="p" tone="subdued" fontWeight="medium">Resolved</Text>
                   <Text variant="heading2xl" as="h2" fontWeight="bold">
                     {stats.byStatus?.resolved?.count || 0}
                   </Text>
+                  <Text variant="bodySm" as="p" tone="success">
+                    ✓ Completed
+                  </Text>
                 </BlockStack>
-                <div style={{
-                  padding: '8px',
-                  borderRadius: '8px',
-                  backgroundColor: '#d1fae5',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <Icon source={CheckCircleIcon} tone="success" />
+                <div className="stat-icon stat-icon-green">
+                  ✓
                 </div>
               </InlineStack>
             </Box>
@@ -648,47 +518,19 @@ export default function SupportTickets() {
 
           {/* Unassigned */}
           <Card>
-            <Box padding="400">
+            <Box padding="500">
               <InlineStack align="space-between" blockAlign="start">
                 <BlockStack gap="200">
-                  <Text variant="bodyMd" as="p" tone="subdued">Unassigned</Text>
+                  <Text variant="bodyMd" as="p" tone="subdued" fontWeight="medium">Unassigned</Text>
                   <Text variant="heading2xl" as="h2" fontWeight="bold">
                     {stats.unassigned || 0}
                   </Text>
-                </BlockStack>
-                <div style={{
-                  padding: '8px',
-                  borderRadius: '8px',
-                  backgroundColor: '#f3f4f6',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <Icon source={PersonIcon} tone="base" />
-                </div>
-              </InlineStack>
-            </Box>
-          </Card>
-
-          {/* SLA Breached */}
-          <Card>
-            <Box padding="400">
-              <InlineStack align="space-between" blockAlign="start">
-                <BlockStack gap="200">
-                  <Text variant="bodyMd" as="p" tone="subdued">SLA Breached</Text>
-                  <Text variant="heading2xl" as="h2" fontWeight="bold" tone="critical">
-                    {stats.sla_breached || 0}
+                  <Text variant="bodySm" as="p" tone="warning">
+                    👤 Need assignment
                   </Text>
                 </BlockStack>
-                <div style={{
-                  padding: '8px',
-                  borderRadius: '8px',
-                  backgroundColor: '#fee2e2',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <Icon source={AlertCircleIcon} tone="critical" />
+                <div className="stat-icon stat-icon-gray">
+                  👤
                 </div>
               </InlineStack>
             </Box>
@@ -733,7 +575,7 @@ export default function SupportTickets() {
                           }
                         },
                         {
-                          content: 'Add Tags', // Phase 3B.4
+                          content: 'Add Tags',
                           onAction: () => {
                             setBulkTagModal(true);
                             setBulkActionActive(false);
@@ -755,8 +597,130 @@ export default function SupportTickets() {
           </Card>
         )}
 
-        {/* Tickets Table */}
+        {/* Main Tickets Table Card */}
         <Card>
+          {/* Integrated Search & Filters Header */}
+          <Box padding="500" borderBlockEndWidth="025" borderColor="border">
+            <BlockStack gap="400">
+              <InlineStack gap="300" align="space-between" blockAlign="center" wrap={false}>
+                {/* Search */}
+                <div style={{ flex: '1', minWidth: '300px', maxWidth: '500px' }}>
+                  <TextField
+                    placeholder="Search tickets, customers, emails..."
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    autoComplete="off"
+                    clearButton
+                    onClearButtonClick={() => setSearchQuery('')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        fetchTickets();
+                      }
+                    }}
+                  />
+                </div>
+
+                {/* Filter Dropdowns */}
+                <InlineStack gap="200">
+                  <Select
+                    placeholder="All Status"
+                    options={[
+                      { label: 'All Status', value: '' },
+                      { label: 'Open', value: 'open' },
+                      { label: 'Assigned', value: 'assigned' },
+                      { label: 'In Progress', value: 'in_progress' },
+                      { label: 'Pending Customer', value: 'pending_customer' },
+                      { label: 'Resolved', value: 'resolved' },
+                      { label: 'Closed', value: 'closed' }
+                    ]}
+                    value={filterPriority}
+                    onChange={setFilterPriority}
+                  />
+                  <Select
+                    placeholder="All Priority"
+                    options={[
+                      { label: 'All Priority', value: '' },
+                      { label: 'Low', value: 'low' },
+                      { label: 'Normal', value: 'normal' },
+                      { label: 'High', value: 'high' },
+                      { label: 'Urgent', value: 'urgent' }
+                    ]}
+                    value={filterPriority}
+                    onChange={setFilterPriority}
+                  />
+                  <Select
+                    placeholder="All Assignees"
+                    options={[
+                      { label: 'All Assignees', value: '' },
+                      { label: 'Unassigned', value: 'unassigned' },
+                      ...staff.map(s => ({
+                        label: s.full_name || s.email,
+                        value: String(s.id)
+                      }))
+                    ]}
+                    value={filterAssignedTo}
+                    onChange={setFilterAssignedTo}
+                  />
+                </InlineStack>
+              </InlineStack>
+
+              {/* Advanced Filters Toggle */}
+              {showFilters && (
+                <Box paddingBlockStart="300">
+                  <InlineStack gap="300" wrap>
+                    <div style={{ minWidth: '200px' }}>
+                      <TextField
+                        label="Tags"
+                        placeholder="Enter tags..."
+                        value={filterTags}
+                        onChange={setFilterTags}
+                        autoComplete="off"
+                        helpText="Comma-separated"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            fetchTickets();
+                          }
+                        }}
+                      />
+                    </div>
+                    <div style={{ minWidth: '200px' }}>
+                      <TextField
+                        label="From Date"
+                        type="date"
+                        value={filterDateFrom}
+                        onChange={setFilterDateFrom}
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div style={{ minWidth: '200px' }}>
+                      <TextField
+                        label="To Date"
+                        type="date"
+                        value={filterDateTo}
+                        onChange={setFilterDateTo}
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                      <Button
+                        onClick={() => {
+                          setFilterPriority('');
+                          setFilterAssignedTo('');
+                          setFilterTags('');
+                          setFilterDateFrom('');
+                          setFilterDateTo('');
+                        }}
+                      >
+                        Clear All
+                      </Button>
+                    </div>
+                  </InlineStack>
+                </Box>
+              )}
+            </BlockStack>
+          </Box>
+
+          {/* Tabs */}
           <Tabs
             tabs={tabs.map((tab) => {
               const count = tab.badge ? (stats.byStatus?.[tab.badge]?.count || 0) : stats.total;
