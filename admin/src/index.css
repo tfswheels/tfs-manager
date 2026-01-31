@@ -156,7 +156,7 @@ a:hover {
 }
 
 .content-wrapper {
-  padding: var(--space-6) var(--space-8);
+  padding: var(--space-8);
   max-width: 1600px;
   width: calc(100% - calc(var(--space-8) * 2)); /* Always maintain side padding */
   margin: 0 auto;

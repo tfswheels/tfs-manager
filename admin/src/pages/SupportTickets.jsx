@@ -159,7 +159,7 @@ export default function SupportTickets() {
       // Phase 3B: Enhanced filters (dropdown filters override tab selection)
       if (filterStatus) params.status = filterStatus;
       if (filterPriority) params.priority = filterPriority;
-      if (filterAssignedTo) params.assigned_to = filterAssignedTo;
+      if (filterAssignedTo) params.assignedTo = filterAssignedTo; // Fixed: backend expects camelCase
       if (filterTags) params.tags = filterTags;
       if (filterDateFrom) params.date_from = filterDateFrom;
       if (filterDateTo) params.date_to = filterDateTo;
@@ -206,28 +206,124 @@ export default function SupportTickets() {
 
   const getStatusBadge = (status) => {
     const statusConfig = {
-      open: { tone: 'info', label: 'Open' },
-      assigned: { tone: 'attention', label: 'Assigned' },
-      in_progress: { tone: 'warning', label: 'In Progress' },
-      pending_customer: { tone: 'critical', label: 'Pending Customer' },
-      resolved: { tone: 'success', label: 'Resolved' },
-      closed: { tone: undefined, label: 'Closed' }
+      open: {
+        bg: '#fff7ed',
+        text: '#ea580c',
+        border: '#fed7aa',
+        label: 'Open',
+        dot: true
+      },
+      assigned: {
+        bg: '#eff6ff',
+        text: '#2563eb',
+        border: '#bfdbfe',
+        label: 'Assigned',
+        dot: true
+      },
+      in_progress: {
+        bg: '#f5f3ff',
+        text: '#7c3aed',
+        border: '#e9d5ff',
+        label: 'In Progress',
+        dot: true
+      },
+      pending_customer: {
+        bg: '#fff7ed',
+        text: '#ea580c',
+        border: '#fed7aa',
+        label: 'Pending Customer',
+        dot: true
+      },
+      resolved: {
+        bg: '#f0fdf4',
+        text: '#16a34a',
+        border: '#bbf7d0',
+        label: 'Resolved',
+        dot: false
+      },
+      closed: {
+        bg: '#f9fafb',
+        text: '#6b7280',
+        border: '#e5e7eb',
+        label: 'Closed',
+        dot: false
+      }
     };
 
-    const config = statusConfig[status] || { tone: 'info', label: status };
-    return <Badge tone={config.tone}>{config.label}</Badge>;
+    const config = statusConfig[status] || statusConfig.open;
+    return (
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '6px 12px',
+          borderRadius: '16px',
+          fontSize: '13px',
+          fontWeight: '500',
+          backgroundColor: config.bg,
+          color: config.text,
+          border: `1px solid ${config.border}`,
+          whiteSpace: 'nowrap'
+        }}
+      >
+        {config.dot && (
+          <span
+            style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              backgroundColor: config.text,
+              flexShrink: 0
+            }}
+          />
+        )}
+        {config.label}
+      </span>
+    );
   };
 
   const getPriorityBadge = (priority) => {
     const priorityConfig = {
-      urgent: { tone: 'critical', label: 'Urgent' },
-      high: { tone: 'warning', label: 'High' },
-      normal: { tone: 'info', label: 'Normal' },
-      low: { tone: undefined, label: 'Low' }
+      urgent: {
+        text: '#dc2626',
+        label: 'Urgent',
+        icon: '↑↑'
+      },
+      high: {
+        text: '#ea580c',
+        label: 'High',
+        icon: '↑↑'
+      },
+      normal: {
+        text: '#6b7280',
+        label: 'Normal',
+        icon: '—'
+      },
+      low: {
+        text: '#9ca3af',
+        label: 'Low',
+        icon: '↓'
+      }
     };
 
-    const config = priorityConfig[priority] || { tone: 'info', label: priority };
-    return <Badge tone={config.tone} size="small">{config.label}</Badge>;
+    const config = priorityConfig[priority] || priorityConfig.normal;
+    return (
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '4px',
+          fontSize: '13px',
+          fontWeight: '600',
+          color: config.text,
+          whiteSpace: 'nowrap'
+        }}
+      >
+        <span style={{ fontSize: '10px' }}>{config.icon}</span>
+        {config.label}
+      </span>
+    );
   };
 
   // Phase 3B.6: SLA Indicators (red/yellow/green badges)
@@ -757,10 +853,10 @@ export default function SupportTickets() {
                         />
                       </div>
                       <div className="ticket-number">Ticket</div>
-                      <div className="ticket-from">From</div>
-                      <div className="ticket-subject">Subject</div>
+                      <div className="ticket-subject-customer">Subject / Customer</div>
                       <div className="ticket-status">Status</div>
                       <div className="ticket-priority">Priority</div>
+                      <div className="ticket-tags">Tag</div>
                       <div className="ticket-assigned">Assigned To</div>
                       <div className="ticket-date">Last Activity</div>
                     </div>
@@ -783,8 +879,6 @@ export default function SupportTickets() {
                             {ticket.ticket_number}
                           </Text>
                           <InlineStack gap="100" wrap={false}>
-                            {/* Phase 3B.6: SLA Indicator */}
-                            {getSLABadge(ticket)}
                             {ticket.message_count > 0 && (
                               <Badge tone="info" size="small">
                                 {ticket.message_count} {ticket.message_count === 1 ? 'message' : 'messages'}
@@ -795,28 +889,22 @@ export default function SupportTickets() {
                             )}
                           </InlineStack>
                         </div>
-                        <div className="ticket-from">
-                          <Text variant="bodyMd" as="span" fontWeight={ticket.unread_count > 0 ? 'semibold' : 'regular'}>
-                            {decodeHTMLEntities(ticket.customer_name) || decodeHTMLEntities(ticket.customer_email)}
-                          </Text>
-                        </div>
-                        <div className="ticket-subject">
-                          <Text variant="bodyMd" as="span" fontWeight={ticket.unread_count > 0 ? 'semibold' : 'regular'}>
+                        <div className="ticket-subject-customer">
+                          <Text variant="bodyMd" as="p" fontWeight={ticket.unread_count > 0 ? 'semibold' : 'regular'}>
                             {decodeHTMLEntities(ticket.subject) || '(No Subject)'}
                           </Text>
-                          {ticket.category && (
-                            <Text variant="bodySm" as="p" tone="subdued">
-                              {decodeHTMLEntities(ticket.category)}
-                            </Text>
-                          )}
-                          {/* Phase 3B.5: Auto-tag display */}
-                          {renderTags(ticket)}
+                          <Text variant="bodySm" as="p" tone="subdued">
+                            {decodeHTMLEntities(ticket.customer_name) || decodeHTMLEntities(ticket.customer_email).split('@')[0]} • {decodeHTMLEntities(ticket.customer_email)}
+                          </Text>
                         </div>
                         <div className="ticket-status">
                           {getStatusBadge(ticket.status)}
                         </div>
                         <div className="ticket-priority">
                           {getPriorityBadge(ticket.priority || 'normal')}
+                        </div>
+                        <div className="ticket-tags">
+                          {renderTags(ticket)}
                         </div>
                         <div className="ticket-assigned">
                           {ticket.assigned_to_name ? (

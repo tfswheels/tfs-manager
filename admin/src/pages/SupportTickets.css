@@ -96,7 +96,7 @@
 
 .ticket-row {
   display: grid;
-  grid-template-columns: 40px minmax(140px, 0.9fr) minmax(180px, 1.2fr) minmax(250px, 2.5fr) 130px 110px minmax(140px, 1fr) 140px;
+  grid-template-columns: 40px minmax(140px, 0.9fr) minmax(300px, 3fr) 140px 120px 140px minmax(130px, 1fr) 130px;
   gap: 20px;
   align-items: center;
   padding: 20px 24px;
@@ -119,13 +119,13 @@
 }
 
 .ticket-row.unread {
-  background-color: #fffbeb;
+  background-color: transparent;
   border-left: 3px solid #f59e0b;
   padding-left: 21px;
 }
 
 .ticket-row.unread:hover {
-  background-color: #fef3c7;
+  background-color: #fafbfc;
 }
 
 .ticket-header {
@@ -159,17 +159,29 @@
   gap: 4px;
 }
 
-.ticket-from,
-.ticket-subject,
+.ticket-subject-customer,
 .ticket-assigned {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.ticket-subject {
+.ticket-subject-customer {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+  min-width: 0; /* Allow text truncation */
+}
+
+.ticket-subject-customer p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-tags {
+  display: flex;
+  align-items: center;
 }
 
 .ticket-status,
