@@ -43,17 +43,27 @@ export default function SupportTickets() {
   const [stats, setStats] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Enhanced filters state (Phase 3B)
+  const [filterPriority, setFilterPriority] = useState('');
+  const [filterAssignedTo, setFilterAssignedTo] = useState('');
+  const [filterTags, setFilterTags] = useState('');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+
   // Bulk actions state
   const [selectedTickets, setSelectedTickets] = useState(new Set());
   const [bulkActionActive, setBulkActionActive] = useState(false);
   const [bulkStatusModal, setBulkStatusModal] = useState(false);
   const [bulkAssignModal, setBulkAssignModal] = useState(false);
   const [bulkCloseModal, setBulkCloseModal] = useState(false);
+  const [bulkTagModal, setBulkTagModal] = useState(false); // Phase 3B.4
 
   // Bulk action form state
   const [bulkStatus, setBulkStatus] = useState('');
   const [bulkAssignTo, setBulkAssignTo] = useState('');
   const [bulkNote, setBulkNote] = useState('');
+  const [bulkTags, setBulkTags] = useState(''); // Phase 3B.4
 
   const tabs = [
     { id: 'all', label: 'All Tickets', status: null, badge: null },
@@ -69,7 +79,7 @@ export default function SupportTickets() {
     fetchTickets();
     fetchStats();
     fetchStaff();
-  }, [selectedTab, page]);
+  }, [selectedTab, page, filterPriority, filterAssignedTo, filterTags, filterDateFrom, filterDateTo]);
 
   // Filter tickets based on search query
   useEffect(() => {
@@ -138,6 +148,13 @@ export default function SupportTickets() {
         params.status = currentTab.status;
       }
 
+      // Phase 3B: Enhanced filters
+      if (filterPriority) params.priority = filterPriority;
+      if (filterAssignedTo) params.assigned_to = filterAssignedTo;
+      if (filterTags) params.tags = filterTags;
+      if (filterDateFrom) params.date_from = filterDateFrom;
+      if (filterDateTo) params.date_to = filterDateTo;
+
       const response = await axios.get(`${API_URL}/api/tickets`, { params });
 
       const fetchedTickets = response.data.tickets || [];
@@ -202,6 +219,53 @@ export default function SupportTickets() {
 
     const config = priorityConfig[priority] || { tone: 'info', label: priority };
     return <Badge tone={config.tone} size="small">{config.label}</Badge>;
+  };
+
+  // Phase 3B.6: SLA Indicators (red/yellow/green badges)
+  const getSLABadge = (ticket) => {
+    if (!ticket.sla_due_at || ticket.status === 'closed' || ticket.status === 'resolved') {
+      return null;
+    }
+
+    const now = new Date();
+    const slaDate = new Date(ticket.sla_due_at);
+    const hoursUntilDue = (slaDate - now) / (1000 * 60 * 60);
+
+    if (hoursUntilDue < 0) {
+      // Past due - RED
+      return <Badge tone="critical" size="small">SLA Breach</Badge>;
+    } else if (hoursUntilDue < 2) {
+      // Less than 2 hours - YELLOW
+      return <Badge tone="warning" size="small">SLA Warning</Badge>;
+    } else if (hoursUntilDue < 8) {
+      // Less than 8 hours - GREEN (show it's on track)
+      return <Badge tone="success" size="small">On Track</Badge>;
+    }
+
+    return null; // Don't show SLA badge if plenty of time left
+  };
+
+  // Phase 3B.5: Auto-tag display
+  const renderTags = (ticket) => {
+    if (!ticket.tags || ticket.tags.length === 0) {
+      return null;
+    }
+
+    // Parse tags - could be array or comma-separated string
+    const tagsArray = Array.isArray(ticket.tags)
+      ? ticket.tags
+      : (typeof ticket.tags === 'string' ? ticket.tags.split(',').map(t => t.trim()) : []);
+
+    return (
+      <InlineStack gap="100" wrap={false}>
+        {tagsArray.slice(0, 3).map((tag, idx) => (
+          <Badge key={idx} tone="info" size="small">{tag}</Badge>
+        ))}
+        {tagsArray.length > 3 && (
+          <Badge size="small">+{tagsArray.length - 3}</Badge>
+        )}
+      </InlineStack>
+    );
   };
 
   // Bulk selection handlers
@@ -304,6 +368,31 @@ export default function SupportTickets() {
     }
   };
 
+  // Phase 3B.4: Bulk tag handler
+  const handleBulkTag = async () => {
+    if (!bulkTags.trim() || selectedTickets.size === 0) return;
+
+    try {
+      setLoading(true);
+      await axios.post(`${API_URL}/api/tickets/bulk/tag`, {
+        ticketIds: Array.from(selectedTickets),
+        tags: bulkTags.split(',').map(t => t.trim()).filter(Boolean),
+        staffId: 1 // TODO: Get current staff ID
+      });
+
+      setBulkTagModal(false);
+      setBulkTags('');
+      clearSelection();
+      fetchTickets();
+      fetchStats();
+    } catch (err) {
+      console.error('Bulk tag failed:', err);
+      setError(err.response?.data?.error || 'Bulk tagging failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading && tickets.length === 0) {
     return (
       <Page title="Support Tickets">
@@ -372,14 +461,107 @@ export default function SupportTickets() {
         {/* Search Bar */}
         <Card>
           <Box padding="400">
-            <TextField
-              placeholder="Search by ticket #, email, name, or subject..."
-              value={searchQuery}
-              onChange={setSearchQuery}
-              autoComplete="off"
-              clearButton
-              onClearButtonClick={() => setSearchQuery('')}
-            />
+            <BlockStack gap="300">
+              <TextField
+                placeholder="Search by ticket #, email, name, or subject..."
+                value={searchQuery}
+                onChange={setSearchQuery}
+                autoComplete="off"
+                clearButton
+                onClearButtonClick={() => setSearchQuery('')}
+              />
+
+              {/* Phase 3B: Enhanced Filters Toggle */}
+              <Button
+                size="slim"
+                onClick={() => setShowFilters(!showFilters)}
+                disclosure={showFilters ? 'up' : 'down'}
+              >
+                {showFilters ? 'Hide Filters' : 'Show Filters'}
+              </Button>
+
+              {showFilters && (
+                <Box paddingBlockStart="300">
+                  <BlockStack gap="300">
+                    <InlineStack gap="300" wrap>
+                      <div style={{ minWidth: '200px' }}>
+                        <Select
+                          label="Priority"
+                          options={[
+                            { label: 'All Priorities', value: '' },
+                            { label: 'Low', value: 'low' },
+                            { label: 'Normal', value: 'normal' },
+                            { label: 'High', value: 'high' },
+                            { label: 'Urgent', value: 'urgent' }
+                          ]}
+                          value={filterPriority}
+                          onChange={setFilterPriority}
+                        />
+                      </div>
+                      <div style={{ minWidth: '200px' }}>
+                        <Select
+                          label="Assigned To"
+                          options={[
+                            { label: 'All Staff', value: '' },
+                            { label: 'Unassigned', value: 'unassigned' },
+                            ...staff.map(s => ({
+                              label: s.full_name || s.email,
+                              value: String(s.id)
+                            }))
+                          ]}
+                          value={filterAssignedTo}
+                          onChange={setFilterAssignedTo}
+                        />
+                      </div>
+                      <div style={{ minWidth: '200px' }}>
+                        <TextField
+                          label="Tags"
+                          placeholder="Enter tags..."
+                          value={filterTags}
+                          onChange={setFilterTags}
+                          autoComplete="off"
+                          helpText="Comma-separated"
+                        />
+                      </div>
+                    </InlineStack>
+
+                    <InlineStack gap="300" wrap>
+                      <div style={{ minWidth: '200px' }}>
+                        <TextField
+                          label="From Date"
+                          type="date"
+                          value={filterDateFrom}
+                          onChange={setFilterDateFrom}
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div style={{ minWidth: '200px' }}>
+                        <TextField
+                          label="To Date"
+                          type="date"
+                          value={filterDateTo}
+                          onChange={setFilterDateTo}
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', paddingBlockEnd: '4px' }}>
+                        <Button
+                          onClick={() => {
+                            setFilterPriority('');
+                            setFilterAssignedTo('');
+                            setFilterTags('');
+                            setFilterDateFrom('');
+                            setFilterDateTo('');
+                          }}
+                        >
+                          Clear Filters
+                        </Button>
+                      </div>
+                    </InlineStack>
+                  </BlockStack>
+                </Box>
+              )}
+            </BlockStack>
           </Box>
         </Card>
 
@@ -425,6 +607,17 @@ export default function SupportTickets() {
               </BlockStack>
             </Box>
           </Card>
+          {/* Phase 3B.3: SLA Breach Indicator */}
+          <Card>
+            <Box padding="400">
+              <BlockStack gap="200">
+                <Text variant="bodyMd" as="p" tone="subdued">SLA Breached</Text>
+                <Text variant="heading2xl" as="h2" tone="critical">
+                  {stats.sla_breached || 0}
+                </Text>
+              </BlockStack>
+            </Box>
+          </Card>
         </div>
 
         {/* Bulk Actions Bar */}
@@ -461,6 +654,13 @@ export default function SupportTickets() {
                           content: 'Assign to Staff',
                           onAction: () => {
                             setBulkAssignModal(true);
+                            setBulkActionActive(false);
+                          }
+                        },
+                        {
+                          content: 'Add Tags', // Phase 3B.4
+                          onAction: () => {
+                            setBulkTagModal(true);
                             setBulkActionActive(false);
                           }
                         },
@@ -541,6 +741,8 @@ export default function SupportTickets() {
                             {ticket.ticket_number}
                           </Text>
                           <InlineStack gap="100" wrap={false}>
+                            {/* Phase 3B.6: SLA Indicator */}
+                            {getSLABadge(ticket)}
                             {ticket.message_count > 0 && (
                               <Badge tone="info" size="small">
                                 {ticket.message_count} {ticket.message_count === 1 ? 'message' : 'messages'}
@@ -565,6 +767,8 @@ export default function SupportTickets() {
                               {decodeHTMLEntities(ticket.category)}
                             </Text>
                           )}
+                          {/* Phase 3B.5: Auto-tag display */}
+                          {renderTags(ticket)}
                         </div>
                         <div className="ticket-status">
                           {getStatusBadge(ticket.status)}
@@ -747,6 +951,39 @@ export default function SupportTickets() {
               onChange={setBulkNote}
               multiline={3}
               placeholder="Add a note about closing these tickets..."
+            />
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
+
+      {/* Phase 3B.4: Bulk Tag Modal */}
+      <Modal
+        open={bulkTagModal}
+        onClose={() => setBulkTagModal(false)}
+        title={`Add Tags to ${selectedCount} ticket${selectedCount !== 1 ? 's' : ''}`}
+        primaryAction={{
+          content: 'Add Tags',
+          onAction: handleBulkTag
+        }}
+        secondaryActions={[
+          {
+            content: 'Cancel',
+            onAction: () => setBulkTagModal(false)
+          }
+        ]}
+      >
+        <Modal.Section>
+          <BlockStack gap="400">
+            <Text variant="bodyMd" as="p">
+              Add tags to {selectedCount} selected ticket{selectedCount !== 1 ? 's' : ''}
+            </Text>
+            <TextField
+              label="Tags"
+              value={bulkTags}
+              onChange={setBulkTags}
+              placeholder="e.g., urgent, refund, shipping"
+              helpText="Enter tags separated by commas"
+              autoComplete="off"
             />
           </BlockStack>
         </Modal.Section>
