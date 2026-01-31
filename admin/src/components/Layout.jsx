@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ShoppingCart, Package, Mail, Inbox, Settings, Menu, X } from 'lucide-react';
+import { ShoppingCart, Package, Mail, Inbox, Settings, Menu, X, MessageSquare } from 'lucide-react';
 
 function Layout({ children }) {
   const location = useLocation();
@@ -10,6 +10,7 @@ function Layout({ children }) {
     { name: 'Orders', href: '/', icon: ShoppingCart },
     { name: 'Products & Inventory', href: '/products', icon: Package },
     { name: 'Support Tickets', href: '/tickets', icon: Inbox },
+    { name: 'Canned Responses', href: '/canned-responses', icon: MessageSquare },
     { name: 'Email Templates', href: '/email', icon: Mail },
     { name: 'Settings', href: '/settings', icon: Settings },
   ];

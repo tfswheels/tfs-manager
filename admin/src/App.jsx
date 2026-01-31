@@ -14,6 +14,7 @@ import EmailTemplates from './pages/EmailTemplates';
 import Settings from './pages/Settings';
 import SupportTickets from './pages/SupportTickets';
 import TicketSettings from './pages/TicketSettings';
+import CannedResponses from './pages/CannedResponses';
 
 // Redirect component for old email routes
 function EmailRedirect() {
@@ -112,6 +113,7 @@ function App() {
                   <Route path="/tickets" element={<SupportTickets />} />
                   <Route path="/tickets/settings" element={<TicketSettings />} />
                   <Route path="/tickets/:conversationId" element={<EmailThread />} />
+                  <Route path="/canned-responses" element={<CannedResponses />} />
                   {/* Redirect old /emails routes to /tickets */}
                   <Route path="/emails" element={<Navigate to="/tickets" replace />} />
                   <Route path="/emails/:conversationId" element={<EmailRedirect />} />
