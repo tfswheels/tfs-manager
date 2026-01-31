@@ -1,5 +1,8 @@
 import db from '../config/database.js';
 import crypto from 'crypto';
+import { autoTagTicket } from './autoTagging.js';
+import { getTicketSettings, isWithinBusinessHours } from './settingsManager.js';
+import { sendEmail } from './zohoMailEnhanced.js';
 
 /**
  * Email Threading Service
@@ -198,6 +201,56 @@ export async function findOrCreateConversation(shopId, email) {
     );
 
     console.log(`✅ Created conversation #${conversationId} with ticket number ${ticketNumber}`);
+
+    // AUTO-TAG: Set tags and priority based on Shopify customer data
+    // Only auto-tag if this is an inbound email from a customer
+    if (email.direction === 'inbound' && customerEmail) {
+      try {
+        await autoTagTicket(shopId, conversationId, customerEmail);
+        console.log(`🏷️  Auto-tagged conversation #${conversationId}`);
+      } catch (error) {
+        console.error(`⚠️  Failed to auto-tag conversation #${conversationId}:`, error.message);
+        // Don't throw - tagging failure shouldn't block conversation creation
+      }
+    }
+
+    // AUTO-RESPONSE: Send automatic response if enabled
+    // Only send auto-response for new inbound conversations
+    if (email.direction === 'inbound') {
+      try {
+        const settings = await getTicketSettings(shopId);
+
+        if (settings.auto_response_enabled) {
+          const withinHours = await isWithinBusinessHours(shopId);
+          const template = withinHours
+            ? settings.auto_response_template_business_hours
+            : settings.auto_response_template_outside_hours;
+
+          if (template) {
+            // Replace placeholders
+            const bodyHtml = template
+              .replace(/{{customer_name}}/g, customerName || 'Valued Customer')
+              .replace(/{{customer_first_name}}/g, customerName?.split(' ')[0] || 'there')
+              .replace(/{{ticket_number}}/g, ticketNumber)
+              .replace(/{{subject}}/g, email.subject || 'Your inquiry');
+
+            // Send auto-response
+            await sendEmail(shopId, {
+              to: customerEmail,
+              subject: `Re: ${email.subject}`,
+              bodyHtml: bodyHtml,
+              conversationId: conversationId,
+              inReplyTo: email.messageId
+            });
+
+            console.log(`📧 Sent auto-response to ${customerEmail} (${withinHours ? 'business hours' : 'outside hours'})`);
+          }
+        }
+      } catch (error) {
+        console.error(`⚠️  Failed to send auto-response for conversation #${conversationId}:`, error.message);
+        // Don't throw - auto-response failure shouldn't block conversation creation
+      }
+    }
 
     return conversationId;
 

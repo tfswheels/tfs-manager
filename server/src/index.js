@@ -21,10 +21,15 @@ import brandsRoutes from './routes/brands.js';
 import migrationsRoutes from './routes/migrations.js';
 import staffRoutes from './routes/staff.js';  // Staff management for ticketing
 import ticketsRoutes from './routes/tickets.js';  // Ticket management
+import settingsRoutes from './routes/settings.js';  // Ticketing settings management
+import cannedResponsesRoutes from './routes/cannedResponses.js';  // Canned responses for quick replies
+import automationRoutes from './routes/automation.js';  // Automation triggers
+import closeTicketRoutes from './routes/closeTicket.js';  // Public close ticket webhook
 import { applyAllSecurityHeaders } from './middleware/securityHeaders.js';
 import './config/database.js';
 import { jobScheduler } from './services/jobScheduler.js';
 import { startInboxPolling, stopInboxPolling } from './services/emailInboxSync.js';
+import automationScheduler from './services/automationScheduler.js';
 
 dotenv.config();
 
@@ -80,6 +85,10 @@ app.use('/api/brands', brandsRoutes);
 app.use('/api/migrations', migrationsRoutes);
 app.use('/api/staff', staffRoutes);  // Staff management for ticketing system
 app.use('/api/tickets', ticketsRoutes);  // Ticket management (status, assignment, notes)
+app.use('/api/settings', settingsRoutes);  // Ticketing system settings (per-shop configuration)
+app.use('/api/canned-responses', cannedResponsesRoutes);  // Quick reply templates
+app.use('/api/automation', automationRoutes);  // Manual automation triggers (reminders, escalation, auto-close)
+app.use('/api/webhooks/close-ticket', closeTicketRoutes);  // Public customer close ticket endpoint
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -166,6 +175,15 @@ app.listen(PORT, '0.0.0.0', () => {
     console.error('⚠️  Failed to start inbox polling:', error.message);
     console.error('   Email sync will not be available. Check Zoho credentials.');
   }
+
+  // Start automation scheduler (reminders, auto-close, escalation, SLA)
+  try {
+    automationScheduler.startScheduler();
+    console.log('🤖 Ticketing automation scheduler started');
+  } catch (error) {
+    console.error('⚠️  Failed to start automation scheduler:', error.message);
+    console.error('   Automated reminders and escalations will not be available.');
+  }
 });
 
 // Handle graceful shutdown
@@ -173,6 +191,7 @@ process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully');
   jobScheduler.stop();
   stopInboxPolling();
+  automationScheduler.stopScheduler();
   process.exit(0);
 });
 
@@ -180,5 +199,6 @@ process.on('SIGINT', () => {
   console.log('SIGINT received, shutting down gracefully');
   jobScheduler.stop();
   stopInboxPolling();
+  automationScheduler.stopScheduler();
   process.exit(0);
 });
