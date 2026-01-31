@@ -208,7 +208,7 @@ router.post('/send', async (req, res) => {
       bcc,
       subject,
       bodyText: body,
-      bodyHtml: trackedBodyHtml,
+      bodyHtml: bodyHtml,  // No tracking
       sentAt: new Date(),
       isAiGenerated,
       aiConfidenceScore: null
