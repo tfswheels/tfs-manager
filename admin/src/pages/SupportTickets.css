@@ -96,28 +96,32 @@
 
 .ticket-row {
   display: grid;
-  grid-template-columns: 40px minmax(120px, 0.8fr) minmax(150px, 1fr) minmax(200px, 2fr) 120px 100px minmax(130px, 1fr) 130px;
-  gap: 16px;
+  grid-template-columns: 40px minmax(140px, 0.9fr) minmax(180px, 1.2fr) minmax(250px, 2.5fr) 130px 110px minmax(140px, 1fr) 140px;
+  gap: 20px;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid #e5e7eb;
-  transition: background-color 0.15s ease;
+  padding: 20px 24px;
+  border-bottom: 1px solid #f3f4f6;
+  transition: all 0.15s ease;
   cursor: pointer;
-  min-height: 64px;
+  min-height: 72px;
 }
 
 .ticket-row:hover:not(.ticket-header) {
-  background-color: #f9fafb;
+  background-color: #fafbfc;
+  border-left: 3px solid #e5e7eb;
+  padding-left: 21px;
 }
 
 .ticket-row.selected {
   background-color: #eff6ff;
   border-left: 3px solid #3b82f6;
-  padding-left: 13px;
+  padding-left: 21px;
 }
 
 .ticket-row.unread {
-  background-color: #fefce8;
+  background-color: #fffbeb;
+  border-left: 3px solid #f59e0b;
+  padding-left: 21px;
 }
 
 .ticket-row.unread:hover {
@@ -126,13 +130,21 @@
 
 .ticket-header {
   font-weight: 600;
-  background-color: #f9fafb;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6b7280;
+  background-color: #fafbfc;
   cursor: default;
-  border-bottom: 2px solid #d1d5db;
+  border-bottom: 2px solid #e5e7eb;
+  padding: 12px 24px;
+  min-height: auto;
 }
 
 .ticket-header:hover {
-  background-color: #f9fafb;
+  background-color: #fafbfc;
+  border-left: none;
+  padding-left: 24px;
 }
 
 .ticket-checkbox {
@@ -309,7 +321,11 @@
   color: #3b82f6;
 }
 
-/* Unread indicator */
+.ticket-row:not(.ticket-header):hover .ticket-subject {
+  color: #1d4ed8;
+}
+
+/* Unread indicator dot */
 .ticket-row.unread .ticket-number::before {
   content: '';
   display: inline-block;
@@ -317,7 +333,17 @@
   height: 8px;
   border-radius: 50%;
   background-color: #f59e0b;
-  margin-right: 8px;
+  margin-right: 10px;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
 /* Assignment Avatar */

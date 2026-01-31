@@ -51,6 +51,7 @@ export default function SupportTickets() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Enhanced filters state (Phase 3B)
+  const [filterStatus, setFilterStatus] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
   const [filterAssignedTo, setFilterAssignedTo] = useState('');
   const [filterTags, setFilterTags] = useState('');
@@ -86,7 +87,7 @@ export default function SupportTickets() {
     fetchTickets();
     fetchStats();
     fetchStaff();
-  }, [selectedTab, page, filterPriority, filterAssignedTo, filterTags, filterDateFrom, filterDateTo]);
+  }, [selectedTab, page, filterStatus, filterPriority, filterAssignedTo, filterTags, filterDateFrom, filterDateTo]);
 
   // Filter tickets based on search query
   useEffect(() => {
@@ -155,7 +156,8 @@ export default function SupportTickets() {
         params.status = currentTab.status;
       }
 
-      // Phase 3B: Enhanced filters
+      // Phase 3B: Enhanced filters (dropdown filters override tab selection)
+      if (filterStatus) params.status = filterStatus;
       if (filterPriority) params.priority = filterPriority;
       if (filterAssignedTo) params.assigned_to = filterAssignedTo;
       if (filterTags) params.tags = filterTags;
@@ -633,8 +635,8 @@ export default function SupportTickets() {
                       { label: 'Resolved', value: 'resolved' },
                       { label: 'Closed', value: 'closed' }
                     ]}
-                    value={filterPriority}
-                    onChange={setFilterPriority}
+                    value={filterStatus}
+                    onChange={setFilterStatus}
                   />
                   <Select
                     placeholder="All Priority"
@@ -704,6 +706,7 @@ export default function SupportTickets() {
                     <div style={{ display: 'flex', alignItems: 'flex-end' }}>
                       <Button
                         onClick={() => {
+                          setFilterStatus('');
                           setFilterPriority('');
                           setFilterAssignedTo('');
                           setFilterTags('');

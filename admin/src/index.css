@@ -156,10 +156,11 @@ a:hover {
 }
 
 .content-wrapper {
-  padding: var(--space-8);
+  padding: var(--space-6) var(--space-8);
   max-width: 1600px;
-  width: 100%;
+  width: calc(100% - calc(var(--space-8) * 2)); /* Always maintain side padding */
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
 /* For larger screens, increase max-width but maintain visible margins */
@@ -167,6 +168,15 @@ a:hover {
   .content-wrapper {
     max-width: 1800px;
   }
+}
+
+/* Ensure tables can scroll horizontally while maintaining margins */
+.Polaris-Card {
+  overflow-x: auto;
+}
+
+.ticket-list {
+  min-width: 1200px; /* Minimum width before horizontal scroll kicks in */
 }
 
 /* ===== Mobile Menu ===== */
