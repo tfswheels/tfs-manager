@@ -53,7 +53,7 @@ The TFS Manager support ticketing system is being overhauled to transform the ex
 
 ## 📊 Implementation Progress Tracker
 
-### Overall Status: **Phase 1 & 2 Complete ✅**
+### Overall Status: **Phase 1, 2 & 3A Complete ✅**
 
 | Phase | Task | Implemented | Tested | Notes |
 |-------|------|:-----------:|:------:|-------|
@@ -78,13 +78,13 @@ The TFS Manager support ticketing system is being overhauled to transform the ex
 | 2.7 | Settings: SLA & Escalation | ✅ | ⬜ | SLA targets + escalation rules |
 | 2.8 | Settings: Assignment Rules | ✅ | ⬜ | Default assignee picker |
 | 2.9 | Settings: Notifications | ✅ | ⬜ | Email notification toggles |
-| **PHASE 3A: Staff & Canned Responses** | | | | **🔄 PENDING** |
-| 3A.1 | StaffManagement.jsx page | ⬜ | ⬜ | Staff list + stats |
-| 3A.2 | Staff assignment UI | ⬜ | ⬜ | Drag-and-drop assignment |
-| 3A.3 | CannedResponses.jsx page | ⬜ | ⬜ | Template list + CRUD |
-| 3A.4 | Canned response editor | ⬜ | ⬜ | Rich text editor |
-| 3A.5 | Shortcut insertion UI | ⬜ | ⬜ | /shortcut autocomplete |
-| 3A.6 | Usage stats tracking | ⬜ | ⬜ | Most-used templates |
+| **PHASE 3A: Staff & Canned Responses** | | | | **✅ COMPLETE** |
+| 3A.1 | Staff self-registration system | ✅ | ⬜ | Modal on first app access |
+| 3A.2 | Backend registration endpoint | ✅ | ⬜ | POST /api/staff/:shopId/register |
+| 3A.3 | CannedResponses.jsx page | ✅ | ⬜ | Full CRUD interface |
+| 3A.4 | Search and filter | ✅ | ⬜ | Search + category filter |
+| 3A.5 | Shortcut system | ✅ | ⬜ | /shortcut badges and display |
+| 3A.6 | Usage stats tracking | ✅ | ⬜ | Usage count + stats summary |
 | **PHASE 3B: Enhanced Dashboard** | | | | **🔄 PENDING** |
 | 3B.1 | TicketDashboard.jsx page | ⬜ | ⬜ | Replace SupportTickets.jsx |
 | 3B.2 | Enhanced filters | ⬜ | ⬜ | Tags, priority, date range |
@@ -113,7 +113,7 @@ The TFS Manager support ticketing system is being overhauled to transform the ex
 - 🔄 = In progress
 - ⚠️ = Blocked/needs attention
 
-**Last Updated:** 2026-01-31 (Phase 1 & 2 complete - deployed)
+**Last Updated:** 2026-01-31 (Phase 1, 2 & 3A complete - deployed)
 
 ---
 
