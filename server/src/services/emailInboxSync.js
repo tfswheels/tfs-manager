@@ -58,6 +58,72 @@ const lastSyncTimes = {
 };
 
 /**
+ * Check if an email should be filtered out (spam, Shopify notifications, etc.)
+ * @param {object} email - Email object from Zoho
+ * @param {string} direction - 'inbound' or 'outbound'
+ * @returns {object} { shouldFilter: boolean, reason: string }
+ */
+function shouldFilterEmail(email, direction) {
+  const fromAddress = (email.fromAddress || email.sender || '').toLowerCase();
+  const toAddress = (email.toAddress || email.recipient || '').toLowerCase();
+  const subject = (email.subject || '').toLowerCase();
+
+  // Always allow outbound emails (our own sent emails)
+  if (direction === 'outbound') {
+    return { shouldFilter: false, reason: null };
+  }
+
+  // Filter 1: Shopify notification emails
+  if (fromAddress.includes('shopify') || fromAddress.includes('@shopify.com')) {
+    return { shouldFilter: true, reason: 'Shopify notification email' };
+  }
+
+  // Filter 2: Common spam/automated senders
+  const spamPatterns = [
+    'noreply',
+    'no-reply',
+    'donotreply',
+    'do-not-reply',
+    'mailer-daemon',
+    'postmaster',
+    'bounce',
+    'autoreply',
+    'auto-reply',
+    'notifications@',
+    'system@',
+    'admin@'
+  ];
+
+  if (spamPatterns.some(pattern => fromAddress.includes(pattern))) {
+    return { shouldFilter: true, reason: 'Automated/no-reply email' };
+  }
+
+  // Filter 3: Spam subject patterns
+  const spamSubjectPatterns = [
+    'unsubscribe',
+    'delivery failed',
+    'mail delivery failed',
+    'returned mail',
+    'undeliverable',
+    'out of office',
+    'automatic reply',
+    'auto-reply'
+  ];
+
+  if (spamSubjectPatterns.some(pattern => subject.includes(pattern))) {
+    return { shouldFilter: true, reason: 'Spam subject pattern' };
+  }
+
+  // Filter 4: Not sent to our monitored addresses
+  const ourAddresses = ['sales@tfswheels.com', 'support@tfswheels.com'];
+  if (!ourAddresses.some(addr => toAddress.includes(addr))) {
+    return { shouldFilter: true, reason: 'Not sent to sales@ or support@' };
+  }
+
+  return { shouldFilter: false, reason: null };
+}
+
+/**
  * Save email attachments and inline images to database
  * Also downloads inline images and returns cid mapping for HTML replacement
  *
@@ -365,6 +431,14 @@ async function syncInbox(shopId, accountEmail, options = {}) {
           );
 
           if (existing.length > 0) {
+            batchSkippedCount++;
+            continue;
+          }
+
+          // Apply spam and Shopify email filters
+          const filterResult = shouldFilterEmail(email, direction);
+          if (filterResult.shouldFilter) {
+            // console.log(`  🚫 Filtered email: ${filterResult.reason} - ${email.subject}`);
             batchSkippedCount++;
             continue;
           }

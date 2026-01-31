@@ -1227,6 +1227,54 @@ router.post('/sync/now', async (req, res) => {
 });
 
 /**
+ * POST /api/emails/sync/full
+ * Trigger FULL historical email sync (fetch ALL emails)
+ * This will fetch all historical emails in batches without a limit
+ * Body params:
+ * - batchSize: Batch size (default: 100)
+ * - syncSentFolder: Include sent folder (default: true)
+ */
+router.post('/sync/full', async (req, res) => {
+  try {
+    const shopId = req.user?.shopId || 1;
+    const {
+      batchSize = 100,
+      syncSentFolder = true
+    } = req.body;
+
+    console.log(`🚀 FULL historical email sync triggered (no limit)`);
+    console.log(`   Batch size: ${batchSize}, Sent folder: ${syncSentFolder ? 'Yes' : 'No'}`);
+
+    // Use a very high maxEmails limit to fetch all historical emails
+    // Zoho typically has a max of ~10,000 emails per folder, but we'll set it higher
+    const result = await syncAllInboxes(shopId, {
+      maxEmails: 50000,  // Very high limit - will stop when no more emails found
+      batchSize: batchSize,
+      syncSentFolder: syncSentFolder
+    });
+
+    console.log(`✅ Full sync complete: ${result.totalNew} new emails fetched, ${result.totalFetched} total processed`);
+
+    res.json({
+      success: true,
+      message: 'Full historical email sync completed',
+      result: {
+        newEmails: result.totalNew,
+        totalProcessed: result.totalFetched,
+        details: result.results
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Full sync failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
  * ============================================================================
  * DELIVERABILITY STATS
  * ============================================================================
